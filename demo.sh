@@ -135,7 +135,9 @@ main() {
         print_info "🔗 Monitor progress:"
         echo "   https://github.com/$(gh repo view --json owner,name -q '.owner.login + "/" + .name')/actions"
         echo ""
-        print_info "📝 Demo URLs will be posted as a GitHub issue when ready."
+        print_info "📝 Demo URLs will be available in:"
+        print_info "   - GitHub Actions workflow summary"
+        print_info "   - GitHub issue (if permissions allow)"
         print_info "⏰ Demo will run for $DURATION minutes."
         echo ""
         

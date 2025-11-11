@@ -14,6 +14,11 @@ on:
         default: 'Drools UI Demo'
         type: string
 
+# Grant permissions for the workflow to create issues
+permissions:
+  issues: write
+  contents: read
+
 env:
   NODE_VERSION: '22'
   JAVA_VERSION: '17'
@@ -158,7 +163,9 @@ jobs:
 
     # Create GitHub issue with demo URLs
     - name: Create Demo Issue
+      id: create_issue
       uses: actions/github-script@v7
+      continue-on-error: true
       with:
         script: |
           const demoInfo = `
@@ -209,15 +216,55 @@ jobs:
           **Workflow Run:** [${{ github.run_number }}](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
           `;
           
-          const { data: issue } = await github.rest.issues.create({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            title: `🚀 Live Demo #${{ github.run_number }} - ${{ github.event.inputs.demo_message }}`,
-            body: demoInfo,
-            labels: ['demo', 'temporary']
-          });
-          
-          console.log(`Created demo issue: ${issue.html_url}`);
+          try {
+            const { data: issue } = await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `🚀 Live Demo #${{ github.run_number }} - ${{ github.event.inputs.demo_message }}`,
+              body: demoInfo,
+              labels: ['demo', 'temporary']
+            });
+            
+            console.log(`✅ Created demo issue: ${issue.html_url}`);
+            core.setOutput('issue_url', issue.html_url);
+          } catch (error) {
+            console.log(`⚠️ Failed to create issue: ${error.message}`);
+            console.log(`📝 Demo info will be shown in workflow logs instead`);
+            core.setOutput('issue_url', '');
+          }
+
+    # Fallback: Output demo URLs in workflow summary if issue creation failed
+    - name: Demo URLs Summary
+      run: |
+        cat << 'EOF' >> $GITHUB_STEP_SUMMARY
+        # 🚀 Live Demo Available!
+        
+        **Demo Message:** ${{ github.event.inputs.demo_message }}
+        **Duration:** ${{ github.event.inputs.demo_duration }} minutes
+        **Started:** $(date -u +"%Y-%m-%dT%H:%M:%SZ")
+        
+        ## 🔗 Access URLs
+        
+        ### Frontend (Next.js UI)
+        **URL:** ${{ env.FRONTEND_URL }}
+        
+        ### Backend (Spring Boot API)  
+        **URL:** ${{ env.BACKEND_URL }}
+        
+        ## 🧪 Quick Test Commands
+        
+        ```bash
+        # Health check
+        curl ${{ env.BACKEND_URL }}/actuator/health
+        
+        # List rules
+        curl ${{ env.BACKEND_URL }}/api/rules
+        ```
+        
+        ## ⚠️ Important
+        This demo will automatically stop in ${{ github.event.inputs.demo_duration }} minutes.
+        The URLs are temporary and will become inactive after the demo ends.
+        EOF
 
     # Keep demo alive for specified duration
     - name: Keep Demo Alive
@@ -231,7 +278,11 @@ jobs:
         echo "🔧 Backend:  ${{ env.BACKEND_URL }}"
         echo ""
         echo "⏰ Demo started at: $(date)"
-        echo "⏰ Demo will end at: $(date -d "+$duration_minutes minutes")"
+        echo "⏰ Demo will end at: $(date -d "+$duration_minutes minutes" 2>/dev/null || date -v+${duration_minutes}M 2>/dev/null || echo "$(date) + $duration_minutes minutes")"
+        echo ""
+        echo "🧪 Test Commands:"
+        echo "  curl ${{ env.BACKEND_URL }}/actuator/health"
+        echo "  curl ${{ env.BACKEND_URL }}/api/rules"
         
         # Keep alive and show logs
         end_time=$(($(date +%s) + duration_seconds))

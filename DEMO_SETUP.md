@@ -117,6 +117,12 @@ gh workflow run demo-deploy.yml \
 4. Set duration and message
 5. Click "Run workflow"
 
+### Permissions Note
+
+The workflow needs `issues: write` permission to create demo issues. If this permission is not available, demo URLs will be shown in:
+- Workflow logs
+- GitHub Actions summary page
+
 ## 🔍 Monitoring
 
 ### Real-time Monitoring
