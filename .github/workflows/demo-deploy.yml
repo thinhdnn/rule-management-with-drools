@@ -1,0 +1,289 @@
+name: Live Demo with Ngrok
+
+on:
+  workflow_dispatch:
+    inputs:
+      demo_duration:
+        description: 'Demo duration in minutes'
+        required: false
+        default: '10'
+        type: string
+      demo_message:
+        description: 'Demo description/message'
+        required: false
+        default: 'Drools UI Demo'
+        type: string
+
+env:
+  NODE_VERSION: '18'
+  JAVA_VERSION: '17'
+
+jobs:
+  live-demo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15  # Max 15 minutes to prevent infinite runs
+    
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_DB: rule_engine
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up JDK
+      uses: actions/setup-java@v4
+      with:
+        java-version: ${{ env.JAVA_VERSION }}
+        distribution: 'temurin'
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        cache-dependency-path: frontend/package-lock.json
+
+    - name: Cache Gradle packages
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.gradle/caches
+          ~/.gradle/wrapper
+        key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+        restore-keys: |
+          ${{ runner.os }}-gradle-
+
+    # Install ngrok
+    - name: Install ngrok
+      run: |
+        curl -s https://ngrok-agent.s3.amazonaws.com/ngrok.asc | sudo tee /etc/apt/trusted.gpg.d/ngrok.asc >/dev/null
+        echo "deb https://ngrok-agent.s3.amazonaws.com buster main" | sudo tee /etc/apt/sources.list.d/ngrok.list
+        sudo apt update && sudo apt install ngrok
+        ngrok config add-authtoken ${{ secrets.NGROK_AUTH_TOKEN }}
+
+    # Build and start backend
+    - name: Build Backend
+      working-directory: ./backend
+      run: |
+        chmod +x ./gradlew
+        ./gradlew build -x test
+
+    - name: Start Backend in Background
+      working-directory: ./backend
+      env:
+        SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/rule_engine
+        SPRING_DATASOURCE_USERNAME: postgres
+        SPRING_DATASOURCE_PASSWORD: postgres
+        SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      run: |
+        nohup java -jar build/libs/*.jar > backend.log 2>&1 &
+        echo $! > backend.pid
+        
+        # Wait for backend to start
+        timeout=60
+        while [ $timeout -gt 0 ]; do
+          if curl -f http://localhost:8080/actuator/health >/dev/null 2>&1; then
+            echo "Backend started successfully!"
+            break
+          fi
+          echo "Waiting for backend to start... ($timeout seconds left)"
+          sleep 2
+          timeout=$((timeout-2))
+        done
+
+    # Expose backend with ngrok
+    - name: Start Ngrok for Backend
+      run: |
+        nohup ngrok http 8080 --log=stdout > ngrok-backend.log 2>&1 &
+        sleep 5
+        
+        # Get backend URL
+        BACKEND_URL=$(curl -s http://localhost:4040/api/tunnels | jq -r '.tunnels[0].public_url')
+        echo "BACKEND_URL=$BACKEND_URL" >> $GITHUB_ENV
+        echo "Backend URL: $BACKEND_URL"
+
+    # Build and start frontend
+    - name: Install Frontend Dependencies
+      working-directory: ./frontend
+      run: npm ci
+
+    - name: Build Frontend
+      working-directory: ./frontend
+      env:
+        NEXT_PUBLIC_API_URL: ${{ env.BACKEND_URL }}
+      run: npm run build
+
+    - name: Start Frontend in Background
+      working-directory: ./frontend
+      env:
+        NEXT_PUBLIC_API_URL: ${{ env.BACKEND_URL }}
+      run: |
+        nohup npm start > frontend.log 2>&1 &
+        echo $! > frontend.pid
+        
+        # Wait for frontend to start
+        timeout=30
+        while [ $timeout -gt 0 ]; do
+          if curl -f http://localhost:3000 >/dev/null 2>&1; then
+            echo "Frontend started successfully!"
+            break
+          fi
+          echo "Waiting for frontend to start... ($timeout seconds left)"
+          sleep 2
+          timeout=$((timeout-2))
+        done
+
+    # Expose frontend with ngrok (different port for ngrok API)
+    - name: Start Ngrok for Frontend
+      run: |
+        nohup ngrok http 3000 --web-addr=localhost:4041 --log=stdout > ngrok-frontend.log 2>&1 &
+        sleep 5
+        
+        # Get frontend URL
+        FRONTEND_URL=$(curl -s http://localhost:4041/api/tunnels | jq -r '.tunnels[0].public_url')
+        echo "FRONTEND_URL=$FRONTEND_URL" >> $GITHUB_ENV
+        echo "Frontend URL: $FRONTEND_URL"
+
+    # Create GitHub issue with demo URLs
+    - name: Create Demo Issue
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const demoInfo = `
+          # 🚀 Live Demo Available!
+          
+          **Demo Message:** ${{ github.event.inputs.demo_message }}
+          **Duration:** ${{ github.event.inputs.demo_duration }} minutes
+          **Started:** ${new Date().toISOString()}
+          
+          ## 🔗 Access URLs
+          
+          ### Frontend (Next.js UI)
+          **URL:** ${{ env.FRONTEND_URL }}
+          
+          **Features:**
+          - ✅ Rules Management Interface
+          - ✅ Version Control System
+          - ✅ Change Request Workflow
+          - ✅ WCO Data Processing
+          
+          ### Backend (Spring Boot API)
+          **URL:** ${{ env.BACKEND_URL }}
+          
+          **API Endpoints:**
+          - \`GET /api/rules\` - List all rules
+          - \`GET /api/rules/{id}\` - Get rule details
+          - \`POST /api/rules\` - Create new rule
+          - \`GET /actuator/health\` - Health check
+          
+          ## 📊 Sample WCO Data
+          
+          Test with sample JSON data available in the project:
+          - Import Goods Declaration
+          - Cargo Report Inventory
+          
+          ## ⚡ Quick Test
+          
+          1. Open Frontend URL
+          2. Navigate to Rules section
+          3. Create/Edit business rules
+          4. Test with WCO sample data
+          
+          ---
+          
+          > **⚠️ Important:** This demo will automatically stop in ${{ github.event.inputs.demo_duration }} minutes.
+          > The URLs are temporary and will become inactive after the demo ends.
+          
+          **Workflow Run:** [${{ github.run_number }}](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
+          `;
+          
+          const { data: issue } = await github.rest.issues.create({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            title: `🚀 Live Demo #${{ github.run_number }} - ${{ github.event.inputs.demo_message }}`,
+            body: demoInfo,
+            labels: ['demo', 'temporary']
+          });
+          
+          console.log(`Created demo issue: ${issue.html_url}`);
+
+    # Keep demo alive for specified duration
+    - name: Keep Demo Alive
+      run: |
+        duration_minutes=${{ github.event.inputs.demo_duration }}
+        duration_seconds=$((duration_minutes * 60))
+        
+        echo "🎯 Demo will run for $duration_minutes minutes ($duration_seconds seconds)"
+        echo ""
+        echo "🌐 Frontend: ${{ env.FRONTEND_URL }}"
+        echo "🔧 Backend:  ${{ env.BACKEND_URL }}"
+        echo ""
+        echo "⏰ Demo started at: $(date)"
+        echo "⏰ Demo will end at: $(date -d "+$duration_minutes minutes")"
+        
+        # Keep alive and show logs
+        end_time=$(($(date +%s) + duration_seconds))
+        while [ $(date +%s) -lt $end_time ]; do
+          remaining=$((end_time - $(date +%s)))
+          minutes=$((remaining / 60))
+          seconds=$((remaining % 60))
+          
+          echo "⏳ Demo running... ${minutes}m ${seconds}s remaining"
+          
+          # Show recent logs every minute
+          if [ $((remaining % 60)) -eq 0 ]; then
+            echo "📋 Recent Backend Logs:"
+            tail -n 5 ./backend/backend.log || echo "No backend logs"
+            echo ""
+            echo "📋 Recent Frontend Logs:"
+            tail -n 5 ./frontend/frontend.log || echo "No frontend logs"
+            echo "---"
+          fi
+          
+          sleep 10
+        done
+        
+        echo "⏰ Demo time ended at: $(date)"
+
+    # Cleanup
+    - name: Cleanup Demo
+      if: always()
+      run: |
+        echo "🧹 Cleaning up demo..."
+        
+        # Kill processes
+        if [ -f ./backend/backend.pid ]; then
+          kill $(cat ./backend/backend.pid) || true
+        fi
+        if [ -f ./frontend/frontend.pid ]; then
+          kill $(cat ./frontend/frontend.pid) || true
+        fi
+        
+        # Kill ngrok processes
+        pkill ngrok || true
+        
+        echo "✅ Cleanup completed"
+
+    # Final status
+    - name: Demo Summary
+      if: always()
+      run: |
+        echo "## 📊 Demo Summary"
+        echo "**Duration:** ${{ github.event.inputs.demo_duration }} minutes"
+        echo "**Frontend URL:** ${{ env.FRONTEND_URL }}"
+        echo "**Backend URL:** ${{ env.BACKEND_URL }}"
+        echo "**Status:** Demo completed"
+        echo ""
+        echo "Thank you for trying Drools UI Demo! 🎉"

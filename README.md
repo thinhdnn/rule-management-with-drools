@@ -101,7 +101,56 @@ WCO Data Set 4.2.0 compatible JSON samples are stored in the `json/` directory:
 
 ---
 
-## 🐳 Docker Commands
+## � Live Demo
+
+### Instant Public Demo with Ngrok
+
+Create a temporary live demo with public URLs in seconds:
+
+```bash
+# Quick 10-minute demo
+./demo.sh
+
+# Custom duration and message
+./demo.sh -d 5 -m "Feature X Demo"
+
+# Or trigger manually via GitHub
+gh workflow run demo-deploy.yml --field demo_duration="10"
+```
+
+**What happens:**
+1. 🏗️ Builds backend (Spring Boot) and frontend (Next.js)
+2. 🗄️ Starts PostgreSQL database
+3. 🌍 Exposes both services via ngrok public URLs
+4. 📝 Creates GitHub issue with demo links
+5. ⏰ Automatically stops after specified time
+
+### Local Testing with Ngrok
+
+Test ngrok integration locally before using GitHub Actions:
+
+```bash
+# Test full stack with ngrok locally
+./test-ngrok.sh
+
+# This will:
+# - Start database with Docker
+# - Build and run backend/frontend locally
+# - Expose both via ngrok public URLs
+# - Show all URLs and logs
+```
+
+**Demo Features:**
+- ✅ Full Rules Management UI
+- ✅ WCO Data Processing
+- ✅ Version Control System
+- ✅ Real-time API testing
+
+> **Requirements:** 
+> - `ngrok config add-authtoken YOUR_TOKEN` (local)
+> - `NGROK_AUTH_TOKEN` secret in GitHub repo settings (CI/CD)
+
+## �🐳 Docker Commands
 
 The project includes a convenient Docker management script:
 
