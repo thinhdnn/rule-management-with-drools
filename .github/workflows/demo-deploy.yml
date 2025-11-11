@@ -194,29 +194,84 @@ jobs:
       run: |
         # Start backend tunnel
         nohup ngrok http 8080 --log=stdout > ngrok-backend.log 2>&1 &
-        sleep 3
+        BACKEND_NGROK_PID=$!
+        echo "Started backend ngrok tunnel for port 8080 (PID: $BACKEND_NGROK_PID)"
         
         # Start frontend tunnel  
         nohup ngrok http 3000 --log=stdout > ngrok-frontend.log 2>&1 &
-        sleep 5
+        FRONTEND_NGROK_PID=$!
+        echo "Started frontend ngrok tunnel for port 3000 (PID: $FRONTEND_NGROK_PID)"
         
-        # Get both URLs
-        BACKEND_URL=$(curl -s http://localhost:4040/api/tunnels | jq -r '.tunnels[] | select(.proto=="https" and .config.addr=="localhost:8080") | .public_url')
-        FRONTEND_URL=$(curl -s http://localhost:4040/api/tunnels | jq -r '.tunnels[] | select(.proto=="https" and .config.addr=="localhost:3000") | .public_url')
+        # Wait for tunnels to be ready
+        echo "⏳ Waiting for ngrok tunnels to be ready..."
+        sleep 10
+        
+        # Check if ngrok processes are still running
+        if ! kill -0 $BACKEND_NGROK_PID 2>/dev/null; then
+          echo "❌ Backend ngrok process died"
+          cat ngrok-backend.log
+          exit 1
+        fi
+        
+        if ! kill -0 $FRONTEND_NGROK_PID 2>/dev/null; then
+          echo "❌ Frontend ngrok process died"
+          cat ngrok-frontend.log
+          exit 1
+        fi
+        
+        # Wait for ngrok API to be available
+        timeout=30
+        while [ $timeout -gt 0 ]; do
+          if curl -f http://localhost:4040/api/tunnels >/dev/null 2>&1; then
+            echo "✅ Ngrok API is ready"
+            break
+          fi
+          echo "⏳ Waiting for ngrok API... ($timeout seconds left)"
+          sleep 2
+          timeout=$((timeout-2))
+        done
+        
+        # Debug: Show all tunnels
+        echo "🔍 Debug: All ngrok tunnels:"
+        TUNNELS_JSON=$(curl -s http://localhost:4040/api/tunnels)
+        echo "$TUNNELS_JSON" | jq '.'
+        
+        echo ""
+        echo "🔍 Debug: Tunnel details:"
+        echo "$TUNNELS_JSON" | jq '.tunnels[] | {name, proto, public_url, config: .config.addr}'
+        
+        # Extract backend URL (port 8080)
+        BACKEND_URL=$(echo "$TUNNELS_JSON" | jq -r '.tunnels[] | select(.config.addr | contains("8080")) | select(.proto=="https") | .public_url')
+        
+        # Extract frontend URL (port 3000)  
+        FRONTEND_URL=$(echo "$TUNNELS_JSON" | jq -r '.tunnels[] | select(.config.addr | contains("3000")) | select(.proto=="https") | .public_url')
+        
+        # Fallback: try without HTTPS filter
+        if [ "$BACKEND_URL" = "null" ] || [ -z "$BACKEND_URL" ]; then
+          BACKEND_URL=$(echo "$TUNNELS_JSON" | jq -r '.tunnels[] | select(.config.addr | contains("8080")) | .public_url' | head -1)
+        fi
+        
+        if [ "$FRONTEND_URL" = "null" ] || [ -z "$FRONTEND_URL" ]; then
+          FRONTEND_URL=$(echo "$TUNNELS_JSON" | jq -r '.tunnels[] | select(.config.addr | contains("3000")) | .public_url' | head -1)
+        fi
         
         echo "BACKEND_URL=$BACKEND_URL" >> $GITHUB_ENV
         echo "FRONTEND_URL=$FRONTEND_URL" >> $GITHUB_ENV
         
-        echo "Backend URL: $BACKEND_URL"
-        echo "Frontend URL: $FRONTEND_URL"
+        echo "✅ Backend URL: $BACKEND_URL"
+        echo "✅ Frontend URL: $FRONTEND_URL"
         
         if [ "$BACKEND_URL" = "null" ] || [ -z "$BACKEND_URL" ]; then
-          echo "Failed to get backend ngrok URL"
+          echo "❌ Failed to get backend ngrok URL"
+          echo "Available tunnels:"
+          echo "$TUNNELS_JSON" | jq '.tunnels[] | {name, public_url, config}'
           exit 1
         fi
         
         if [ "$FRONTEND_URL" = "null" ] || [ -z "$FRONTEND_URL" ]; then
-          echo "Failed to get frontend ngrok URL"
+          echo "❌ Failed to get frontend ngrok URL"
+          echo "Available tunnels:"
+          echo "$TUNNELS_JSON" | jq '.tunnels[] | {name, public_url, config}'
           exit 1
         fi
 
