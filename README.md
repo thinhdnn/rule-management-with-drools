@@ -184,5 +184,5 @@ The project includes a convenient Docker management script:
 
 ### For Manual Setup:
 - Java 17+
-- Node.js 18+
+- Node.js 22+
 - PostgreSQL

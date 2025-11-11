@@ -71,7 +71,7 @@ gh auth login
 
 1. **Build Phase:**
    - ✅ Checkout code
-   - ✅ Setup Java 17 & Node.js 18
+   - ✅ Setup Java 17 & Node.js 22
    - ✅ Start PostgreSQL service
    - ✅ Build Spring Boot backend
    - ✅ Build Next.js frontend
