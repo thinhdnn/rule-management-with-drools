@@ -164,53 +164,96 @@ jobs:
       working-directory: ./frontend
       run: npm ci
 
-    - name: Build Frontend
-      working-directory: ./frontend
-      env:
-        NEXT_PUBLIC_API_URL: http://localhost:8080
-      run: npm run build
+
 
     # Start ngrok for backend first
     # No need to expose backend - Frontend will connect to backend internally
 
-    # Start frontend - it will connect to backend internally
-    - name: Start Frontend in Background
+    # Start frontend initially (will be restarted later with backend URL)
+    - name: Start Frontend Initially  
       working-directory: ./frontend
-      env:
-        # Frontend connects to backend locally
-        NEXT_PUBLIC_API_URL: http://localhost:8080
       run: |
+        echo "🚀 Starting frontend initially (will restart with backend URL later)"
         nohup npm start > frontend.log 2>&1 &
         echo $! > frontend.pid
         
-        # Wait for frontend to start
-        timeout=60
+        # Wait for initial startup
+        timeout=30
         while [ $timeout -gt 0 ]; do
           if curl -f http://localhost:3000 >/dev/null 2>&1; then
-            echo "Frontend started successfully!"
+            echo "✅ Frontend started initially!"
             break
           fi
-          echo "Waiting for frontend to start... ($timeout seconds left)"
+          echo "⏳ Waiting for frontend initial start... ($timeout seconds left)"
           sleep 2
           timeout=$((timeout-2))
         done
 
-    # Setup frontend ngrok tunnel
-    - name: Start Ngrok for Frontend
+    # Setup ngrok tunnels for both backend and frontend
+    - name: Start Ngrok Tunnels
       run: |
-        # Expose frontend only - users access via this URL
+        # Start backend tunnel
+        nohup ngrok http 8080 --log=stdout > ngrok-backend.log 2>&1 &
+        sleep 3
+        
+        # Start frontend tunnel  
         nohup ngrok http 3000 --log=stdout > ngrok-frontend.log 2>&1 &
         sleep 5
         
-        # Get frontend URL
-        FRONTEND_URL=$(curl -s http://localhost:4040/api/tunnels | jq -r '.tunnels[0].public_url')
+        # Get both URLs
+        BACKEND_URL=$(curl -s http://localhost:4040/api/tunnels | jq -r '.tunnels[] | select(.proto=="https" and .config.addr=="localhost:8080") | .public_url')
+        FRONTEND_URL=$(curl -s http://localhost:4040/api/tunnels | jq -r '.tunnels[] | select(.proto=="https" and .config.addr=="localhost:3000") | .public_url')
+        
+        echo "BACKEND_URL=$BACKEND_URL" >> $GITHUB_ENV
         echo "FRONTEND_URL=$FRONTEND_URL" >> $GITHUB_ENV
+        
+        echo "Backend URL: $BACKEND_URL"
         echo "Frontend URL: $FRONTEND_URL"
+        
+        if [ "$BACKEND_URL" = "null" ] || [ -z "$BACKEND_URL" ]; then
+          echo "Failed to get backend ngrok URL"
+          exit 1
+        fi
         
         if [ "$FRONTEND_URL" = "null" ] || [ -z "$FRONTEND_URL" ]; then
           echo "Failed to get frontend ngrok URL"
           exit 1
         fi
+
+    # Rebuild frontend with actual backend URL
+    - name: Rebuild Frontend with Backend URL
+      working-directory: ./frontend
+      env:
+        NEXT_PUBLIC_API_URL: ${{ env.BACKEND_URL }}
+      run: |
+        echo "🔄 Rebuilding frontend with backend URL: ${{ env.BACKEND_URL }}"
+        npm run build
+
+    # Restart frontend with new build
+    - name: Restart Frontend with Backend URL
+      working-directory: ./frontend
+      run: |
+        # Kill existing frontend process
+        if [ -f frontend.pid ]; then
+          kill $(cat frontend.pid) || true
+          rm frontend.pid
+        fi
+        
+        # Start frontend with backend URL  
+        nohup npm start > frontend.log 2>&1 &
+        echo $! > frontend.pid
+        
+        # Wait for frontend to restart
+        timeout=30
+        while [ $timeout -gt 0 ]; do
+          if curl -f http://localhost:3000 >/dev/null 2>&1; then
+            echo "✅ Frontend restarted successfully with backend URL!"
+            break
+          fi
+          echo "⏳ Waiting for frontend to restart... ($timeout seconds left)"
+          sleep 2
+          timeout=$((timeout-2))
+        done
 
     # Create GitHub issue with demo URLs
     - name: Create Demo Issue
@@ -238,9 +281,12 @@ jobs:
           - ✅ WCO Data Processing
           
           ### Backend (Spring Boot API)
-          **Status:** Running internally (connected to Frontend)
+          **URL:** ${{ env.BACKEND_URL }}
           
-          **Note:** Backend is not exposed publicly - Frontend proxies API calls internally.
+          **Endpoints:**
+          - 🔗 API Base: `${{ env.BACKEND_URL }}/api/v1`
+          - 🏥 Health Check: `${{ env.BACKEND_URL }}/actuator/health`
+          - 📊 Rules API: `${{ env.BACKEND_URL }}/api/v1/rules`
           
           ## 📊 Sample WCO Data
           
@@ -296,13 +342,13 @@ jobs:
         **URL:** ${{ env.FRONTEND_URL }}
         
         ### Backend (Spring Boot API)  
-        **Status:** Running internally (connected to Frontend)
+        **URL:** ${{ env.BACKEND_URL }}
         
         ## 🧪 Quick Test
         
-        - Open the Frontend URL above
-        - Navigate to Rules section  
-        - Backend API calls are handled automatically through the Frontend
+        - **Frontend:** Open ${{ env.FRONTEND_URL }} for the UI
+        - **Backend:** Test API at ${{ env.BACKEND_URL }}/actuator/health
+        - **Integration:** Frontend connects to backend automatically
         
         ## ⚠️ Important
         This demo will automatically stop in ${{ github.event.inputs.demo_duration }} minutes.
@@ -318,15 +364,15 @@ jobs:
         echo "🎯 Demo will run for $duration_minutes minutes ($duration_seconds seconds)"
         echo ""
         echo "🌐 Frontend: ${{ env.FRONTEND_URL }}"
-        echo "🔧 Backend:  Running internally (localhost:8080)"
+        echo "🔧 Backend:  ${{ env.BACKEND_URL }}"
         echo ""
         echo "⏰ Demo started at: $(date)"
         echo "⏰ Demo will end at: $(date -d "+$duration_minutes minutes" 2>/dev/null || date -v+${duration_minutes}M 2>/dev/null || echo "$(date) + $duration_minutes minutes")"
         echo ""
         echo "🧪 How to test:"
-        echo "  1. Open Frontend URL: ${{ env.FRONTEND_URL }}"
-        echo "  2. Navigate to Rules section"
-        echo "  3. Backend API calls work automatically"
+        echo "  1. Frontend UI: ${{ env.FRONTEND_URL }}"
+        echo "  2. Backend API: ${{ env.BACKEND_URL }}/actuator/health"
+        echo "  3. Rules API: ${{ env.BACKEND_URL }}/api/v1/rules"
         
         # Keep alive and show logs
         end_time=$(($(date +%s) + duration_seconds))
@@ -400,12 +446,12 @@ jobs:
         echo "## 📊 Demo Summary"
         echo "**Duration:** ${{ github.event.inputs.demo_duration }} minutes"
         echo "**Frontend URL:** ${{ env.FRONTEND_URL }}"
-        echo "**Backend:** Running internally (localhost:8080)"
+        echo "**Backend URL:** ${{ env.BACKEND_URL }}"
         echo "**Status:** Demo completed"
         echo ""
         echo "🎯 **Demo Architecture:**"
-        echo "   - Frontend: Public UI via ngrok tunnel"
-        echo "   - Backend: Internal API (proxied through Frontend)"
-        echo "   - Single public URL for complete functionality"
+        echo "   - Frontend: Public UI via ngrok tunnel (port 3000)"
+        echo "   - Backend: Public API via ngrok tunnel (port 8080)"
+        echo "   - Frontend connects to backend via public URLs"
         echo ""
         echo "Thank you for trying Drools UI Demo! 🎉"
