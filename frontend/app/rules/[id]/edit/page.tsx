@@ -126,7 +126,7 @@ export default function EditRulePage({ params }: Props) {
     const fetchRule = async () => {
       try {
         const data = await fetchApi(api.rules.get(id))
-        const rule = transformRule(data?.rule ?? data)
+        const rule = transformRule((data as any)?.rule ?? data)
 
         const conditions = (rule.conditions && rule.conditions.length > 0)
           ? rule.conditions.map((condition: any) => ({
@@ -260,7 +260,7 @@ export default function EditRulePage({ params }: Props) {
       const updatedRule = await fetchApi(api.rules.update(id), {
         method: 'PUT',
         body: JSON.stringify(payload),
-      })
+      }) as any
       
       // Navigate to the newly created version
       router.push(`/rules/${updatedRule.id}`)
@@ -490,8 +490,8 @@ export default function EditRulePage({ params }: Props) {
               {[...metadata.outputFields]
                 .sort((a, b) => {
                   // Sort by orderIndex if available, otherwise maintain insertion order
-                  const orderA = a.orderIndex ?? 999;
-                  const orderB = b.orderIndex ?? 999;
+                  const orderA = (a as any).orderIndex ?? 999;
+                  const orderB = (b as any).orderIndex ?? 999;
                   return orderA - orderB;
                 })
                 .map((field) => {

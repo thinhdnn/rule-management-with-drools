@@ -191,7 +191,7 @@ export default function RulesPage() {
       )}
 
       <FilterRow
-        onChange={(f) => { setPage(1); setFilters(f) }}
+        onChange={(f) => { setPage(1); setFilters({...f, factType: filters.factType}) }}
         defaults={filters}
       />
 

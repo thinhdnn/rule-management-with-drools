@@ -127,8 +127,8 @@ export default function RuleDetailPage({ params }: Props) {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        // Fetch rule, versions, and metadata in parallel
-        const [ruleData, versionsData, metadataData] = await Promise.all([
+        // Fetch rule and versions in parallel
+        const [ruleData, versionsData] = await Promise.all([
           fetchApi(api.rules.get(id)).then((data: any) => {
             const rule = data?.rule ?? data
             return transformRule(rule)
@@ -152,7 +152,7 @@ export default function RuleDetailPage({ params }: Props) {
         // Load metadata based on rule's factType
         const factType = ruleData?.factType || 'Declaration'
         fetchApi(api.rules.metadata(factType))
-          .then((metadataData) => setMetadata(metadataData))
+          .then((metadataData) => setMetadata(metadataData as any))
           .catch(() => setMetadata(null))
         
         // Parse conditions
@@ -166,10 +166,6 @@ export default function RuleDetailPage({ params }: Props) {
             }))
           : parseRuleCondition(ruleData.ruleCondition)
         setConditions(parsedConditions)
-        
-        if (metadataData) {
-          setMetadata(metadataData)
-        }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Unknown error')
       } finally {
@@ -186,7 +182,7 @@ export default function RuleDetailPage({ params }: Props) {
         body: JSON.stringify({ 
           versionNotes: `Restored from version ${versions.find(v => v.id === versionId)?.version}` 
         }),
-      })
+      }) as any
       
       // Navigate to the newly created version
       router.push(`/rules/${restoredRule.id}`)
@@ -328,7 +324,7 @@ export default function RuleDetailPage({ params }: Props) {
                   version: rule.version,
                   isLatest: rule.isLatest,
                   versionNotes: rule.versionNotes,
-                  updatedAt: rule.updatedAt,
+                  updatedAt: rule.updatedAt || '',
                   updatedBy: rule.updatedBy,
                 }}
                 versions={versions}
@@ -659,7 +655,11 @@ export default function RuleDetailPage({ params }: Props) {
                     <Loader2 className="w-6 h-6 animate-spin text-primary" />
                   </div>
                 ) : compareData1 && compareData2 ? (
-                  <VersionCompare oldVersion={compareData1} newVersion={compareData2} metadata={metadata} />
+                  <VersionCompare 
+                    oldVersion={{...compareData1, updatedAt: compareData1.updatedAt || ''}} 
+                    newVersion={{...compareData2, updatedAt: compareData2.updatedAt || ''}} 
+                    metadata={metadata as any} 
+                  />
                 ) : (
                   <button
                     onClick={async () => {
