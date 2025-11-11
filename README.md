@@ -83,42 +83,57 @@ WCO Data Set 4.2.0 compatible JSON samples are stored in the `json/` directory:
 
 ## 🚀 Quick Start
 
-See [QUICK_START.md](./QUICK_START.md) for detailed installation and setup instructions.
+### Option 1: Docker (Recommended)
+
+```bash
+# Start the complete application stack
+./docker.sh start
+
+# Or start only database for development
+./docker.sh dev
+```
+
+**Access URLs:**
+- Frontend: http://localhost:3000
+- Backend API: http://localhost:8080
+- Database: localhost:5432
+- pgAdmin (dev only): http://localhost:5050
 
 ---
 
+## 🐳 Docker Commands
+
+The project includes a convenient Docker management script:
+
+```bash
+# Start full production stack
+./docker.sh start
+
+# Start development environment (DB + pgAdmin only)
+./docker.sh dev
+
+# Stop all services
+./docker.sh stop
+
+# View logs
+./docker.sh logs
+
+# Build images
+./docker.sh build
+
+# Clean up everything
+./docker.sh clean
+
+# Show service status
+./docker.sh status
+```
+
 ## Prerequisites
 
+### For Docker Setup:
+- Docker & Docker Compose
+
+### For Manual Setup:
 - Java 17+
 - Node.js 18+
 - PostgreSQL
-
-## 🔧 Setup
-
-### 1. Start Backend
-
-```bash
-cd backend
-
-# Start database
-docker compose up -d
-
-# Start Spring Boot (JPA will auto-update schema)
-./gradlew bootRun
-
-# Backend runs on http://localhost:8080
-```
-
-### 2. Start Frontend
-
-```bash
-cd frontend
-
-# Install dependencies
-npm install
-
-# Start Next.js dev server
-npm run dev
-
-# Frontend runs on http://localhost:3000
-```
