@@ -247,9 +247,8 @@ public class ChangeRequestController {
             request.setApprovedDate(Instant.now());
             changeRequestRepository.save(request);
             
-            // Rebuild and deploy rules for the fact type
+            // Deploy rules for the fact type (this will rebuild and increment version)
             FactType factType = request.getFactType() != null ? request.getFactType() : FactType.DECLARATION;
-            ruleEngineManager.rebuildRules(factType.getValue());
             ruleEngineManager.deployRules(factType.getValue());
             
             ApproveChangeRequestResponse response = ApproveChangeRequestResponse.builder()

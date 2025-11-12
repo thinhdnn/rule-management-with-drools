@@ -5,7 +5,7 @@ import { FilterRow } from '@/components/FilterRow'
 import { DataTable } from '@/components/DataTable'
 import { PaginationBar } from '@/components/Pagination'
 import { api, fetchApi } from '@/lib/api'
-import { Rocket, FileText, Package } from 'lucide-react'
+import { FileText, Package } from 'lucide-react'
 
 export type Rule = {
   id: string
@@ -34,7 +34,6 @@ export default function RulesPage() {
   const [pageSize, setPageSize] = useState(10)
   const [sort, setSort] = useState<'name' | 'updatedAt'>('updatedAt')
   const [dir, setDir] = useState<'asc' | 'desc'>('desc')
-  const [deploying, setDeploying] = useState(false)
 
   // Load fact types on mount
   useEffect(() => {
@@ -110,22 +109,6 @@ export default function RulesPage() {
     return 'Notification'
   }
 
-  const handleDeploy = async () => {
-    if (!confirm('Deploy all active rules? This will create a new version and rebuild the KieContainer.')) {
-      return
-    }
-    try {
-      setDeploying(true)
-      await fetchApi(api.rules.deploy(), { method: 'POST' })
-      alert('Rules deployed successfully!')
-      refetch()
-    } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to deploy rules')
-    } finally {
-      setDeploying(false)
-    }
-  }
-
   const handleFactTypeChange = (factType: string) => {
     setSelectedFactType(factType)
     setPage(1)
@@ -138,14 +121,6 @@ export default function RulesPage() {
           <FileText className="w-6 h-6" />
           Rules
         </h1>
-        <button
-          onClick={handleDeploy}
-          disabled={deploying}
-          className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed focus-ring"
-        >
-          <Rocket size={16} className={deploying ? 'animate-pulse' : ''} />
-          {deploying ? 'Deploying...' : 'Deploy Rules'}
-        </button>
       </div>
 
       {/* Fact Type Tabs */}

@@ -94,12 +94,14 @@ public class RuleController {
     /**
      * Execute rules with Declaration data
      * This endpoint accepts Declaration data and fires all matching rules
+     * Supports testing with a specific version by passing "version" parameter
      * IMPORTANT: This endpoint must be placed BEFORE endpoints with path variables like /{id} or /{ruleId}/executions
      * to avoid path matching conflicts (Spring may match /execute with /{ruleId}/executions)
      */
     @PostMapping(value = "/execute", consumes = org.springframework.http.MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<?> executeRules(
-            @RequestBody Map<String, Object> declarationData) {
+            @RequestBody Map<String, Object> declarationData,
+            @RequestParam(required = false) Long version) {
         try {
             // Convert map to Declaration entity
             rule.engine.org.app.domain.entity.execution.declaration.Declaration declaration = 
@@ -110,8 +112,15 @@ public class RuleController {
             FactType factType = FactType.fromValue(factTypeStr);
             
             // Fire rules using RuleEngineManager
-            rule.engine.org.app.domain.entity.execution.TotalRuleResults results = 
-                ruleEngineManager.fireRules(factType.getValue(), declaration);
+            rule.engine.org.app.domain.entity.execution.TotalRuleResults results;
+            
+            if (version != null && version > 0) {
+                // Execute with specific version
+                results = ruleEngineManager.fireRulesWithVersion(factType.getValue(), declaration, version);
+            } else {
+                // Execute with current version
+                results = ruleEngineManager.fireRules(factType.getValue(), declaration);
+            }
             
             // Build response using DTO factory method
             RuleExecuteResponse response = RuleExecuteResponse.from(results, declaration.getDeclarationId());

@@ -199,7 +199,7 @@ public class RuleEngineManager {
                 lastHash = currentRulesHash;
             }
             
-            KieContainerBuildResult buildResult = buildKieContainer(rules, factType);
+            KieContainerBuildResult buildResult = buildKieContainer(rules, factType, currentVersion);
             
             // Atomic swap
             ContainerInfo oldInfo = containers.get(factType);
@@ -716,6 +716,74 @@ public class RuleEngineManager {
         return fireRules("Declaration", declaration);
     }
     
+    /**
+     * Fire rules with a specific version (for testing historical versions)
+     * This creates a temporary KieContainer from rules in the specified version
+     * 
+     * @param factType Fact type (e.g., "Declaration")
+     * @param fact Fact object to evaluate
+     * @param version Version number to test with (e.g., 1, 2, 3)
+     * @return TotalRuleResults
+     */
+    public TotalRuleResults fireRulesWithVersion(String factType, Object fact, long version) {
+        try {
+            // Get the version from database
+            FactType factTypeEnum = FactType.fromValue(factType);
+            Optional<KieContainerVersion> versionOpt = containerVersionRepository
+                .findByFactTypeAndVersion(factTypeEnum, version);
+            
+            if (versionOpt.isEmpty()) {
+                throw new IllegalArgumentException("Version " + version + " not found for fact type " + factType);
+            }
+            
+            KieContainerVersion containerVersion = versionOpt.get();
+            String ruleIds = containerVersion.getRuleIds();
+            
+            if (ruleIds == null || ruleIds.isEmpty()) {
+                throw new IllegalArgumentException("No rules found in version " + version + " for fact type " + factType);
+            }
+            
+            // Parse rule IDs and load rules
+            List<Long> ruleIdList = Arrays.stream(ruleIds.split(","))
+                .filter(s -> !s.isEmpty())
+                .map(Long::parseLong)
+                .collect(Collectors.toList());
+            
+            List<DecisionRule> rules = decisionRuleRepository.findAllById(ruleIdList);
+            
+            if (rules.isEmpty()) {
+                throw new IllegalArgumentException("Rules not found for version " + version + " of fact type " + factType);
+            }
+            
+            // Build temporary KieContainer with these rules
+            KieContainerBuildResult buildResult = buildKieContainer(rules, factType, version);
+            
+            try {
+                // Create result container
+                TotalRuleResults results = new TotalRuleResults();
+                results.setRunAt(LocalDateTime.now());
+                
+                StatelessKieSession session = buildResult.container.newStatelessKieSession();
+                // Set TotalRuleResults as global so rules can add outputs
+                session.setGlobal("totalResults", results);
+                session.execute(fact);
+                
+                // Aggregate results after execution
+                aggregateResults(results);
+                
+                return results;
+            } finally {
+                // Cleanup temporary container
+                if (buildResult.container != null) {
+                    buildResult.container.dispose();
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("[RULE ENGINE] Error executing rules with version " + version + " for fact type " + factType + ": " + e.getMessage());
+            throw new RuntimeException("Failed to execute rules with version " + version + " for fact type " + factType, e);
+        }
+    }
+    
     private void aggregateResults(TotalRuleResults results) {
         if (results.getHits().isEmpty()) {
             results.setTotalScore(BigDecimal.ZERO);
@@ -755,17 +823,17 @@ public class RuleEngineManager {
         results.setFinalFlag(finalFlag);
     }
     
-    private KieContainerBuildResult buildKieContainer(List<DecisionRule> rules, String factType) {
+    private KieContainerBuildResult buildKieContainer(List<DecisionRule> rules, String factType, long versionNumber) {
         KieServices kieServices = KieServices.Factory.get();
         KieFileSystem kfs = kieServices.newKieFileSystem();
         
-        // Set ReleaseId with format: org.rule.{factType}
+        // Set ReleaseId with format: org.rule.{factType}:{version}
         // groupId: "org.rule"
         // artifactId: factType in lowercase (e.g., "declaration", "cargoreport") - Maven convention
-        // version: "1.0.0" (fixed version for in-memory KieModule)
+        // version: use actual version number (e.g., "1.0.0", "2.0.0", "3.0.0")
         String groupId = "org.rule";
         String artifactId = factType.toLowerCase();
-        String version = "1.0.0";
+        String version = versionNumber + ".0.0";
         org.kie.api.builder.ReleaseId releaseId = kieServices.newReleaseId(groupId, artifactId, version);
         kfs.generateAndWritePomXML(releaseId);
         

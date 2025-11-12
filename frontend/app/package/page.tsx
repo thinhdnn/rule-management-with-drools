@@ -135,6 +135,7 @@ export default function PackagePage() {
   const [testData, setTestData] = useState(getTestData('Declaration'))
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<any>(null)
+  const [selectedTestVersion, setSelectedTestVersion] = useState<number | null>(null)
 
   const loadFactTypes = async () => {
     try {
@@ -212,8 +213,14 @@ export default function PackagePage() {
         declarationData.factType = 'Declaration'
       }
       
+      // Build URL with version parameter if selected
+      let executeUrl = api.rules.execute()
+      if (selectedTestVersion !== null && selectedTestVersion > 0) {
+        executeUrl += `?version=${selectedTestVersion}`
+      }
+      
       // Execute rules
-      const result = await fetchApi(api.rules.execute(), {
+      const result = await fetchApi(executeUrl, {
         method: 'POST',
         body: JSON.stringify(declarationData),
       })
@@ -295,6 +302,7 @@ export default function PackagePage() {
           <button
             onClick={() => {
               setTestData(getTestData(selectedFactType))
+              setSelectedTestVersion(packageInfo?.version || null)
               setShowTestModal(true)
             }}
             disabled={deploying || refreshing}
@@ -644,6 +652,7 @@ export default function PackagePage() {
                   setTestData('')
                   setTestResult(null)
                   setError(null)
+                  setSelectedTestVersion(null)
                 }}
                 className="text-slate-400 hover:text-slate-600"
               >
@@ -652,6 +661,31 @@ export default function PackagePage() {
             </div>
 
             <div className="space-y-4">
+              {/* Version Selector */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Test Version
+                </label>
+                <select
+                  value={selectedTestVersion || ''}
+                  onChange={(e) => setSelectedTestVersion(e.target.value ? Number(e.target.value) : null)}
+                  className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                >
+                  <option value="">Current Version (v{packageInfo?.version || 'N/A'})</option>
+                  {packageInfo?.versionHistory && packageInfo.versionHistory.length > 0 && 
+                    packageInfo.versionHistory.map((version) => (
+                      <option key={version.version} value={version.version}>
+                        v{version.version} - {version.rulesCount} rules
+                        {version.changesDescription ? ` (${version.changesDescription})` : ''}
+                      </option>
+                    ))
+                  }
+                </select>
+                <p className="text-xs text-slate-500 mt-1">
+                  {selectedTestVersion ? `Testing with version ${selectedTestVersion}` : 'Testing with current deployed version'}
+                </p>
+              </div>
+
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-2">
                   Declaration Data (JSON)
@@ -659,7 +693,7 @@ export default function PackagePage() {
                 <textarea
                   value={testData}
                   onChange={(e) => setTestData(e.target.value)}
-                  className="w-full h-96 p-3 border border-slate-300 rounded font-mono text-sm"
+                  className="w-full h-80 p-3 border border-slate-300 rounded font-mono text-sm"
                 />
               </div>
 
@@ -684,6 +718,7 @@ export default function PackagePage() {
                     setTestData('')
                     setTestResult(null)
                     setError(null)
+                    setSelectedTestVersion(null)
                   }}
                   className="px-4 py-2 bg-slate-200 text-slate-700 rounded hover:bg-slate-300"
                 >
