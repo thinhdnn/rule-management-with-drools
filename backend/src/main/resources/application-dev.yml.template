@@ -1,0 +1,17 @@
+# Development Profile Configuration Template
+# Copy this file to application-dev.yml and fill in your API keys
+# File application-dev.yml is in .gitignore and will NOT be committed
+
+# OpenAI Configuration for Development
+openai:
+  api-key: YOUR_OPENAI_API_KEY_HERE
+  enabled: true
+
+# Optional: Override other settings for development
+# spring:
+#   jpa:
+#     show-sql: true
+#   logging:
+#     level:
+#       rule.engine.org.app: DEBUG
+

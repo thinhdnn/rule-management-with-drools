@@ -39,6 +39,9 @@ dependencies {
 	// MapStruct for DTO <-> entity mappings
 	implementation 'org.mapstruct:mapstruct:1.6.2'
 
+	// OpenAI Java client (official SDK)
+	implementation 'com.openai:openai-java:4.7.1'
+
 	runtimeOnly 'org.postgresql:postgresql:42.7.4'
 
 	compileOnly 'org.projectlombok:lombok:1.18.34'

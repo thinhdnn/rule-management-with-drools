@@ -8,6 +8,7 @@ import rule.engine.org.app.api.request.RuleOutputRequest;
 import rule.engine.org.app.api.request.CreateRuleRequest;
 import rule.engine.org.app.api.request.UpdateRuleRequest;
 import rule.engine.org.app.api.request.RestoreVersionRequest;
+import rule.engine.org.app.api.request.ActivateVersionRequest;
 import rule.engine.org.app.api.response.ConditionResponse;
 import rule.engine.org.app.api.response.RuleExecutionResponse;
 import rule.engine.org.app.api.response.RuleExecuteResponse;
@@ -20,6 +21,7 @@ import rule.engine.org.app.api.response.RuleFieldMetadata;
 import rule.engine.org.app.api.response.RuleFieldMetadata.FieldDefinition;
 import rule.engine.org.app.domain.entity.ui.DecisionRule;
 import rule.engine.org.app.domain.entity.ui.FactType;
+import rule.engine.org.app.domain.entity.ui.RuleStatus;
 import rule.engine.org.app.domain.entity.ui.RuleExecutionResult;
 import rule.engine.org.app.domain.entity.ui.RuleConditionGroup;
 import rule.engine.org.app.domain.entity.ui.RuleCondition;
@@ -37,7 +39,10 @@ import rule.engine.org.app.domain.repository.RuleOutputGroupRepository;
 import rule.engine.org.app.domain.repository.KieContainerVersionRepository;
 import rule.engine.org.app.domain.service.RuleEngineManager;
 import rule.engine.org.app.domain.service.RuleVersionService;
+import rule.engine.org.app.domain.service.AIRuleGeneratorService;
 import rule.engine.org.app.domain.entity.ui.KieContainerVersion;
+import rule.engine.org.app.api.request.AIGenerateRuleRequest;
+import rule.engine.org.app.api.response.AIGenerateRuleResponse;
 import rule.engine.org.app.util.RuleFieldExtractor;
 import rule.engine.org.app.util.DrlConstants;
 
@@ -61,6 +66,7 @@ public class RuleController {
     private final RuleOutputRepository outputRepository;
     private final RuleOutputGroupRepository outputGroupRepository;
     private final KieContainerVersionRepository containerVersionRepository;
+    private final AIRuleGeneratorService aiRuleGeneratorService;
 
     public RuleController(DecisionRuleRepository decisionRuleRepository,
                         RuleExecutionResultRepository executionResultRepository,
@@ -70,7 +76,8 @@ public class RuleController {
                         RuleConditionRepository conditionRepository,
                         RuleOutputRepository outputRepository,
                         RuleOutputGroupRepository outputGroupRepository,
-                        KieContainerVersionRepository containerVersionRepository) {
+                        KieContainerVersionRepository containerVersionRepository,
+                        AIRuleGeneratorService aiRuleGeneratorService) {
         this.decisionRuleRepository = decisionRuleRepository;
         this.executionResultRepository = executionResultRepository;
         this.ruleEngineManager = ruleEngineManager;
@@ -80,6 +87,7 @@ public class RuleController {
         this.outputRepository = outputRepository;
         this.outputGroupRepository = outputGroupRepository;
         this.containerVersionRepository = containerVersionRepository;
+        this.aiRuleGeneratorService = aiRuleGeneratorService;
     }
 
     @GetMapping
@@ -133,6 +141,100 @@ public class RuleController {
                 .errorType(e.getClass().getName())
                 .build();
             log.error("Error executing rules", e);
+            return ResponseEntity.status(org.springframework.http.HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(errorResponse);
+        }
+    }
+
+    /**
+     * AI-powered rule generation endpoint.
+     * Accepts natural language input and generates a structured rule using OpenAI GPT.
+     * Returns the generated rule for preview or saves it directly based on previewOnly flag.
+     * IMPORTANT: This endpoint must be placed BEFORE endpoints with path variables like /{id}
+     */
+    @PostMapping(value = "/ai-generate", consumes = org.springframework.http.MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<AIGenerateRuleResponse> generateRuleFromNaturalLanguage(
+            @jakarta.validation.Valid @RequestBody AIGenerateRuleRequest request) {
+        try {
+            log.info("Received AI rule generation request: {}", request.getNaturalLanguageInput());
+            
+            // Generate rule using AI service
+            AIGenerateRuleResponse response = aiRuleGeneratorService.generateRule(request);
+            
+            // If not preview-only and generation was successful, save the rule
+            Boolean previewOnly = request.getPreviewOnly() != null ? request.getPreviewOnly() : true;
+            if (!previewOnly && response.getSuccess() && response.getValidation().getValid()) {
+                try {
+                    CreateRuleRequest ruleToSave = response.getGeneratedRule();
+                    
+                    // Check for duplicate rule name
+                    if (ruleToSave.getRuleName() != null) {
+                        Optional<DecisionRule> existingRule = 
+                            decisionRuleRepository.findByRuleNameAndIsLatestTrue(ruleToSave.getRuleName());
+                        if (existingRule.isPresent()) {
+                            response.setSuccess(false);
+                            response.setErrorMessage("Rule name already exists: " + ruleToSave.getRuleName());
+                            return ResponseEntity.badRequest().body(response);
+                        }
+                    }
+                    
+                    // Build and save rule
+                    DecisionRule rule = buildRuleFromRequest(ruleToSave);
+                    String ruleContent = buildCompleteDrlFromRequest(ruleToSave, rule);
+                    
+                    if (ruleContent == null || ruleContent.isBlank()) {
+                        response.setSuccess(false);
+                        response.setErrorMessage("Failed to generate rule content");
+                        return ResponseEntity.badRequest().body(response);
+                    }
+                    
+                    rule.setRuleContent(ruleContent);
+                    DecisionRule saved = decisionRuleRepository.save(rule);
+                    
+                    // Update rule content with actual ID
+                    if (saved.getId() != null && saved.getId() != 0L) {
+                        String updatedRuleContent = buildCompleteDrlFromRequest(ruleToSave, saved);
+                        if (updatedRuleContent != null && !updatedRuleContent.isBlank()) {
+                            saved.setRuleContent(updatedRuleContent);
+                            saved = decisionRuleRepository.save(saved);
+                        }
+                    }
+                    
+                    // Save conditions and outputs
+                    if (ruleToSave.getConditions() != null && !ruleToSave.getConditions().isEmpty()) {
+                        saveRuleConditions(saved, ruleToSave.getConditions());
+                    }
+                    
+                    if (ruleToSave.getOutput() != null) {
+                        saveRuleOutputs(saved, ruleToSave.getOutput());
+                    }
+                    
+                    // Set saved rule ID in response
+                    response.setSavedRuleId(saved.getId());
+                    
+                    log.info("AI-generated rule saved as DRAFT with ID: {} (no rebuild needed until activation)", saved.getId());
+                    
+                } catch (Exception e) {
+                    log.error("Error saving AI-generated rule", e);
+                    response.setSuccess(false);
+                    response.setErrorMessage("Generated rule is valid but failed to save: " + e.getMessage());
+                    return ResponseEntity.status(org.springframework.http.HttpStatus.INTERNAL_SERVER_ERROR).body(response);
+                }
+            }
+            
+            return ResponseEntity.ok(response);
+            
+        } catch (Exception e) {
+            log.error("Error in AI rule generation endpoint", e);
+            AIGenerateRuleResponse errorResponse = AIGenerateRuleResponse.builder()
+                .success(false)
+                .errorMessage("Failed to generate rule: " + e.getMessage())
+                .suggestions(List.of(
+                    "Please try rephrasing your request",
+                    "Ensure OpenAI API is properly configured",
+                    "Check system logs for detailed error information"
+                ))
+                .build();
             return ResponseEntity.status(org.springframework.http.HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(errorResponse);
         }
@@ -375,14 +477,18 @@ public class RuleController {
     }
 
     @PostMapping("/refresh")
-    public ResponseEntity<String> refreshRules(
+    public ResponseEntity<Map<String, String>> refreshRules(
             @RequestParam(required = false) String factType) {
         if (factType != null && !factType.isEmpty()) {
             ruleEngineManager.rebuildRules(factType);
         } else {
             ruleEngineManager.rebuildRules(); // Rebuild all fact types
         }
-        return ResponseEntity.ok("Rules refreshed successfully");
+        return ResponseEntity.ok(Map.of(
+            "success", "true",
+            "message", "Rules refreshed successfully",
+            "factType", factType != null ? factType : "All"
+        ));
     }
 
     @PostMapping("/deploy")
@@ -660,7 +766,7 @@ public class RuleController {
 
     @GetMapping("/active")
     public List<DecisionRule> getActiveRules() {
-        return decisionRuleRepository.findByActiveTrue();
+        return decisionRuleRepository.findByStatus(RuleStatus.ACTIVE);
     }
 
     @GetMapping("/metadata")
@@ -849,6 +955,14 @@ public class RuleController {
                 rule.setFactType(factType);
             } else {
                 rule.setFactType(FactType.DECLARATION); // Default
+            }
+            
+            // IMPORTANT: For new rules (CreateRuleRequest), set defaults
+            if (request instanceof CreateRuleRequest) {
+                rule.setIsLatest(true);
+                rule.setVersion(1);
+                rule.setParentRuleId(null); // No parent for new rules
+                rule.setStatus(RuleStatus.DRAFT); // New rules start as DRAFT
             }
 
             return rule;
@@ -1255,9 +1369,11 @@ public class RuleController {
             .id(rule.getId())
             .ruleName(rule.getRuleName())
             .label(rule.getLabel())
+            .factType(rule.getFactType() != null ? rule.getFactType().getValue() : null)
             .ruleContent(rule.getRuleContent())
             .priority(rule.getPriority())
-            .active(rule.getActive())
+            .status(rule.getStatus() != null ? rule.getStatus().name() : RuleStatus.DRAFT.name())
+            .generatedByAi(rule.getGeneratedByAi())
             .version(rule.getVersion())
             .parentRuleId(rule.getParentRuleId())
             .isLatest(rule.getIsLatest())
@@ -1431,5 +1547,227 @@ public class RuleController {
             case BOOLEAN -> condition.getValueBoolean();
             default -> condition.getValueText();
         };
+    }
+    
+    // ==================== VERSION SNAPSHOT ENDPOINTS ====================
+    
+    /**
+     * Get all rules deployed in a specific version
+     * 
+     * Example: GET /api/v1/rules/versions/2/snapshot?factType=Declaration
+     * Returns list of rules that were deployed in version 2
+     */
+    @GetMapping("/versions/{version}/snapshot")
+    public ResponseEntity<?> getVersionSnapshot(
+            @PathVariable Integer version,
+            @RequestParam(required = false, defaultValue = "Declaration") String factType) {
+        try {
+            FactType factTypeEnum = FactType.fromValue(factType);
+            rule.engine.org.app.domain.repository.RuleDeploymentSnapshotRepository snapshotRepo =
+                applicationContext.getBean(rule.engine.org.app.domain.repository.RuleDeploymentSnapshotRepository.class);
+            
+            List<rule.engine.org.app.domain.entity.ui.RuleDeploymentSnapshot> snapshots = 
+                snapshotRepo.findByFactTypeAndContainerVersionOrderByRulePriorityAsc(factTypeEnum, version);
+            
+            Map<String, Object> response = Map.of(
+                "version", version,
+                "factType", factType,
+                "ruleCount", snapshots.size(),
+                "rules", snapshots.stream().map(s -> Map.of(
+                    "id", s.getRuleId(),
+                    "name", s.getRuleName(),
+                    "version", s.getRuleVersion(),
+                    "priority", s.getRulePriority(),
+                    "active", s.getRuleActive()
+                )).collect(Collectors.toList())
+            );
+            
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            log.error("Failed to get version snapshot", e);
+            return ResponseEntity.internalServerError()
+                .body(ErrorResponse.builder()
+                    .success(false)
+                    .error(e.getMessage())
+                    .build());
+        }
+    }
+    
+    /**
+     * Get all available versions for a fact type
+     * 
+     * Example: GET /api/v1/rules/versions?factType=Declaration
+     * Returns: [5, 4, 3, 2, 1]
+     */
+    @GetMapping("/versions")
+    public ResponseEntity<?> getAvailableVersions(
+            @RequestParam(required = false, defaultValue = "Declaration") String factType) {
+        try {
+            FactType factTypeEnum = FactType.fromValue(factType);
+            rule.engine.org.app.domain.repository.RuleDeploymentSnapshotRepository snapshotRepo =
+                applicationContext.getBean(rule.engine.org.app.domain.repository.RuleDeploymentSnapshotRepository.class);
+            
+            List<Integer> versions = snapshotRepo.findDistinctContainerVersionsByFactType(factTypeEnum);
+            
+            return ResponseEntity.ok(Map.of(
+                "factType", factType,
+                "versions", versions
+            ));
+        } catch (Exception e) {
+            log.error("Failed to get available versions", e);
+            return ResponseEntity.internalServerError()
+                .body(ErrorResponse.builder()
+                    .success(false)
+                    .error(e.getMessage())
+                    .build());
+        }
+    }
+    
+    /**
+     * Compare two versions to see what changed
+     * 
+     * Example: GET /api/v1/rules/versions/compare?from=1&to=2&factType=Declaration
+     * Returns: added, removed, and common rules
+     */
+    @GetMapping("/versions/compare")
+    public ResponseEntity<?> compareVersions(
+            @RequestParam Integer from,
+            @RequestParam Integer to,
+            @RequestParam(required = false, defaultValue = "Declaration") String factType) {
+        try {
+            FactType factTypeEnum = FactType.fromValue(factType);
+            rule.engine.org.app.domain.repository.RuleDeploymentSnapshotRepository snapshotRepo =
+                applicationContext.getBean(rule.engine.org.app.domain.repository.RuleDeploymentSnapshotRepository.class);
+            
+            List<rule.engine.org.app.domain.entity.ui.RuleDeploymentSnapshot> fromSnapshots = 
+                snapshotRepo.findByFactTypeAndContainerVersionOrderByRulePriorityAsc(factTypeEnum, from);
+            List<rule.engine.org.app.domain.entity.ui.RuleDeploymentSnapshot> toSnapshots = 
+                snapshotRepo.findByFactTypeAndContainerVersionOrderByRulePriorityAsc(factTypeEnum, to);
+            
+            java.util.Set<Long> fromRuleIds = fromSnapshots.stream()
+                .map(rule.engine.org.app.domain.entity.ui.RuleDeploymentSnapshot::getRuleId)
+                .collect(Collectors.toSet());
+            java.util.Set<Long> toRuleIds = toSnapshots.stream()
+                .map(rule.engine.org.app.domain.entity.ui.RuleDeploymentSnapshot::getRuleId)
+                .collect(Collectors.toSet());
+            
+            List<Map<String, Object>> added = toSnapshots.stream()
+                .filter(s -> !fromRuleIds.contains(s.getRuleId()))
+                .map(s -> Map.of(
+                    "id", (Object) s.getRuleId(),
+                    "name", s.getRuleName(),
+                    "version", s.getRuleVersion(),
+                    "priority", s.getRulePriority()
+                ))
+                .collect(Collectors.toList());
+            
+            List<Map<String, Object>> removed = fromSnapshots.stream()
+                .filter(s -> !toRuleIds.contains(s.getRuleId()))
+                .map(s -> Map.of(
+                    "id", (Object) s.getRuleId(),
+                    "name", s.getRuleName(),
+                    "version", s.getRuleVersion(),
+                    "priority", s.getRulePriority()
+                ))
+                .collect(Collectors.toList());
+            
+            List<Map<String, Object>> common = toSnapshots.stream()
+                .filter(s -> fromRuleIds.contains(s.getRuleId()))
+                .map(s -> Map.of(
+                    "id", (Object) s.getRuleId(),
+                    "name", s.getRuleName(),
+                    "version", s.getRuleVersion(),
+                    "priority", s.getRulePriority()
+                ))
+                .collect(Collectors.toList());
+            
+            return ResponseEntity.ok(Map.of(
+                "from", from,
+                "to", to,
+                "factType", factType,
+                "added", added,
+                "removed", removed,
+                "common", common,
+                "summary", Map.of(
+                    "fromRuleCount", fromSnapshots.size(),
+                    "toRuleCount", toSnapshots.size(),
+                    "addedCount", added.size(),
+                    "removedCount", removed.size(),
+                    "commonCount", common.size()
+                )
+            ));
+        } catch (Exception e) {
+            log.error("Failed to compare versions", e);
+            return ResponseEntity.internalServerError()
+                .body(ErrorResponse.builder()
+                    .success(false)
+                    .error(e.getMessage())
+                    .build());
+        }
+    }
+    
+    /**
+     * Activate a specific version
+     * This allows switching to any historical version
+     * 
+     * Example: POST /api/v1/rules/versions/3/activate
+     * Body: { "factType": "Declaration", "createNewVersion": true, "activationNotes": "Rollback to stable version" }
+     */
+    @PostMapping("/versions/{version}/activate")
+    public ResponseEntity<?> activateVersion(
+            @PathVariable Integer version,
+            @RequestBody rule.engine.org.app.api.request.ActivateVersionRequest request) {
+        try {
+            if (request.getFactType() == null || request.getFactType().isEmpty()) {
+                request.setFactType("Declaration");
+            }
+            
+            FactType factTypeEnum = FactType.fromValue(request.getFactType());
+            boolean createNewVersion = request.getCreateNewVersion() != null ? request.getCreateNewVersion() : false;
+            
+            rule.engine.org.app.domain.service.VersionActivationService activationService =
+                applicationContext.getBean(rule.engine.org.app.domain.service.VersionActivationService.class);
+            
+            rule.engine.org.app.domain.service.VersionActivationService.VersionActivationResult result =
+                activationService.activateVersion(factTypeEnum, version, createNewVersion, request.getActivationNotes());
+            
+            // Check if activation failed
+            if (result.getSuccess() == null || !result.getSuccess()) {
+                return ResponseEntity.badRequest()
+                    .body(ErrorResponse.builder()
+                        .success(false)
+                        .error(result.getMessage())
+                        .build());
+            }
+            
+            // Success - build response (using HashMap to avoid null value issues with Map.of)
+            java.util.Map<String, Object> response = new java.util.HashMap<>();
+            response.put("success", result.getSuccess());
+            response.put("message", result.getMessage());
+            response.put("targetVersion", result.getTargetVersion());
+            response.put("factType", result.getFactType());
+            response.put("createdNewVersion", result.getCreatedNewVersion());
+            response.put("deactivatedRules", result.getDeactivatedRules());
+            response.put("activatedRules", result.getActivatedRules());
+            response.put("notFoundRules", result.getNotFoundRules());
+            
+            return ResponseEntity.ok(response);
+            
+        } catch (Exception e) {
+            log.error("Failed to activate version {}", version, e);
+            return ResponseEntity.internalServerError()
+                .body(ErrorResponse.builder()
+                    .success(false)
+                    .error(e.getMessage())
+                    .build());
+        }
+    }
+    
+    // ApplicationContext for bean lookup (injected via setter)
+    private org.springframework.context.ApplicationContext applicationContext;
+    
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setApplicationContext(org.springframework.context.ApplicationContext applicationContext) {
+        this.applicationContext = applicationContext;
     }
 }

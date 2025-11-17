@@ -67,7 +67,7 @@ public class RuleVersionService {
         newVersion.setLabel(updatedRule.getLabel());
         newVersion.setRuleContent(updatedRule.getRuleContent());
         newVersion.setPriority(updatedRule.getPriority());
-        newVersion.setActive(updatedRule.getActive());
+        newVersion.setStatus(updatedRule.getStatus());
         newVersion.setFactType(updatedRule.getFactType());
         
         // Set version tracking fields

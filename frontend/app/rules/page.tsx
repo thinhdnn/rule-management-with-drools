@@ -16,6 +16,7 @@ export type Rule = {
   outputType: 'Score' | 'Channel' | 'Flag' | 'Notification'
   status: 'Active' | 'Draft' | 'Inactive'
   updatedAt: string
+  generatedByAi?: boolean
 }
 
 type Filters = {
@@ -75,7 +76,10 @@ export default function RulesPage() {
         documentType: 'Import Declaration' as const,
         ruleType: inferRuleTypeFromExpression(rule.whenExpr || rule.ruleCondition),
         outputType: inferOutputTypeFromExpression(rule.ruleResult || rule.description),
-        status: rule.active ? 'Active' as const : 'Draft' as const,
+        status: rule.status === 'ACTIVE' ? 'Active' as const : 
+                rule.status === 'INACTIVE' ? 'Inactive' as const : 
+                'Draft' as const,
+        generatedByAi: rule.generatedByAi || false,
         updatedAt: rule.lastModifiedDate || rule.createdDate || rule.updatedAt || rule.createdAt || new Date().toISOString(),
       }))
       

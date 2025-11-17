@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { fetchApi, api } from '@/lib/api'
-import { Package, RefreshCw, Clock, User, Hash, FileText, Rocket, Play, X, Server } from 'lucide-react'
+import { Package, RefreshCw, Clock, User, Hash, FileText, Play, X, Server } from 'lucide-react'
 
 interface PackageInfo {
   version: number
@@ -51,8 +51,13 @@ export default function PackagePage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
-  const [deploying, setDeploying] = useState(false)
   const [showTestModal, setShowTestModal] = useState(false)
+  const [availableVersions, setAvailableVersions] = useState<number[]>([])
+  const [showActivateModal, setShowActivateModal] = useState(false)
+  const [selectedVersionToActivate, setSelectedVersionToActivate] = useState<number | null>(null)
+  const [activationMode, setActivationMode] = useState<'new' | 'rebuild'>('new')
+  const [activationNotes, setActivationNotes] = useState<string>('')
+  const [activating, setActivating] = useState(false)
   const getTestData = (factType: string) => `{
   "factType": "${factType}",
   "declarationId": "23IM123456",
@@ -159,10 +164,63 @@ export default function PackagePage() {
       const type = factType || selectedFactType
       const data = await fetchApi<PackageInfo>(api.rules.packageInfo(type))
       setPackageInfo(data)
+      
+      // Load available versions for activation
+      await loadAvailableVersions(type)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load package info')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const loadAvailableVersions = async (factType: string) => {
+    try {
+      const response = await fetchApi<{ factType: string; versions: number[] }>(
+        `${api.rules.list()}/versions?factType=${encodeURIComponent(factType)}`
+      )
+      setAvailableVersions(response.versions || [])
+    } catch (err) {
+      console.error('Failed to load available versions:', err)
+      setAvailableVersions([])
+    }
+  }
+
+  const handleActivateVersion = async () => {
+    if (!selectedVersionToActivate) return
+
+    setActivating(true)
+    try {
+      const response = await fetchApi<any>(
+        `${api.rules.list()}/versions/${selectedVersionToActivate}/activate`,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            factType: selectedFactType,
+            createNewVersion: activationMode === 'new',
+            activationNotes: activationNotes || undefined
+          })
+        }
+      )
+
+      setShowActivateModal(false)
+      setSelectedVersionToActivate(null)
+      setActivationNotes('')
+      
+      // Reload package info
+      await loadPackageInfo(selectedFactType)
+      
+      alert(
+        `✅ ${response.message}\n\n` +
+        `Deactivated: ${response.deactivatedRules} rules\n` +
+        `Activated: ${response.activatedRules} rules\n` +
+        (response.notFoundRules > 0 ? `⚠️ Not found: ${response.notFoundRules} rules` : '')
+      )
+    } catch (err) {
+      console.error('Failed to activate version:', err)
+      alert('❌ Failed to activate version: ' + (err instanceof Error ? err.message : 'Unknown error'))
+    } finally {
+      setActivating(false)
     }
   }
 
@@ -176,21 +234,6 @@ export default function PackagePage() {
       setError(err instanceof Error ? err.message : 'Failed to refresh rules')
     } finally {
       setRefreshing(false)
-    }
-  }
-
-  const handleDeploy = async () => {
-    try {
-      setDeploying(true)
-      setError(null)
-      await fetchApi(api.rules.deploy(selectedFactType), { method: 'POST' })
-      // Reload package info after deploy
-      await loadPackageInfo(selectedFactType)
-      alert('Rules deployed successfully!')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to deploy rules')
-    } finally {
-      setDeploying(false)
     }
   }
 
@@ -285,19 +328,11 @@ export default function PackagePage() {
         <div className="flex items-center gap-3">
           <button
             onClick={handleRefresh}
-            disabled={refreshing || deploying}
+            disabled={refreshing}
             className="flex items-center gap-2 px-4 py-2 bg-slate-600 text-white rounded-md hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed focus-ring"
           >
             <RefreshCw size={16} className={refreshing ? 'animate-spin' : ''} />
             Refresh
-          </button>
-          <button
-            onClick={handleDeploy}
-            disabled={deploying || refreshing}
-            className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed focus-ring"
-          >
-            <Rocket size={16} className={deploying ? 'animate-pulse' : ''} />
-            {deploying ? 'Deploying...' : 'Deploy'}
           </button>
           <button
             onClick={() => {
@@ -305,7 +340,7 @@ export default function PackagePage() {
               setSelectedTestVersion(packageInfo?.version || null)
               setShowTestModal(true)
             }}
-            disabled={deploying || refreshing}
+            disabled={refreshing}
             className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed focus-ring"
           >
             <Play size={16} />
@@ -521,6 +556,7 @@ export default function PackagePage() {
                   <th className="text-left py-2 px-4 text-sm font-semibold text-slate-700">Rule Details</th>
                   <th className="text-left py-2 px-4 text-sm font-semibold text-slate-700">Deployed At</th>
                   <th className="text-left py-2 px-4 text-sm font-semibold text-slate-700">Deployed By</th>
+                  <th className="text-right py-2 px-4 text-sm font-semibold text-slate-700">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -628,6 +664,23 @@ export default function PackagePage() {
                     </td>
                     <td className="py-3 px-4 text-sm">
                       {version.deployedBy || <span className="text-slate-400">-</span>}
+                    </td>
+                    <td className="py-3 px-4 text-right">
+                      {idx === 0 ? (
+                        <span className="text-xs text-slate-500 italic">Active</span>
+                      ) : (
+                        <button
+                          onClick={() => {
+                            setSelectedVersionToActivate(version.version)
+                            setActivationMode('new')
+                            setActivationNotes('')
+                            setShowActivateModal(true)
+                          }}
+                          className="text-sm px-3 py-1 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition-colors"
+                        >
+                          Activate
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -812,6 +865,128 @@ export default function PackagePage() {
                   </div>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Activate Version Modal */}
+      {showActivateModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b border-slate-200">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-semibold text-slate-900">
+                  Activate Version {selectedVersionToActivate}
+                </h2>
+                <button
+                  onClick={() => {
+                    setShowActivateModal(false)
+                    setSelectedVersionToActivate(null)
+                    setActivationNotes('')
+                  }}
+                  className="text-slate-400 hover:text-slate-600"
+                >
+                  <X size={24} />
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-6">
+              {/* Warning Message */}
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                <div className="flex items-start gap-3">
+                  <div className="text-amber-600 mt-0.5">⚠️</div>
+                  <div>
+                    <h3 className="font-semibold text-amber-900 mb-1">Version Activation</h3>
+                    <p className="text-sm text-amber-800">
+                      This will activate all rules from version <strong>v{selectedVersionToActivate}</strong> for{' '}
+                      <strong>{selectedFactType}</strong>. Current active rules will be deactivated.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Activation Mode */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-3">
+                  Activation Mode
+                </label>
+                <div className="space-y-3">
+                  <label className="flex items-start gap-3 p-4 border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-50 transition-colors">
+                    <input
+                      type="radio"
+                      name="activationMode"
+                      value="new"
+                      checked={activationMode === 'new'}
+                      onChange={() => setActivationMode('new')}
+                      className="mt-0.5"
+                    />
+                    <div>
+                      <div className="font-medium text-slate-900">Create New Version (Recommended)</div>
+                      <div className="text-sm text-slate-600 mt-1">
+                        Creates a new KieContainer version (e.g., v{(packageInfo?.version || 0) + 1}) with rules from v{selectedVersionToActivate}.
+                        Preserves full history and allows easy rollback.
+                      </div>
+                    </div>
+                  </label>
+
+                  <label className="flex items-start gap-3 p-4 border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-50 transition-colors">
+                    <input
+                      type="radio"
+                      name="activationMode"
+                      value="rebuild"
+                      checked={activationMode === 'rebuild'}
+                      onChange={() => setActivationMode('rebuild')}
+                      className="mt-0.5"
+                    />
+                    <div>
+                      <div className="font-medium text-slate-900">Rebuild Current Version</div>
+                      <div className="text-sm text-slate-600 mt-1">
+                        Replaces current version (v{packageInfo?.version || 0}) with rules from v{selectedVersionToActivate}.
+                        Does not increment version number. Use only for testing or quick fixes.
+                      </div>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              {/* Activation Notes */}
+              <div>
+                <label htmlFor="activationNotes" className="block text-sm font-medium text-slate-700 mb-2">
+                  Activation Notes (Optional)
+                </label>
+                <textarea
+                  id="activationNotes"
+                  value={activationNotes}
+                  onChange={(e) => setActivationNotes(e.target.value)}
+                  placeholder="e.g., 'Rollback due to production issue' or 'Reactivating stable version'"
+                  className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  rows={3}
+                />
+              </div>
+            </div>
+
+            <div className="p-6 border-t border-slate-200 flex items-center justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowActivateModal(false)
+                  setSelectedVersionToActivate(null)
+                  setActivationNotes('')
+                }}
+                disabled={activating}
+                className="px-4 py-2 border border-slate-300 rounded-md hover:bg-slate-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleActivateVersion}
+                disabled={activating}
+                className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                {activating && <RefreshCw size={16} className="animate-spin" />}
+                {activating ? 'Activating...' : 'Confirm Activation'}
+              </button>
             </div>
           </div>
         </div>

@@ -3,15 +3,16 @@ package rule.engine.org.app.domain.repository;
 import org.springframework.data.jpa.repository.JpaRepository;
 import rule.engine.org.app.domain.entity.ui.DecisionRule;
 import rule.engine.org.app.domain.entity.ui.FactType;
+import rule.engine.org.app.domain.entity.ui.RuleStatus;
 
 import java.util.List;
 import java.util.Optional;
 
 public interface DecisionRuleRepository extends JpaRepository<DecisionRule, Long> {
     
-    List<DecisionRule> findByActiveTrue();
+    List<DecisionRule> findByStatus(RuleStatus status);
     
-    List<DecisionRule> findByActiveTrueOrderByPriorityAsc();
+    List<DecisionRule> findByStatusOrderByPriorityAsc(RuleStatus status);
     
     // ========== VERSION MANAGEMENT QUERIES ==========
     
@@ -33,12 +34,24 @@ public interface DecisionRuleRepository extends JpaRepository<DecisionRule, Long
     /**
      * Find all latest active rules, ordered by priority
      */
-    List<DecisionRule> findByIsLatestTrueAndActiveTrueOrderByPriorityAsc();
+    List<DecisionRule> findByIsLatestTrueAndStatusOrderByPriorityAsc(RuleStatus status);
     
     /**
      * Find all latest active rules for a specific fact type, ordered by priority
      */
-    List<DecisionRule> findByFactTypeAndIsLatestTrueAndActiveTrueOrderByPriorityAsc(FactType factType);
+    List<DecisionRule> findByFactTypeAndIsLatestTrueAndStatusOrderByPriorityAsc(FactType factType, RuleStatus status);
+    
+    /**
+     * Find all rules by fact type, status, and latest flag
+     * Used for deployment to ensure only active and latest rules are deployed
+     */
+    List<DecisionRule> findByFactTypeAndStatusAndIsLatest(FactType factType, RuleStatus status, Boolean isLatest);
+    
+    /**
+     * Find all latest rules for a fact type (regardless of status)
+     * Used for change detection to compare with deployed version
+     */
+    List<DecisionRule> findByFactTypeAndIsLatestTrue(FactType factType);
     
     /**
      * Find rule by rule name and isLatest flag (for duplicate checking)

@@ -34,7 +34,9 @@ export async function GET(request: NextRequest) {
       documentType: 'Import Declaration', // Default (rules apply to all declaration types)
       ruleType: inferRuleTypeFromExpression(rule.whenExpr || rule.ruleCondition), // Support both formats
       outputType: inferOutputTypeFromExpression(rule.ruleResult || rule.description), // Use ruleResult or description
-      status: rule.active ? 'Active' : 'Inactive',
+      status: rule.status === 'ACTIVE' ? 'Active' as const : 
+              rule.status === 'INACTIVE' ? 'Inactive' as const : 
+              'Draft' as const,
       updatedAt: rule.lastModifiedDate || rule.createdDate || rule.updatedAt || rule.createdAt || new Date().toISOString(),
     }))
     

@@ -31,7 +31,7 @@ export const transformRule = (rule: any) => {
     factType: rule?.factType ?? 'Declaration', // Map factType from backend
     label: rule?.label ?? null,
     priority: rule?.priority ?? 0,
-    active: rule?.active ?? true,
+    status: rule?.status ?? 'DRAFT',
     conditions,
     ruleCondition,
     description: rule?.description ?? '',

@@ -26,7 +26,7 @@ type Rule = {
   ruleName: string
   label: string | null
   priority: number
-  active: boolean
+  status: string
   version: number
   versionNotes: string | null
   updatedAt: string
@@ -87,11 +87,11 @@ export function VersionCompare({ oldVersion, newVersion, metadata }: Props) {
         changed: oldVersion.priority !== newVersion.priority,
       },
       {
-        field: 'active',
+        field: 'status',
         label: 'Status',
-        oldValue: oldVersion.active,
-        newValue: newVersion.active,
-        changed: oldVersion.active !== newVersion.active,
+        oldValue: oldVersion.status,
+        newValue: newVersion.status,
+        changed: oldVersion.status !== newVersion.status,
       },
       {
         field: 'conditions',

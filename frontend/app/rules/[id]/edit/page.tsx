@@ -1,6 +1,6 @@
 'use client'
 
-import { use, useEffect, useState } from 'react'
+import { use, useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, Save, Loader2, Plus, Trash2, Edit } from 'lucide-react'
 import { SearchableSelect } from '@/components/SearchableSelect'
@@ -22,7 +22,7 @@ type Rule = {
   ruleName: string
   label: string | null
   priority: number
-  active: boolean
+  status: string
   ruleCondition: string
   description: string
   ruleAction: string | null
@@ -65,7 +65,6 @@ type RuleFormData = {
   ruleName: string
   label: string
   priority: number
-  active: boolean
   output: Record<string, string> // Dynamic output fields from metadata
   versionNotes: string
   conditions: Condition[]
@@ -92,33 +91,37 @@ export default function EditRulePage({ params }: Props) {
     conditions: [{ id: crypto.randomUUID(), field: '', operator: '', value: '', logicalOp: 'AND' }],
   })
 
-  // Initialize output fields from metadata
+  // Initialize output fields from metadata (only for missing fields)
   useEffect(() => {
     if (metadata?.outputFields) {
-      const initialOutput: Record<string, string> = {}
-      metadata.outputFields.forEach(field => {
-        initialOutput[field.name] = ''
+      setFormData(prev => {
+        const newOutput = { ...prev.output }
+        // Only add fields that don't exist yet (don't overwrite existing values)
+        metadata.outputFields.forEach(field => {
+          if (!(field.name in newOutput)) {
+            newOutput[field.name] = ''
+          }
+        })
+        return {
+          ...prev,
+          output: newOutput
+        }
       })
-      setFormData(prev => ({
-        ...prev,
-        output: { ...prev.output, ...initialOutput }
-      }))
     }
   }, [metadata])
 
-  // Fetch field metadata
-  useEffect(() => {
-    const fetchMetadata = async () => {
-      try {
-        const data = await fetchApi<FieldMetadata>(api.rules.metadata())
-        setMetadata(data)
-      } catch (err) {
-        console.error('Failed to load metadata:', err)
-      } finally {
-        setLoadingMetadata(false)
-      }
+  // Fetch field metadata based on rule's factType
+  // This will be called after rule is loaded
+  const fetchMetadataForFactType = useCallback(async (factType: string) => {
+    try {
+      setLoadingMetadata(true)
+      const data = await fetchApi<FieldMetadata>(api.rules.metadata(factType))
+      setMetadata(data)
+    } catch (err) {
+      console.error('Failed to load metadata:', err)
+    } finally {
+      setLoadingMetadata(false)
     }
-    fetchMetadata()
   }, [])
 
   // Fetch existing rule data
@@ -160,11 +163,15 @@ export default function EditRulePage({ params }: Props) {
           ruleName: rule.ruleName,
           label: rule.label || '',
           priority: rule.priority,
-          active: rule.active,
           output,
           versionNotes: '',
           conditions: conditions.length > 0 ? conditions : [{ id: crypto.randomUUID(), field: '', operator: '', value: '', logicalOp: 'AND' }],
         })
+        
+        // Load metadata based on rule's factType
+        const factType = rule.factType || 'Declaration'
+        await fetchMetadataForFactType(factType)
+        
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Unknown error')
       } finally {
@@ -172,7 +179,7 @@ export default function EditRulePage({ params }: Props) {
       }
     }
     fetchRule()
-  }, [id])
+  }, [id, fetchMetadataForFactType])
 
   // Basic parser for ruleCondition (handles simple cases)
   const parseRuleCondition = (expr: string): Condition[] => {

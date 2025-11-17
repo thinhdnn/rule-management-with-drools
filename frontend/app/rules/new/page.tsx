@@ -21,7 +21,6 @@ type RuleFormData = {
   label: string
   factType: string
   priority: number
-  active: boolean
   output: Record<string, string> // Dynamic output fields from metadata
   conditions: Condition[]
 }
@@ -59,7 +58,6 @@ export default function NewRulePage() {
     label: '',
     factType: 'Declaration',
     priority: 0,
-    active: true,
     output: {}, // Will be initialized from metadata
     conditions: [{ id: crypto.randomUUID(), field: '', operator: '', value: '', logicalOp: 'AND' }],
   })
@@ -146,7 +144,7 @@ export default function NewRulePage() {
         label: formData.ruleName, // Auto-generate label from ruleName
         factType: formData.factType, // Include factType
         priority: 10, // Default priority
-        active: false, // New rules default to draft (inactive)
+        // status: Backend will default to DRAFT for new rules
         conditions, // Send structured conditions array (not ruleCondition string)
         description: formData.ruleName, // Use ruleName as description
         output: Object.fromEntries(

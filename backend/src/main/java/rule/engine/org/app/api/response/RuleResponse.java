@@ -22,9 +22,11 @@ public class RuleResponse {
     private Long id;
     private String ruleName;
     private String label;
+    private String factType;
     private String ruleContent;
     private Integer priority;
-    private Boolean active;
+    private String status; // DRAFT, ACTIVE, INACTIVE
+    private Boolean generatedByAi;
     private String description;
     private List<Map<String, Object>> conditions;
     private Map<String, Object> output;

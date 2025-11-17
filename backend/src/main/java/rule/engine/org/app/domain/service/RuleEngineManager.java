@@ -9,6 +9,7 @@ import org.kie.api.runtime.StatelessKieSession;
 import org.springframework.stereotype.Service;
 import rule.engine.org.app.domain.entity.ui.DecisionRule;
 import rule.engine.org.app.domain.entity.ui.FactType;
+import rule.engine.org.app.domain.entity.ui.RuleStatus;
 import rule.engine.org.app.domain.entity.execution.declaration.Declaration;
 import rule.engine.org.app.domain.entity.execution.RuleOutputHit;
 import rule.engine.org.app.domain.entity.execution.TotalRuleResults;
@@ -32,6 +33,7 @@ public class RuleEngineManager {
     
     private final DecisionRuleRepository decisionRuleRepository;
     private final KieContainerVersionRepository containerVersionRepository;
+    private final rule.engine.org.app.domain.repository.RuleDeploymentSnapshotRepository snapshotRepository;
     private final ReadWriteLock lock = new ReentrantReadWriteLock();
     
     // Map to store containers by fact type
@@ -56,9 +58,11 @@ public class RuleEngineManager {
     
     public RuleEngineManager(
             DecisionRuleRepository decisionRuleRepository,
-            KieContainerVersionRepository containerVersionRepository) {
+            KieContainerVersionRepository containerVersionRepository,
+            rule.engine.org.app.domain.repository.RuleDeploymentSnapshotRepository snapshotRepository) {
         this.decisionRuleRepository = decisionRuleRepository;
         this.containerVersionRepository = containerVersionRepository;
+        this.snapshotRepository = snapshotRepository;
         
         // Load all fact types and build containers
         initializeContainers();
@@ -161,7 +165,7 @@ public class RuleEngineManager {
             // Load latest active rules for this fact type
             FactType factTypeEnum = FactType.fromValue(factType);
             List<DecisionRule> rules = decisionRuleRepository
-                .findByFactTypeAndIsLatestTrueAndActiveTrueOrderByPriorityAsc(factTypeEnum);
+                .findByFactTypeAndIsLatestTrueAndStatusOrderByPriorityAsc(factTypeEnum, RuleStatus.ACTIVE);
             
             // Calculate hash of current rules to detect changes
             String currentRulesHash = calculateRulesHash(rules);
@@ -237,6 +241,9 @@ public class RuleEngineManager {
                 
                 containerVersionRepository.save(versionEntity);
                 
+                // Save deployment snapshot (track which rules are in this version)
+                saveDeploymentSnapshot(factTypeEnum, currentVersion, rules);
+                
                 // Verify container after deployment
                 try {
                     StatelessKieSession testSession = buildResult.container.newStatelessKieSession();
@@ -268,7 +275,7 @@ public class RuleEngineManager {
     
     /**
      * Calculate hash of rules to detect changes
-     * Hash is based on rule IDs, ruleContent, priority, and active status
+     * Hash is based on rule IDs, ruleContent, priority, and status
      */
     private String calculateRulesHash(List<DecisionRule> rules) {
         try {
@@ -280,7 +287,7 @@ public class RuleEngineManager {
                 hashInput.append(rule.getId()).append(":");
                 hashInput.append(rule.getRuleContent() != null ? rule.getRuleContent() : "").append(":");
                 hashInput.append(rule.getPriority()).append(":");
-                hashInput.append(rule.getActive()).append("|");
+                hashInput.append(rule.getStatus()).append("|");
             }
             
             // Calculate MD5 hash
@@ -413,12 +420,12 @@ public class RuleEngineManager {
                             DecisionRule prevRule = prevRulesByLogicalId.get(logicalId);
                             
                             if (currentRule != null && prevRule != null) {
-                                // Check if rule content, priority, or active status changed
+                                // Check if rule content, priority, or status changed
                                 boolean contentChanged = !Objects.equals(currentRule.getRuleContent(), prevRule.getRuleContent());
                                 boolean priorityChanged = !Objects.equals(currentRule.getPriority(), prevRule.getPriority());
-                                boolean activeChanged = !Objects.equals(currentRule.getActive(), prevRule.getActive());
+                                boolean statusChanged = !Objects.equals(currentRule.getStatus(), prevRule.getStatus());
                                 
-                                if (contentChanged || priorityChanged || activeChanged) {
+                                if (contentChanged || priorityChanged || statusChanged) {
                                     Map<String, Object> ruleInfo = new HashMap<>();
                                     ruleInfo.put("id", currentLogicalToActualId.get(logicalId));
                                     ruleInfo.put("name", currentRuleNames.get(logicalId));
@@ -922,6 +929,37 @@ public class RuleEngineManager {
         }
         
         return rulePart;
+    }
+    
+    /**
+     * Save deployment snapshot to track which rules are in this version
+     */
+    private void saveDeploymentSnapshot(FactType factType, long containerVersion, List<DecisionRule> rules) {
+        try {
+            System.out.println("[RULE ENGINE]   Saving snapshot for version " + containerVersion + " with " + rules.size() + " rules...");
+            
+            for (DecisionRule rule : rules) {
+                rule.engine.org.app.domain.entity.ui.RuleDeploymentSnapshot snapshot = 
+                    new rule.engine.org.app.domain.entity.ui.RuleDeploymentSnapshot();
+                snapshot.setContainerVersion((int) containerVersion);
+                snapshot.setFactType(factType);
+                snapshot.setRuleId(rule.getId());
+                snapshot.setRuleName(rule.getRuleName());
+                snapshot.setRuleVersion(rule.getVersion());
+                snapshot.setRulePriority(rule.getPriority());
+                snapshot.setRuleActive(rule.getStatus() == RuleStatus.ACTIVE);
+                snapshot.setRuleContent(rule.getRuleContent());
+                
+                System.out.println("[RULE ENGINE]     - Saving rule: " + rule.getRuleName() + " (ID: " + rule.getId() + ")");
+                snapshotRepository.save(snapshot);
+                System.out.println("[RULE ENGINE]     ✓ Saved");
+            }
+            
+            System.out.println("[RULE ENGINE]   ✓ Saved snapshot: " + rules.size() + " rules for version " + containerVersion);
+        } catch (Exception e) {
+            System.err.println("[RULE ENGINE]   ✗ WARNING: Failed to save deployment snapshot: " + e.getMessage());
+            e.printStackTrace();
+        }
     }
     
     /**

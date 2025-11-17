@@ -1,0 +1,418 @@
+name: Live Demo with Docker (Self-Hosted)
+
+on:
+  workflow_dispatch:
+    inputs:
+      demo_duration:
+        description: 'Demo duration in minutes (max 120)'
+        required: false
+        default: '30'
+        type: string
+      demo_message:
+        description: 'Demo description/message'
+        required: false
+        default: 'Drools UI Demo (Docker)'
+        type: string
+
+# Grant permissions for the workflow to create issues
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  live-demo-docker:
+    runs-on: self-hosted
+    timeout-minutes: 135  # Max 135 minutes (setup + demo + cleanup)
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Check Prerequisites
+      run: |
+        echo "🔍 Checking prerequisites..."
+        
+        # Check Docker
+        if ! command -v docker &> /dev/null; then
+          echo "❌ Docker is not installed"
+          exit 1
+        fi
+        echo "✅ Docker: $(docker --version)"
+        
+        # Check Docker Compose
+        if ! command -v docker-compose &> /dev/null && ! docker compose version &> /dev/null; then
+          echo "❌ Docker Compose is not installed"
+          exit 1
+        fi
+        if command -v docker-compose &> /dev/null; then
+          echo "✅ Docker Compose: $(docker-compose --version)"
+        else
+          echo "✅ Docker Compose: $(docker compose version)"
+        fi
+        
+        # Detect architecture
+        ARCH=$(uname -m)
+        echo "✅ Architecture: $ARCH"
+        if [[ "$ARCH" == "aarch64" ]] || [[ "$ARCH" == "arm64" ]]; then
+          echo "✅ Running on ARM architecture"
+        fi
+        
+        # Get host IP address
+        if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+          HOST_IP=$(hostname -I | awk '{print $1}')
+        elif [[ "$OSTYPE" == "darwin"* ]]; then
+          HOST_IP=$(ipconfig getifaddr en0 || ipconfig getifaddr en1 || echo "localhost")
+        else
+          HOST_IP="localhost"
+        fi
+        echo "HOST_IP=$HOST_IP" >> $GITHUB_ENV
+        echo "✅ Host IP: $HOST_IP"
+
+    - name: Cleanup Previous Demo
+      run: |
+        echo "🧹 Cleaning up any previous demo containers..."
+        
+        # Stop and remove containers
+        docker-compose down -v 2>/dev/null || true
+        docker compose down -v 2>/dev/null || true
+        
+        # Remove old log files
+        rm -f docker-compose.log
+        
+        echo "✅ Cleanup completed"
+
+    - name: Build and Start Services with Docker Compose
+      run: |
+        echo "🐳 Building and starting services with Docker Compose..."
+        
+        # Use docker-compose or docker compose based on availability
+        if command -v docker-compose &> /dev/null; then
+          COMPOSE_CMD="docker-compose"
+        else
+          COMPOSE_CMD="docker compose"
+        fi
+        
+        # Build and start services in detached mode
+        $COMPOSE_CMD up -d --build 2>&1 | tee docker-compose.log
+        
+        echo "⏳ Waiting for services to be healthy..."
+        
+        # Wait for PostgreSQL
+        timeout=120
+        while [ $timeout -gt 0 ]; do
+          if $COMPOSE_CMD ps postgres | grep -q "healthy"; then
+            echo "✅ PostgreSQL is healthy"
+            break
+          fi
+          echo "⏳ Waiting for PostgreSQL... ($timeout seconds left)"
+          sleep 3
+          timeout=$((timeout-3))
+        done
+        
+        if [ $timeout -eq 0 ]; then
+          echo "❌ PostgreSQL failed to start"
+          $COMPOSE_CMD logs postgres
+          exit 1
+        fi
+        
+        # Wait for Backend
+        timeout=180
+        while [ $timeout -gt 0 ]; do
+          if $COMPOSE_CMD ps backend | grep -q "healthy"; then
+            echo "✅ Backend is healthy"
+            break
+          fi
+          echo "⏳ Waiting for backend... ($timeout seconds left)"
+          sleep 5
+          timeout=$((timeout-5))
+        done
+        
+        if [ $timeout -eq 0 ]; then
+          echo "❌ Backend failed to start"
+          $COMPOSE_CMD logs backend
+          exit 1
+        fi
+        
+        # Wait for Frontend
+        timeout=120
+        while [ $timeout -gt 0 ]; do
+          if $COMPOSE_CMD ps frontend | grep -q "healthy"; then
+            echo "✅ Frontend is healthy"
+            break
+          fi
+          echo "⏳ Waiting for frontend... ($timeout seconds left)"
+          sleep 5
+          timeout=$((timeout-5))
+        done
+        
+        if [ $timeout -eq 0 ]; then
+          echo "❌ Frontend failed to start"
+          $COMPOSE_CMD logs frontend
+          exit 1
+        fi
+        
+        echo "✅ All services are running and healthy"
+        
+        # Show running containers
+        echo "📊 Running containers:"
+        $COMPOSE_CMD ps
+
+    - name: Verify Services
+      run: |
+        echo "🔍 Verifying services are accessible..."
+        
+        # Wait a bit for services to be fully ready
+        sleep 5
+        
+        # Test direct access to services
+        curl -f http://localhost:9030 >/dev/null && echo "✅ Frontend accessible at http://localhost:9030" || echo "⚠️ Frontend not accessible"
+        curl -f http://localhost:9031/actuator/health >/dev/null && echo "✅ Backend accessible at http://localhost:9031" || echo "⚠️ Backend not accessible"
+        
+        # Set demo URLs based on host IP
+        echo "FRONTEND_URL=http://${{ env.HOST_IP }}:9030" >> $GITHUB_ENV
+        echo "BACKEND_URL=http://${{ env.HOST_IP }}:9031" >> $GITHUB_ENV
+        echo "✅ Services are accessible on host IP: ${{ env.HOST_IP }}"
+
+    - name: Create Demo Issue
+      id: create_issue
+      uses: actions/github-script@v7
+      continue-on-error: true
+      with:
+        script: |
+          const demoInfo = `
+          # 🚀 Live Demo Available! (Docker on Self-Hosted)
+          
+          **Demo Message:** ${{ github.event.inputs.demo_message }}
+          **Duration:** ${{ github.event.inputs.demo_duration }} minutes
+          **Started:** ${new Date().toISOString()}
+          **Environment:** Self-Hosted Runner with Docker
+          
+          ## 🔗 Access URLs (Local Network)
+          
+          ### 🌐 Demo Application
+          **Host IP:** \`${{ env.HOST_IP }}\`
+          
+          **Services:**
+          - ✅ **Frontend UI**: \`${{ env.FRONTEND_URL }}\`
+          - ✅ **Backend API**: \`${{ env.BACKEND_URL }}/api/v1\`
+          - ✅ **Health Check**: \`${{ env.BACKEND_URL }}/actuator/health\`
+          
+          **Available Functions:**
+          - 📋 Rules Management Interface
+          - 🔄 Version Control System  
+          - 📝 Change Request Workflow
+          - 🌍 WCO Data Processing
+          
+          **API Endpoints:**
+          - 📝 Rules API: \`${{ env.BACKEND_URL }}/api/v1/rules\`
+          - 📦 Metadata: \`${{ env.BACKEND_URL }}/api/v1/rules/metadata\`
+          - 🏥 Health: \`${{ env.BACKEND_URL }}/actuator/health\`
+          
+          ## 🐳 Docker Architecture
+          
+          - **PostgreSQL**: Database container (port 5432)
+          - **Spring Boot Backend**: Java application container (port 9031)
+          - **Next.js Frontend**: Node.js application container (port 9030)
+          - **Network**: All services in Docker bridge network
+          - **Platform**: ARM64 (Oracle Cloud)
+          
+          ## 📊 Sample WCO Data
+          
+          Test with sample JSON data available in the project:
+          - Import Goods Declaration
+          - Cargo Report Inventory
+          
+          ## ⚡ Quick Test
+          
+          1. Access Frontend URL from your local network
+          2. Navigate to Rules section
+          3. Create/Edit business rules
+          4. Test with WCO sample data
+          
+          ---
+          
+          > **⚠️ Important:** 
+          > - This demo is accessible only from the local network
+          > - This demo will automatically stop in ${{ github.event.inputs.demo_duration }} minutes
+          > - The services will become inactive after the demo ends
+          
+          **Workflow Run:** [${{ github.run_number }}](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
+          `;
+          
+          try {
+            const { data: issue } = await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `🐳 Docker Demo #${{ github.run_number }} - ${{ github.event.inputs.demo_message }}`,
+              body: demoInfo,
+              labels: ['demo', 'docker', 'self-hosted', 'local-network', 'temporary']
+            });
+            
+            console.log(`✅ Created demo issue: ${issue.html_url}`);
+            core.setOutput('issue_url', issue.html_url);
+          } catch (error) {
+            console.log(`⚠️ Failed to create issue: ${error.message}`);
+            core.setOutput('issue_url', '');
+          }
+
+    - name: Demo URLs Summary
+      run: |
+        cat << EOF >> $GITHUB_STEP_SUMMARY
+        # 🚀 Live Demo Available! (Docker - Local Network)
+        
+        **Demo Message:** ${{ github.event.inputs.demo_message }}
+        **Duration:** ${{ github.event.inputs.demo_duration }} minutes
+        **Started:** $(date -u +"%Y-%m-%dT%H:%M:%SZ")
+        **Environment:** Self-Hosted Runner with Docker
+        
+        ## 🔗 Access URLs (Local Network)
+        
+        ### 🌐 Demo Application
+        **Host IP:** ${{ env.HOST_IP }}
+        
+        ## 🧪 Quick Test
+        
+        - **Frontend UI:** ${{ env.FRONTEND_URL }}
+        - **Backend API:** ${{ env.BACKEND_URL }}/actuator/health
+        - **Rules API:** ${{ env.BACKEND_URL }}/api/v1/rules
+        
+        ## 🐳 Docker Architecture
+        
+        - PostgreSQL Database (port 5432)
+        - Spring Boot Backend (port 9031)
+        - Next.js Frontend (port 9030)
+        - All services in Docker containers
+        - Platform: ARM64 (Oracle Cloud)
+        - Accessible via local network or Cloudflared tunnel
+        
+        ## ⚠️ Important
+        - Demo is accessible only from the local network
+        - This demo will automatically stop in ${{ github.event.inputs.demo_duration }} minutes
+        - The services will become inactive after the demo ends
+        EOF
+
+    - name: Keep Demo Alive
+      run: |
+        duration_minutes=${{ github.event.inputs.demo_duration }}
+        duration_seconds=$((duration_minutes * 60))
+        
+        echo "🎯 Demo will run for $duration_minutes minutes ($duration_seconds seconds)"
+        echo ""
+        echo "🌐 Host IP: ${{ env.HOST_IP }}"
+        echo ""
+        echo "⏰ Demo started at: $(date)"
+        echo "⏰ Demo will end at: $(date -d "+$duration_minutes minutes" 2>/dev/null || date -v+${duration_minutes}M 2>/dev/null || echo "$(date) + $duration_minutes minutes")"
+        echo ""
+        echo "🧪 How to test (from local network):"
+        echo "  1. Frontend UI: ${{ env.FRONTEND_URL }}"
+        echo "  2. Backend API: ${{ env.BACKEND_URL }}/actuator/health"  
+        echo "  3. Rules API: ${{ env.BACKEND_URL }}/api/v1/rules"
+        echo "  4. All services running in Docker containers!"
+        
+        # Use docker-compose or docker compose based on availability
+        if command -v docker-compose &> /dev/null; then
+          COMPOSE_CMD="docker-compose"
+        else
+          COMPOSE_CMD="docker compose"
+        fi
+        
+        # Keep alive and show logs
+        end_time=$(($(date +%s) + duration_seconds))
+        while [ $(date +%s) -lt $end_time ]; do
+          remaining=$((end_time - $(date +%s)))
+          minutes=$((remaining / 60))
+          seconds=$((remaining % 60))
+          
+          echo "⏳ Demo running... ${minutes}m ${seconds}s remaining"
+          
+          # Show container status and logs every minute
+          if [ $((remaining % 60)) -eq 0 ]; then
+            echo "📊 Container Status:"
+            $COMPOSE_CMD ps
+            echo ""
+            echo "📋 Recent Backend Logs:"
+            $COMPOSE_CMD logs --tail=5 backend || echo "No backend logs"
+            echo ""
+            echo "📋 Recent Frontend Logs:"
+            $COMPOSE_CMD logs --tail=5 frontend || echo "No frontend logs"
+            echo "---"
+          fi
+          
+          sleep 10
+        done
+        
+        echo "⏰ Demo time ended at: $(date)"
+
+    - name: Cleanup Demo
+      if: always()
+      run: |
+        echo "🧹 Cleaning up demo..."
+        
+        # Use docker-compose or docker compose based on availability
+        if command -v docker-compose &> /dev/null; then
+          COMPOSE_CMD="docker-compose"
+        else
+          COMPOSE_CMD="docker compose"
+        fi
+        
+        # Stop and remove containers
+        $COMPOSE_CMD down -v
+        
+        # Clean up log files
+        rm -f docker-compose.log
+        
+        echo "✅ Cleanup completed"
+
+    - name: Debug Information
+      if: always()
+      run: |
+        echo "## 🔍 Debug Information"
+        
+        # Use docker-compose or docker compose based on availability
+        if command -v docker-compose &> /dev/null; then
+          COMPOSE_CMD="docker-compose"
+        else
+          COMPOSE_CMD="docker compose"
+        fi
+        
+        echo "### Docker Container Status:"
+        docker ps -a || echo "No containers found"
+        
+        echo ""
+        echo "### Docker Compose Status:"
+        $COMPOSE_CMD ps 2>/dev/null || echo "Docker Compose not running"
+        
+        echo ""
+        echo "### Port Status:"
+        netstat -tlnp 2>/dev/null | grep -E ":9030|:9031|:5432" || \
+        lsof -i :9030,9031,5432 2>/dev/null || \
+        echo "No ports found"
+        
+        echo ""
+        echo "### Docker Logs:"
+        if [ -f "docker-compose.log" ]; then
+          echo "📄 docker-compose.log (last 10 lines):"
+          tail -n 10 docker-compose.log
+        fi
+
+    - name: Demo Summary
+      if: always()
+      run: |
+        echo "## 📊 Demo Summary"
+        echo "**Duration:** ${{ github.event.inputs.demo_duration }} minutes"
+        echo "**Host IP:** ${{ env.HOST_IP }}"
+        echo "**Frontend URL:** ${{ env.FRONTEND_URL }}"
+        echo "**Backend URL:** ${{ env.BACKEND_URL }}"
+        echo "**Environment:** Self-Hosted Runner with Docker"
+        echo "**Status:** Demo completed"
+        echo ""
+        echo "🎯 **Docker Architecture:**"
+        echo "   - PostgreSQL: Database in container (port 5432)"
+        echo "   - Backend: Spring Boot in container (port 9031)"
+        echo "   - Frontend: Next.js in container (port 9030)"
+        echo "   - Network: Docker bridge network"
+        echo "   - Platform: ARM64 (Oracle Cloud)"
+        echo "   - Access: Local network or Cloudflared tunnel"
+        echo ""
+        echo "Thank you for trying Drools UI Demo with Docker! 🎉"
+

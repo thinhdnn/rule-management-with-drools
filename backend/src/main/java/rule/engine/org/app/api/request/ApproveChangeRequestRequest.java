@@ -6,8 +6,10 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.time.Instant;
+
 /**
- * DTO for approve change request request body
+ * DTO for approve change request request body with deployment options
  */
 @Data
 @Builder
@@ -15,6 +17,29 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class ApproveChangeRequestRequest {
+    /**
+     * User who approved the change request
+     */
     private String approvedBy;
+    
+    /**
+     * Deployment option: IMMEDIATE or SCHEDULED
+     */
+    private DeploymentOption deploymentOption;
+    
+    /**
+     * Scheduled deployment time (required if deploymentOption = SCHEDULED)
+     */
+    private Instant scheduledTime;
+    
+    /**
+     * Optional notes for deployment
+     */
+    private String deploymentNotes;
+    
+    public enum DeploymentOption {
+        IMMEDIATE,
+        SCHEDULED
+    }
 }
 

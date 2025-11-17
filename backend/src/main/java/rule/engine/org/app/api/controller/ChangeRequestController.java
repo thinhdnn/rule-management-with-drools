@@ -15,16 +15,18 @@ import rule.engine.org.app.api.response.ErrorResponse;
 import rule.engine.org.app.domain.entity.ui.ChangeRequest;
 import rule.engine.org.app.domain.entity.ui.ChangeRequestStatus;
 import rule.engine.org.app.domain.entity.ui.FactType;
+import rule.engine.org.app.domain.entity.ui.DecisionRule;
+import rule.engine.org.app.domain.entity.ui.KieContainerVersion;
+import rule.engine.org.app.domain.entity.ui.RuleStatus;
 import rule.engine.org.app.domain.repository.ChangeRequestRepository;
 import rule.engine.org.app.domain.repository.DecisionRuleRepository;
+import rule.engine.org.app.domain.repository.KieContainerVersionRepository;
 import rule.engine.org.app.domain.service.RuleEngineManager;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/v1/change-requests")
@@ -32,17 +34,26 @@ public class ChangeRequestController {
     
     /**
      * DTO for change request changes JSON structure
+     * Simplified to Include/Exclude model for clarity
      */
     @Data
     @NoArgsConstructor
     private static class ChangeRequestChanges {
+        private List<Long> rulesToInclude = new ArrayList<>();  // Rules to activate
+        private List<Long> rulesToExclude = new ArrayList<>();  // Rules to deactivate
+        
+        // Deprecated fields for backward compatibility
+        @Deprecated
         private List<Long> rulesToAdd = new ArrayList<>();
+        @Deprecated
         private List<Long> rulesToUpdate = new ArrayList<>();
+        @Deprecated
         private List<Long> rulesToDelete = new ArrayList<>();
     }
     
     /**
      * DTO for create change request request body
+     * Changes are auto-detected by comparing with deployed version
      */
     @Data
     @NoArgsConstructor
@@ -50,25 +61,31 @@ public class ChangeRequestController {
         private FactType factType = FactType.DECLARATION;
         private String title;
         private String description;
-        private ChangeRequestChanges changes;
+        // Note: changes field removed - auto-detected by backend
     }
 
     private static final Logger log = LoggerFactory.getLogger(ChangeRequestController.class);
 
     private final ChangeRequestRepository changeRequestRepository;
     private final DecisionRuleRepository decisionRuleRepository;
+    private final KieContainerVersionRepository containerVersionRepository;
     private final RuleEngineManager ruleEngineManager;
     private final ObjectMapper objectMapper;
+    private final rule.engine.org.app.domain.repository.ScheduledDeploymentRepository scheduledDeploymentRepository;
 
     public ChangeRequestController(
             ChangeRequestRepository changeRequestRepository,
             DecisionRuleRepository decisionRuleRepository,
+            KieContainerVersionRepository containerVersionRepository,
             RuleEngineManager ruleEngineManager,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            rule.engine.org.app.domain.repository.ScheduledDeploymentRepository scheduledDeploymentRepository) {
         this.changeRequestRepository = changeRequestRepository;
         this.decisionRuleRepository = decisionRuleRepository;
+        this.containerVersionRepository = containerVersionRepository;
         this.ruleEngineManager = ruleEngineManager;
         this.objectMapper = objectMapper;
+        this.scheduledDeploymentRepository = scheduledDeploymentRepository;
     }
     
     /**
@@ -136,30 +153,65 @@ public class ChangeRequestController {
     }
 
     /**
+     * Preview changes before creating a change request
+     * Returns detected changes without saving
+     */
+    @GetMapping("/preview-changes")
+    public ResponseEntity<?> previewChanges(@RequestParam(required = false) String factType) {
+        try {
+            FactType ft = factType != null && !factType.isEmpty() 
+                ? FactType.valueOf(factType.toUpperCase()) 
+                : FactType.DECLARATION;
+            
+            ChangeRequestChanges changes = detectChanges(ft);
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("factType", ft);
+            response.put("changes", changes);
+            response.put("totalChanges", changes.getRulesToInclude().size() + changes.getRulesToExclude().size());
+            
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            log.error("Failed to preview changes", e);
+            return ResponseEntity.badRequest().body(Map.of(
+                "success", false,
+                "error", e.getMessage()
+            ));
+        }
+    }
+    
+    /**
      * Create a new change request
+     * Automatically detects changes compared to the last deployed version
      */
     @PostMapping
     public ResponseEntity<?> createChangeRequest(@RequestBody CreateChangeRequestRequest request) {
         try {
-            // Build ChangeRequest entity using ObjectMapper for automatic mapping
+            FactType factType = request.getFactType() != null ? request.getFactType() : FactType.DECLARATION;
+            
+            // Auto-detect changes vs deployed version
+            ChangeRequestChanges detectedChanges = detectChanges(factType);
+            
+            // Build ChangeRequest entity
             ChangeRequest changeRequest = new ChangeRequest();
-            changeRequest.setFactType(request.getFactType() != null ? request.getFactType() : FactType.DECLARATION);
+            changeRequest.setFactType(factType);
             changeRequest.setTitle(request.getTitle());
             changeRequest.setDescription(request.getDescription());
             changeRequest.setStatus(ChangeRequestStatus.PENDING);
             
-            // Convert changes to JSON string
-            if (request.getChanges() != null) {
-                String changesJson = objectMapper.writeValueAsString(request.getChanges());
-                changeRequest.setChangesJson(changesJson);
-            }
+            // Store auto-detected changes
+            String changesJson = objectMapper.writeValueAsString(detectedChanges);
+            changeRequest.setChangesJson(changesJson);
             
             ChangeRequest saved = changeRequestRepository.save(changeRequest);
             
             CreateChangeRequestResponse response = CreateChangeRequestResponse.builder()
                 .success(true)
                 .id(saved.getId())
-                .message("Change request created successfully")
+                .message("Change request created successfully with " + 
+                    (detectedChanges.getRulesToInclude().size() + detectedChanges.getRulesToExclude().size()) + 
+                    " detected changes")
                 .build();
             
             return ResponseEntity.ok(response);
@@ -173,10 +225,80 @@ public class ChangeRequestController {
             return ResponseEntity.badRequest().body(errorResponse);
         }
     }
+    
+    /**
+     * Detect changes compared to last deployed version
+     * Returns rules that will be included (activated) or excluded (deactivated)
+     * 
+     * Logic:
+     * - Compare LATEST rules (both active AND draft) with deployed version
+     * - Rules to Include: New draft rules + Modified rules (new versions)
+     * - Rules to Exclude: Previously deployed rules that are now removed/replaced
+     */
+    private ChangeRequestChanges detectChanges(FactType factType) {
+        ChangeRequestChanges changes = new ChangeRequestChanges();
+        
+        // Get latest deployed version
+        Optional<KieContainerVersion> deployedVersion = containerVersionRepository
+            .findTopByFactTypeOrderByVersionDesc(factType);
+        
+        // Get ALL current latest rules (active + draft)
+        // Draft rules are new rules that need to be activated through change request
+        List<DecisionRule> currentLatestRules = decisionRuleRepository
+            .findByFactTypeAndIsLatestTrue(factType);
+        
+        Set<Long> currentLatestRuleIds = currentLatestRules.stream()
+            .map(DecisionRule::getId)
+            .collect(Collectors.toSet());
+        
+        if (deployedVersion.isEmpty()) {
+            // First deployment
+            // Include all draft rules (need to be activated)
+            // Active rules shouldn't exist if never deployed, but include them too
+            changes.setRulesToInclude(new ArrayList<>(currentLatestRuleIds));
+            return changes;
+        }
+        
+        // Parse deployed rule IDs
+        String deployedRuleIds = deployedVersion.get().getRuleIds();
+        Set<Long> deployedRuleIdsSet = new HashSet<>();
+        if (deployedRuleIds != null && !deployedRuleIds.isEmpty()) {
+            deployedRuleIdsSet = Arrays.stream(deployedRuleIds.split(","))
+                .filter(s -> !s.isEmpty())
+                .map(Long::parseLong)
+                .collect(Collectors.toSet());
+        }
+        
+        // Detect changes:
+        // 1. Rules to Include: 
+        //    a) New draft rules (NOT in deployed version)
+        //    b) Modified rules (new version with different ID than deployed)
+        List<Long> rulesToInclude = new ArrayList<>();
+        for (Long ruleId : currentLatestRuleIds) {
+            if (!deployedRuleIdsSet.contains(ruleId)) {
+                rulesToInclude.add(ruleId);
+            }
+        }
+        
+        // 2. Rules to Exclude: Deployed rules that are NO LONGER in latest set
+        //    (Deactivated or replaced by new version)
+        List<Long> rulesToExclude = new ArrayList<>();
+        for (Long deployedRuleId : deployedRuleIdsSet) {
+            if (!currentLatestRuleIds.contains(deployedRuleId)) {
+                rulesToExclude.add(deployedRuleId);
+            }
+        }
+        
+        changes.setRulesToInclude(rulesToInclude);
+        changes.setRulesToExclude(rulesToExclude);
+        
+        return changes;
+    }
 
     /**
      * Approve a change request
-     * This will apply the changes and deploy the rules
+     * This will apply the changes and either deploy immediately or schedule deployment
+     * IMPORTANT: Only rules with status=ACTIVE AND isLatest=true will be deployed
      */
     @PostMapping("/{id}/approve")
     public ResponseEntity<?> approveChangeRequest(
@@ -209,36 +331,50 @@ public class ChangeRequestController {
                     @SuppressWarnings("unchecked")
                     Map<String, Object> changesMap = objectMapper.readValue(request.getChangesJson(), Map.class);
                     changes = new ChangeRequestChanges();
-                    changes.setRulesToAdd(convertToLongList(changesMap.getOrDefault("rulesToAdd", List.of())));
-                    changes.setRulesToUpdate(convertToLongList(changesMap.getOrDefault("rulesToUpdate", List.of())));
-                    changes.setRulesToDelete(convertToLongList(changesMap.getOrDefault("rulesToDelete", List.of())));
+                    // Try new format first (Include/Exclude)
+                    if (changesMap.containsKey("rulesToInclude") || changesMap.containsKey("rulesToExclude")) {
+                        changes.setRulesToInclude(convertToLongList(changesMap.getOrDefault("rulesToInclude", List.of())));
+                        changes.setRulesToExclude(convertToLongList(changesMap.getOrDefault("rulesToExclude", List.of())));
+                    } else {
+                        // Fallback to old format (Add/Update/Delete)
+                        changes.setRulesToAdd(convertToLongList(changesMap.getOrDefault("rulesToAdd", List.of())));
+                        changes.setRulesToUpdate(convertToLongList(changesMap.getOrDefault("rulesToUpdate", List.of())));
+                        changes.setRulesToDelete(convertToLongList(changesMap.getOrDefault("rulesToDelete", List.of())));
+                    }
                 }
             } else {
                 changes = new ChangeRequestChanges();
             }
             
-            // Apply changes: activate rules to add/update, deactivate rules to delete
-            // Activate rules to add/update
-            changes.getRulesToAdd().forEach(ruleId -> 
-                decisionRuleRepository.findById(ruleId).ifPresent(rule -> {
-                    rule.setActive(true);
-                    decisionRuleRepository.save(rule);
-                })
-            );
-            changes.getRulesToUpdate().forEach(ruleId -> 
-                decisionRuleRepository.findById(ruleId).ifPresent(rule -> {
-                    rule.setActive(true);
-                    decisionRuleRepository.save(rule);
-                })
-            );
+            // IMPORTANT: Process rule state changes before deployment
             
-            // Deactivate rules to delete
-            changes.getRulesToDelete().forEach(ruleId -> 
-                decisionRuleRepository.findById(ruleId).ifPresent(rule -> {
-                    rule.setActive(false);
-                    decisionRuleRepository.save(rule);
-                })
-            );
+            // 1. Activate draft rules (new rules or new versions)
+            if (!changes.getRulesToInclude().isEmpty()) {
+                changes.getRulesToInclude().forEach(ruleId -> 
+                    decisionRuleRepository.findById(ruleId).ifPresent(rule -> {
+                        if (rule.getStatus() != RuleStatus.ACTIVE) {
+                            log.info("Activating rule #{} (version {}) - status: {} → ACTIVE", 
+                                ruleId, rule.getVersion(), rule.getStatus());
+                            rule.setStatus(RuleStatus.ACTIVE);
+                            decisionRuleRepository.save(rule);
+                        }
+                    })
+                );
+            }
+            
+            // 2. Deactivate old versions (rules being replaced or removed)
+            if (!changes.getRulesToExclude().isEmpty()) {
+                changes.getRulesToExclude().forEach(ruleId -> 
+                    decisionRuleRepository.findById(ruleId).ifPresent(rule -> {
+                        if (rule.getStatus() == RuleStatus.ACTIVE) {
+                            log.info("Deactivating rule #{} (version {}) - replaced by newer version or removed", 
+                                ruleId, rule.getVersion());
+                            rule.setStatus(RuleStatus.INACTIVE);
+                            decisionRuleRepository.save(rule);
+                        }
+                    })
+                );
+            }
             
             // Update change request status
             request.setStatus(ChangeRequestStatus.APPROVED);
@@ -247,13 +383,81 @@ public class ChangeRequestController {
             request.setApprovedDate(Instant.now());
             changeRequestRepository.save(request);
             
-            // Deploy rules for the fact type (this will rebuild and increment version)
             FactType factType = request.getFactType() != null ? request.getFactType() : FactType.DECLARATION;
-            ruleEngineManager.deployRules(factType.getValue());
+            
+            // Determine deployment option (default to IMMEDIATE for backward compatibility)
+            ApproveChangeRequestRequest.DeploymentOption deploymentOption = 
+                (requestBody != null && requestBody.getDeploymentOption() != null) 
+                    ? requestBody.getDeploymentOption() 
+                    : ApproveChangeRequestRequest.DeploymentOption.IMMEDIATE;
+            
+            String message;
+            
+            if (deploymentOption == ApproveChangeRequestRequest.DeploymentOption.SCHEDULED) {
+                // Validate scheduled time
+                if (requestBody == null || requestBody.getScheduledTime() == null) {
+                    ErrorResponse errorResponse = ErrorResponse.builder()
+                        .success(false)
+                        .error("Scheduled time is required for SCHEDULED deployment")
+                        .errorType("ValidationException")
+                        .build();
+                    return ResponseEntity.badRequest().body(errorResponse);
+                }
+                
+                if (requestBody.getScheduledTime().isBefore(Instant.now())) {
+                    ErrorResponse errorResponse = ErrorResponse.builder()
+                        .success(false)
+                        .error("Scheduled time must be in the future")
+                        .errorType("ValidationException")
+                        .build();
+                    return ResponseEntity.badRequest().body(errorResponse);
+                }
+                
+                // Create scheduled deployment
+                rule.engine.org.app.domain.entity.ui.ScheduledDeployment scheduledDeployment = 
+                    new rule.engine.org.app.domain.entity.ui.ScheduledDeployment();
+                scheduledDeployment.setChangeRequestId(request.getId());
+                scheduledDeployment.setFactType(factType);
+                scheduledDeployment.setScheduledTime(requestBody.getScheduledTime());
+                scheduledDeployment.setDeploymentNotes(requestBody.getDeploymentNotes());
+                scheduledDeployment.setStatus(rule.engine.org.app.domain.entity.ui.ScheduledDeployment.DeploymentStatus.PENDING);
+                scheduledDeploymentRepository.save(scheduledDeployment);
+                
+                message = String.format(
+                    "Change request approved. Deployment scheduled for %s. Only active and latest rules will be deployed.",
+                    requestBody.getScheduledTime()
+                );
+                
+                log.info("Change request {} approved with scheduled deployment at {}", 
+                    id, requestBody.getScheduledTime());
+                
+            } else {
+                // IMMEDIATE deployment
+                // Validate that there are active and latest rules to deploy
+                List<rule.engine.org.app.domain.entity.ui.DecisionRule> rulesToDeploy = 
+                    decisionRuleRepository.findByFactTypeAndStatusAndIsLatest(factType, RuleStatus.ACTIVE, true);
+                
+                if (rulesToDeploy.isEmpty()) {
+                    log.warn("No active and latest rules found for fact type: {}. Skipping deployment.", 
+                        factType.getValue());
+                    message = "Change request approved but no active and latest rules to deploy";
+                } else {
+                    log.info("Deploying {} active and latest rules for fact type: {}", 
+                        rulesToDeploy.size(), factType.getValue());
+                    
+                    // Deploy rules for the fact type (this will rebuild and increment version)
+                    ruleEngineManager.deployRules(factType.getValue());
+                    
+                    message = String.format(
+                        "Change request approved and %d active and latest rules deployed successfully",
+                        rulesToDeploy.size()
+                    );
+                }
+            }
             
             ApproveChangeRequestResponse response = ApproveChangeRequestResponse.builder()
                 .success(true)
-                .message("Change request approved and changes deployed successfully")
+                .message(message)
                 .build();
             
             return ResponseEntity.ok(response);
@@ -330,6 +534,92 @@ public class ChangeRequestController {
         } catch (Exception e) {
             log.error("Failed to fetch fact types", e);
             return ResponseEntity.internalServerError().build();
+        }
+    }
+    
+    /**
+     * Get all scheduled deployments
+     */
+    @GetMapping("/scheduled-deployments")
+    public ResponseEntity<List<rule.engine.org.app.domain.entity.ui.ScheduledDeployment>> getScheduledDeployments(
+            @RequestParam(required = false) String status) {
+        try {
+            List<rule.engine.org.app.domain.entity.ui.ScheduledDeployment> deployments;
+            
+            if (status != null && !status.isEmpty()) {
+                rule.engine.org.app.domain.entity.ui.ScheduledDeployment.DeploymentStatus statusEnum = 
+                    rule.engine.org.app.domain.entity.ui.ScheduledDeployment.DeploymentStatus.valueOf(status.toUpperCase());
+                deployments = scheduledDeploymentRepository.findByStatusOrderByScheduledTimeDesc(statusEnum);
+            } else {
+                deployments = scheduledDeploymentRepository.findAll();
+            }
+            
+            return ResponseEntity.ok(deployments);
+        } catch (Exception e) {
+            log.error("Failed to fetch scheduled deployments", e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+    
+    /**
+     * Get upcoming scheduled deployments (PENDING and in future)
+     */
+    @GetMapping("/scheduled-deployments/upcoming")
+    public ResponseEntity<List<rule.engine.org.app.domain.entity.ui.ScheduledDeployment>> getUpcomingDeployments() {
+        try {
+            List<rule.engine.org.app.domain.entity.ui.ScheduledDeployment> deployments = 
+                scheduledDeploymentRepository.findByStatusAndScheduledTimeGreaterThanOrderByScheduledTimeAsc(
+                    rule.engine.org.app.domain.entity.ui.ScheduledDeployment.DeploymentStatus.PENDING,
+                    Instant.now()
+                );
+            return ResponseEntity.ok(deployments);
+        } catch (Exception e) {
+            log.error("Failed to fetch upcoming deployments", e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+    
+    /**
+     * Cancel a scheduled deployment
+     */
+    @PostMapping("/scheduled-deployments/{id}/cancel")
+    public ResponseEntity<?> cancelScheduledDeployment(@PathVariable Long id) {
+        try {
+            Optional<rule.engine.org.app.domain.entity.ui.ScheduledDeployment> deploymentOpt = 
+                scheduledDeploymentRepository.findById(id);
+            
+            if (deploymentOpt.isEmpty()) {
+                return ResponseEntity.notFound().build();
+            }
+            
+            rule.engine.org.app.domain.entity.ui.ScheduledDeployment deployment = deploymentOpt.get();
+            
+            if (deployment.getStatus() != rule.engine.org.app.domain.entity.ui.ScheduledDeployment.DeploymentStatus.PENDING) {
+                ErrorResponse errorResponse = ErrorResponse.builder()
+                    .success(false)
+                    .error("Can only cancel PENDING deployments")
+                    .errorType("ValidationException")
+                    .build();
+                return ResponseEntity.badRequest().body(errorResponse);
+            }
+            
+            deployment.setStatus(rule.engine.org.app.domain.entity.ui.ScheduledDeployment.DeploymentStatus.CANCELLED);
+            scheduledDeploymentRepository.save(deployment);
+            
+            Map<String, Object> response = Map.of(
+                "success", true,
+                "message", "Scheduled deployment cancelled successfully"
+            );
+            
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            log.error("Failed to cancel scheduled deployment {}", id, e);
+            ErrorResponse errorResponse = ErrorResponse.builder()
+                .success(false)
+                .error(e.getMessage())
+                .errorType(e.getClass().getName())
+                .build();
+            return ResponseEntity.internalServerError().body(errorResponse);
         }
     }
 }

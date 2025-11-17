@@ -31,4 +31,14 @@ management:
       exposure:
         include: health,info
 
+# OpenAI Configuration for AI-powered rule generation
+# For production: Set OPENAI_API_KEY and OPENAI_ENABLED environment variables
+# For development: Use application-dev.yml profile
+openai:
+  api-key: ${OPENAI_API_KEY:}
+  model: gpt-4o
+  temperature: 0.2
+  max-tokens: 2000
+  timeout: 30 
+  enabled: ${OPENAI_ENABLED:false}
 

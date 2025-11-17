@@ -26,18 +26,23 @@ export default function ChangeRequestsPage() {
   const [factTypes, setFactTypes] = useState<string[]>([])
   const [selectedFactType, setSelectedFactType] = useState<string>('All')
   const [selectedStatus, setSelectedStatus] = useState<string>('All')
+  const [currentTab, setCurrentTab] = useState<'requests' | 'scheduled'>('requests')
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [selectedChangeRequest, setSelectedChangeRequest] = useState<ChangeRequest | null>(null)
   const [showDetailModal, setShowDetailModal] = useState(false)
+  const [showDeploymentModal, setShowDeploymentModal] = useState(false)
+  const [deploymentOption, setDeploymentOption] = useState<'IMMEDIATE' | 'SCHEDULED'>('IMMEDIATE')
+  const [scheduledTime, setScheduledTime] = useState<string>('')
+  const [deploymentNotes, setDeploymentNotes] = useState<string>('')
   const [changeRequestRules, setChangeRequestRules] = useState<Map<number, any>>(new Map())
   const [createForm, setCreateForm] = useState({
     factType: 'Declaration',
     title: '',
     description: '',
-    rulesToAdd: [] as number[],
-    rulesToUpdate: [] as number[],
-    rulesToDelete: [] as number[],
   })
+  const [previewChanges, setPreviewChanges] = useState<any>(null)
+  const [previewLoading, setPreviewLoading] = useState(false)
+  const [previewRules, setPreviewRules] = useState<Map<number, any>>(new Map())
 
   // Load fact types on mount
   useEffect(() => {
@@ -64,14 +69,53 @@ export default function ChangeRequestsPage() {
     staleTime: 10_000,
   })
 
-  // Load rules for fact type selection
-  const { data: rules } = useQuery<any[]>({
-    queryKey: ['rules', createForm.factType],
+  // Load preview changes when fact type changes
+  useEffect(() => {
+    if (showCreateModal) {
+      loadPreviewChanges()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [createForm.factType, showCreateModal])
+
+  const loadPreviewChanges = async () => {
+    setPreviewLoading(true)
+    try {
+      const response = await fetchApi<any>(api.changeRequests.previewChanges(createForm.factType))
+      setPreviewChanges(response)
+      
+      // Load rules for preview
+      if (response?.changes) {
+        const allRuleIds = [
+          ...(response.changes.rulesToInclude || []),
+          ...(response.changes.rulesToExclude || [])
+        ]
+        
+        if (allRuleIds.length > 0) {
+          const rulesData = await fetchApi<any[]>(api.rules.list())
+          const rulesMap = new Map()
+          rulesData.forEach((rule: any) => {
+            if (allRuleIds.includes(rule.id)) {
+              rulesMap.set(rule.id, rule)
+            }
+          })
+          setPreviewRules(rulesMap)
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load preview:', err)
+    } finally {
+      setPreviewLoading(false)
+    }
+  }
+
+  // Query for scheduled deployments
+  const { data: scheduledDeployments, refetch: refetchScheduled } = useQuery<any[]>({
+    queryKey: ['scheduled-deployments'],
     queryFn: async () => {
-      const allRules = await fetchApi<any[]>(api.rules.list())
-      return allRules.filter((r: any) => r.factType === createForm.factType)
+      const response = await fetchApi<any[]>(api.changeRequests.scheduledDeployments.list())
+      return response
     },
-    enabled: showCreateModal,
+    enabled: currentTab === 'scheduled',
   })
 
   const handleCreate = async () => {
@@ -80,14 +124,9 @@ export default function ChangeRequestsPage() {
         factType: createForm.factType,
         title: createForm.title,
         description: createForm.description,
-        changes: {
-          rulesToAdd: createForm.rulesToAdd,
-          rulesToUpdate: createForm.rulesToUpdate,
-          rulesToDelete: createForm.rulesToDelete,
-        },
       }
 
-      await fetchApi(api.changeRequests.create(), {
+      const response = await fetchApi<any>(api.changeRequests.create(), {
         method: 'POST',
         body: JSON.stringify(payload),
       })
@@ -97,12 +136,9 @@ export default function ChangeRequestsPage() {
         factType: 'Declaration',
         title: '',
         description: '',
-        rulesToAdd: [],
-        rulesToUpdate: [],
-        rulesToDelete: [],
       })
       refetch()
-      alert('Change request created successfully!')
+      alert(response.message || 'Change request created successfully!')
     } catch (err) {
       console.error('Failed to create change request:', err)
       alert(err instanceof Error ? err.message : 'Failed to create change request')
@@ -110,17 +146,61 @@ export default function ChangeRequestsPage() {
   }
 
   const handleApprove = async (id: number) => {
-    if (!confirm('Are you sure you want to approve this change request? This will apply the changes and deploy the rules.')) {
-      return
+    // Find the change request to approve
+    const crToApprove = changeRequests?.find((cr: ChangeRequest) => cr.id === id)
+    if (!crToApprove) return
+    
+    // Show deployment options modal
+    setSelectedChangeRequest(crToApprove)
+    setDeploymentOption('IMMEDIATE')
+    setScheduledTime('')
+    setDeploymentNotes('')
+    setShowDeploymentModal(true)
+  }
+
+  const handleConfirmApprove = async () => {
+    if (!selectedChangeRequest) return
+
+    // Validate scheduled deployment
+    if (deploymentOption === 'SCHEDULED') {
+      if (!scheduledTime) {
+        alert('Please select a scheduled time')
+        return
+      }
+      const scheduled = new Date(scheduledTime)
+      if (scheduled <= new Date()) {
+        alert('Scheduled time must be in the future')
+        return
+      }
     }
 
     try {
-      await fetchApi(api.changeRequests.approve(id), {
+      const requestBody: any = {
+        approvedBy: 'current-user',
+        deploymentOption,
+      }
+
+      if (deploymentOption === 'SCHEDULED') {
+        requestBody.scheduledTime = new Date(scheduledTime).toISOString()
+        if (deploymentNotes) {
+          requestBody.deploymentNotes = deploymentNotes
+        }
+      }
+
+      await fetchApi(api.changeRequests.approve(selectedChangeRequest.id), {
         method: 'POST',
-        body: JSON.stringify({ approvedBy: 'current-user' }),
+        body: JSON.stringify(requestBody),
       })
+
+      setShowDeploymentModal(false)
+      setSelectedChangeRequest(null)
       refetch()
-      alert('Change request approved and changes deployed successfully!')
+
+      if (deploymentOption === 'IMMEDIATE') {
+        alert('Change request approved and rules deployed successfully!')
+      } else {
+        alert(`Change request approved! Deployment scheduled for ${new Date(scheduledTime).toLocaleString()}`)
+      }
     } catch (err) {
       console.error('Failed to approve change request:', err)
       alert(err instanceof Error ? err.message : 'Failed to approve change request')
@@ -227,8 +307,44 @@ export default function ChangeRequestsPage() {
         </button>
       </div>
 
-      {/* Filters */}
-      <div className="flex items-center gap-4 bg-white border border-outlineVariant rounded-md p-4">
+      {/* Tab Navigation */}
+      <div className="flex border-b border-slate-200">
+        <button
+          onClick={() => setCurrentTab('requests')}
+          className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
+            currentTab === 'requests'
+              ? 'border-indigo-600 text-indigo-600'
+              : 'border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300'
+          }`}
+        >
+          Change Requests
+          {changeRequests && changeRequests.length > 0 && (
+            <span className="ml-2 px-2 py-0.5 text-xs rounded-full bg-slate-100 text-slate-700">
+              {changeRequests.length}
+            </span>
+          )}
+        </button>
+        <button
+          onClick={() => setCurrentTab('scheduled')}
+          className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
+            currentTab === 'scheduled'
+              ? 'border-indigo-600 text-indigo-600'
+              : 'border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300'
+          }`}
+        >
+          <Clock className="w-4 h-4 inline mr-2" />
+          Scheduled Deployments
+          {scheduledDeployments && scheduledDeployments.length > 0 && (
+            <span className="ml-2 px-2 py-0.5 text-xs rounded-full bg-slate-100 text-slate-700">
+              {scheduledDeployments.length}
+            </span>
+          )}
+        </button>
+      </div>
+
+      {/* Filters (only show for change requests tab) */}
+      {currentTab === 'requests' && (
+        <div className="flex items-center gap-4 bg-white border border-outlineVariant rounded-md p-4">
         {/* Fact Type Filter */}
         <div className="flex items-center gap-2">
           <Package size={16} className="text-slate-500" />
@@ -262,8 +378,10 @@ export default function ChangeRequestsPage() {
           </select>
         </div>
       </div>
+      )}
 
       {/* Change Requests List */}
+      {currentTab === 'requests' && (
       <div className="bg-white border border-outlineVariant rounded-md overflow-hidden">
         {isLoading ? (
           <div className="p-8 text-center text-slate-500">Loading...</div>
@@ -336,6 +454,117 @@ export default function ChangeRequestsPage() {
           </div>
         )}
       </div>
+      )}
+
+      {/* Scheduled Deployments View */}
+      {currentTab === 'scheduled' && (
+        <div className="bg-white border border-outlineVariant rounded-md overflow-hidden">
+          {!scheduledDeployments ? (
+            <div className="p-8 text-center text-slate-500">Loading...</div>
+          ) : scheduledDeployments.length === 0 ? (
+            <div className="p-8 text-center text-slate-500">
+              <Clock className="w-12 h-12 mx-auto mb-4 text-slate-300" />
+              <p>No scheduled deployments found</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-slate-50 border-b border-outlineVariant">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-slate-600 uppercase">ID</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-slate-600 uppercase">Fact Type</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-slate-600 uppercase">Scheduled Time</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-slate-600 uppercase">Status</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-slate-600 uppercase">Retries</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-slate-600 uppercase">Notes</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-slate-600 uppercase">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-outlineVariant">
+                  {scheduledDeployments.map((deployment: any) => (
+                    <tr key={deployment.id} className="hover:bg-slate-50">
+                      <td className="px-4 py-3 text-sm text-slate-900">#{deployment.id}</td>
+                      <td className="px-4 py-3">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold bg-blue-100 text-blue-800 border border-blue-200">
+                          {deployment.factType}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-slate-700">
+                        {new Date(deployment.scheduledTime).toLocaleString()}
+                      </td>
+                      <td className="px-4 py-3">
+                        {deployment.status === 'PENDING' && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                            <Clock className="w-3 h-3 mr-1" />
+                            Pending
+                          </span>
+                        )}
+                        {deployment.status === 'EXECUTING' && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                            <Clock className="w-3 h-3 mr-1 animate-spin" />
+                            Executing
+                          </span>
+                        )}
+                        {deployment.status === 'COMPLETED' && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                            <CheckCircle className="w-3 h-3 mr-1" />
+                            Completed
+                          </span>
+                        )}
+                        {deployment.status === 'FAILED' && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                            <XCircle className="w-3 h-3 mr-1" />
+                            Failed
+                          </span>
+                        )}
+                        {deployment.status === 'CANCELLED' && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-800">
+                            Cancelled
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-slate-700">
+                        {deployment.retryCount} / {deployment.maxRetries}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-slate-700">
+                        {deployment.deploymentNotes || '-'}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        {deployment.status === 'PENDING' && (
+                          <button
+                            onClick={async () => {
+                              if (confirm('Cancel this scheduled deployment?')) {
+                                try {
+                                  await fetchApi(api.changeRequests.scheduledDeployments.cancel(deployment.id), {
+                                    method: 'POST',
+                                  })
+                                  refetchScheduled()
+                                  alert('Deployment cancelled successfully')
+                                } catch (err) {
+                                  console.error('Failed to cancel deployment:', err)
+                                  alert(err instanceof Error ? err.message : 'Failed to cancel deployment')
+                                }
+                              }
+                            }}
+                            className="px-3 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700"
+                          >
+                            Cancel
+                          </button>
+                        )}
+                        {deployment.status === 'FAILED' && deployment.errorMessage && (
+                          <span className="text-xs text-red-600" title={deployment.errorMessage}>
+                            Error: {deployment.errorMessage.substring(0, 50)}...
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Create Modal */}
       {showCreateModal && (
@@ -380,186 +609,160 @@ export default function ChangeRequestsPage() {
                   value={createForm.description}
                   onChange={(e) => setCreateForm({ ...createForm, description: e.target.value })}
                   className="w-full px-3 py-1.5 text-sm border border-outlineVariant rounded-md focus-ring"
-                  rows={3}
-                  placeholder="Describe the proposed changes..."
+                  rows={4}
+                  placeholder="Describe what was changed and why (e.g., Added new high-risk rules for Q1 2025, Updated threshold values, Deactivated obsolete rules...)"
                 />
               </div>
 
-              {/* Selected Rules Summary */}
-              {(createForm.rulesToAdd.length > 0 || createForm.rulesToUpdate.length > 0 || createForm.rulesToDelete.length > 0) && (
-                <div className="bg-slate-50 border border-outlineVariant rounded-md p-4 space-y-2">
-                  <div className="text-sm font-medium text-slate-700">Selected Changes:</div>
-                  {createForm.rulesToAdd.length > 0 && (
-                    <div className="text-xs text-slate-600">
-                      <span className="font-medium text-green-700">To Add:</span> {createForm.rulesToAdd.length} rule(s)
-                    </div>
-                  )}
-                  {createForm.rulesToUpdate.length > 0 && (
-                    <div className="text-xs text-slate-600">
-                      <span className="font-medium text-blue-700">To Update:</span> {createForm.rulesToUpdate.length} rule(s)
-                    </div>
-                  )}
-                  {createForm.rulesToDelete.length > 0 && (
-                    <div className="text-xs text-slate-600">
-                      <span className="font-medium text-red-700">To Delete:</span> {createForm.rulesToDelete.length} rule(s)
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Rules Table */}
-              {rules && rules.length > 0 && (
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-2">Select Rules</label>
-                  <div className="border border-outlineVariant rounded-md overflow-hidden">
-                    <div className="overflow-x-auto max-h-96 overflow-y-auto">
-                      <table className="w-full">
-                        <thead className="bg-slate-50 border-b border-outlineVariant sticky top-0">
-                          <tr>
-                            <th className="px-4 py-2 text-left text-xs font-medium text-slate-700 uppercase">Rule Name</th>
-                            <th className="px-4 py-2 text-left text-xs font-medium text-slate-700 uppercase">Status</th>
-                            <th className="px-4 py-2 text-center text-xs font-medium text-slate-700 uppercase">Actions</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-outlineVariant">
-                          {rules.map((rule: any) => {
-                            const ruleId = typeof rule.id === 'string' ? parseInt(rule.id, 10) : rule.id
-                            const isInAdd = createForm.rulesToAdd.includes(ruleId)
-                            const isInUpdate = createForm.rulesToUpdate.includes(ruleId)
-                            const isInDelete = createForm.rulesToDelete.includes(ruleId)
-                            const isSelected = isInAdd || isInUpdate || isInDelete
-                            const isDraft = !rule.active
-                            const isActive = rule.active
-
-                            return (
-                              <tr
-                                key={ruleId}
-                                className={`hover:bg-slate-50 ${isSelected ? 'bg-indigo-50' : ''}`}
-                              >
-                                <td className="px-4 py-2 text-sm text-slate-900">
-                                  {rule.ruleName || rule.name || `Rule #${ruleId}`}
-                                </td>
-                                <td className="px-4 py-2">
-                                  {isDraft ? (
-                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-                                      Draft
-                                    </span>
-                                  ) : (
-                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                      Active
-                                    </span>
-                                  )}
-                                </td>
-                                <td className="px-4 py-2">
-                                  <div className="flex items-center justify-center gap-2">
-                                    {isDraft && (
-                                      <button
-                                        onClick={() => {
-                                          if (isInAdd) {
-                                            setCreateForm({
-                                              ...createForm,
-                                              rulesToAdd: createForm.rulesToAdd.filter((id) => id !== ruleId),
-                                            })
-                                          } else {
-                                            setCreateForm({
-                                              ...createForm,
-                                              rulesToAdd: [...createForm.rulesToAdd, ruleId],
-                                              rulesToUpdate: createForm.rulesToUpdate.filter((id) => id !== ruleId),
-                                              rulesToDelete: createForm.rulesToDelete.filter((id) => id !== ruleId),
-                                            })
-                                          }
-                                        }}
-                                        className={`px-2 py-1 text-xs rounded focus-ring ${
-                                          isInAdd
-                                            ? 'bg-green-600 text-white hover:bg-green-700'
-                                            : 'bg-green-100 text-green-700 hover:bg-green-200'
-                                        }`}
-                                      >
-                                        {isInAdd ? '✓ Add' : 'Add'}
-                                      </button>
-                                    )}
-                                    {isActive && (
-                                      <>
-                                        <button
-                                          onClick={() => {
-                                            if (isInUpdate) {
-                                              setCreateForm({
-                                                ...createForm,
-                                                rulesToUpdate: createForm.rulesToUpdate.filter((id) => id !== ruleId),
-                                              })
-                                            } else {
-                                              setCreateForm({
-                                                ...createForm,
-                                                rulesToUpdate: [...createForm.rulesToUpdate, ruleId],
-                                                rulesToAdd: createForm.rulesToAdd.filter((id) => id !== ruleId),
-                                                rulesToDelete: createForm.rulesToDelete.filter((id) => id !== ruleId),
-                                              })
-                                            }
-                                          }}
-                                          className={`px-2 py-1 text-xs rounded focus-ring ${
-                                            isInUpdate
-                                              ? 'bg-blue-600 text-white hover:bg-blue-700'
-                                              : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
-                                          }`}
-                                        >
-                                          {isInUpdate ? '✓ Update' : 'Update'}
-                                        </button>
-                                        <button
-                                          onClick={() => {
-                                            if (isInDelete) {
-                                              setCreateForm({
-                                                ...createForm,
-                                                rulesToDelete: createForm.rulesToDelete.filter((id) => id !== ruleId),
-                                              })
-                                            } else {
-                                              setCreateForm({
-                                                ...createForm,
-                                                rulesToDelete: [...createForm.rulesToDelete, ruleId],
-                                                rulesToAdd: createForm.rulesToAdd.filter((id) => id !== ruleId),
-                                                rulesToUpdate: createForm.rulesToUpdate.filter((id) => id !== ruleId),
-                                              })
-                                            }
-                                          }}
-                                          className={`px-2 py-1 text-xs rounded focus-ring ${
-                                            isInDelete
-                                              ? 'bg-red-600 text-white hover:bg-red-700'
-                                              : 'bg-red-100 text-red-700 hover:bg-red-200'
-                                          }`}
-                                        >
-                                          {isInDelete ? '✓ Delete' : 'Delete'}
-                                        </button>
-                                      </>
-                                    )}
-                                  </div>
-                                </td>
-                              </tr>
-                            )
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
+              {/* Preview Changes */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Detected Changes (vs Last Deployed Version)
+                </label>
+                
+                {previewLoading ? (
+                  <div className="border border-outlineVariant rounded-md p-8 text-center">
+                    <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+                    <p className="text-sm text-slate-600 mt-2">Detecting changes...</p>
                   </div>
-                </div>
-              )}
-              {rules && rules.length === 0 && (
-                <div className="text-sm text-slate-500 text-center py-4">
-                  No rules found for this fact type
-                </div>
-              )}
+                ) : previewChanges ? (
+                  <>
+                    {/* Summary */}
+                    <div className="bg-slate-50 border border-outlineVariant rounded-md p-3 mb-2">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-slate-700 font-medium">Total Changes:</span>
+                        <span className="text-slate-900 font-semibold">{previewChanges.totalChanges || 0}</span>
+                      </div>
+                      {previewChanges.totalChanges > 0 && (
+                        <div className="mt-2 flex gap-4 text-xs">
+                          {previewChanges.changes?.rulesToInclude?.length > 0 && (
+                            <span className="text-green-700">
+                              ✓ {previewChanges.changes.rulesToInclude.length} Added/Modified
+                            </span>
+                          )}
+                          {previewChanges.changes?.rulesToExclude?.length > 0 && (
+                            <span className="text-red-700">
+                              ✗ {previewChanges.changes.rulesToExclude.length} Removed
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Changes Table */}
+                    {previewChanges.totalChanges > 0 ? (
+                      <div className="border border-outlineVariant rounded-md overflow-hidden">
+                        <div className="overflow-x-auto max-h-64 overflow-y-auto">
+                          <table className="w-full text-sm">
+                            <thead className="bg-slate-50 border-b border-outlineVariant sticky top-0">
+                              <tr>
+                                <th className="px-3 py-2 text-left text-xs font-medium text-slate-700 uppercase">Change</th>
+                                <th className="px-3 py-2 text-left text-xs font-medium text-slate-700 uppercase">Rule ID</th>
+                                <th className="px-3 py-2 text-left text-xs font-medium text-slate-700 uppercase">Rule Name</th>
+                                <th className="px-3 py-2 text-left text-xs font-medium text-slate-700 uppercase">Status</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-outlineVariant">
+                              {previewChanges.changes?.rulesToInclude?.map((ruleId: number) => {
+                                const rule = previewRules.get(ruleId)
+                                return (
+                                  <tr key={`include-${ruleId}`} className="hover:bg-slate-50">
+                                    <td className="px-3 py-2">
+                                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                        Added/Modified
+                                      </span>
+                                    </td>
+                                    <td className="px-3 py-2 text-slate-900">#{ruleId}</td>
+                                    <td className="px-3 py-2 text-slate-900">
+                                      {rule?.ruleName || rule?.name || `Rule #${ruleId}`}
+                                    </td>
+                                    <td className="px-3 py-2">
+                                      {rule?.status === 'ACTIVE' ? (
+                                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                          Active
+                                        </span>
+                                      ) : rule?.status === 'DRAFT' ? (
+                                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                                          Draft
+                                        </span>
+                                      ) : (
+                                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-700">
+                                          Inactive
+                                        </span>
+                                      )}
+                                    </td>
+                                  </tr>
+                                )
+                              })}
+                              {previewChanges.changes?.rulesToExclude?.map((ruleId: number) => {
+                                const rule = previewRules.get(ruleId)
+                                return (
+                                  <tr key={`exclude-${ruleId}`} className="hover:bg-slate-50">
+                                    <td className="px-3 py-2">
+                                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                                        Removed
+                                      </span>
+                                    </td>
+                                    <td className="px-3 py-2 text-slate-900">#{ruleId}</td>
+                                    <td className="px-3 py-2 text-slate-900">
+                                      {rule?.ruleName || rule?.name || `Rule #${ruleId}`}
+                                    </td>
+                                    <td className="px-3 py-2">
+                                      {rule?.status === 'ACTIVE' ? (
+                                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                          Active
+                                        </span>
+                                      ) : rule?.status === 'DRAFT' ? (
+                                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                                          Draft
+                                        </span>
+                                      ) : (
+                                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-700">
+                                          Inactive
+                                        </span>
+                                      )}
+                                    </td>
+                                  </tr>
+                                )
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="border border-outlineVariant rounded-md p-6 text-center">
+                        <svg className="w-12 h-12 mx-auto text-slate-300 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <p className="text-sm text-slate-600">No changes detected</p>
+                        <p className="text-xs text-slate-500 mt-1">All rules are same as deployed version</p>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="border border-outlineVariant rounded-md p-6 text-center text-sm text-slate-500">
+                    Select a fact type to preview changes
+                  </div>
+                )}
+              </div>
             </div>
             <div className="p-6 border-t border-outlineVariant flex justify-end gap-2">
               <button
-                onClick={() => setShowCreateModal(false)}
+                onClick={() => {
+                  setShowCreateModal(false)
+                  setPreviewChanges(null)
+                  setPreviewRules(new Map())
+                }}
                 className="px-4 py-2 text-sm border border-outlineVariant rounded-md hover:bg-slate-50 focus-ring"
               >
                 Cancel
               </button>
               <button
                 onClick={handleCreate}
-                disabled={!createForm.title || !createForm.factType}
+                disabled={!createForm.title || !createForm.factType || previewLoading}
                 className="px-4 py-2 text-sm bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed focus-ring"
               >
-                Create
+                Create Change Request
               </button>
             </div>
           </div>
@@ -650,7 +853,9 @@ export default function ChangeRequestsPage() {
               {/* Changes Table */}
               {selectedChangeRequest.changesJson && (
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-2">Proposed Changes</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    Detected Changes (vs Last Deployed Version)
+                  </label>
                   <div className="border border-outlineVariant rounded-md overflow-hidden">
                     <div className="overflow-x-auto">
                       <table className="w-full">
@@ -669,31 +874,59 @@ export default function ChangeRequestsPage() {
                               const changes = JSON.parse(selectedChangeRequest.changesJson)
                               const rows: Array<{ action: string; ruleId: number; color: string }> = []
 
-                              // Rules to Add
-                              if (changes.rulesToAdd && Array.isArray(changes.rulesToAdd)) {
-                                changes.rulesToAdd.forEach((ruleId: number) => {
-                                  rows.push({ action: 'Add', ruleId, color: 'green' })
-                                })
+                              // New format: Include/Exclude
+                              if (changes.rulesToInclude || changes.rulesToExclude) {
+                                // Rules to Include (New or Modified rules)
+                                if (changes.rulesToInclude && Array.isArray(changes.rulesToInclude)) {
+                                  changes.rulesToInclude.forEach((ruleId: number) => {
+                                    rows.push({ action: 'Added/Modified', ruleId, color: 'green' })
+                                  })
+                                }
+
+                                // Rules to Exclude (Removed/Deactivated rules)
+                                if (changes.rulesToExclude && Array.isArray(changes.rulesToExclude)) {
+                                  changes.rulesToExclude.forEach((ruleId: number) => {
+                                    rows.push({ action: 'Removed', ruleId, color: 'red' })
+                                  })
+                                }
+                              } else {
+                                // Old format: Add/Update/Delete (backward compatibility)
+                                if (changes.rulesToAdd && Array.isArray(changes.rulesToAdd)) {
+                                  changes.rulesToAdd.forEach((ruleId: number) => {
+                                    rows.push({ action: 'Add', ruleId, color: 'green' })
+                                  })
+                                }
+
+                                if (changes.rulesToUpdate && Array.isArray(changes.rulesToUpdate)) {
+                                  changes.rulesToUpdate.forEach((ruleId: number) => {
+                                    rows.push({ action: 'Update', ruleId, color: 'blue' })
+                                  })
+                                }
+
+                                if (changes.rulesToDelete && Array.isArray(changes.rulesToDelete)) {
+                                  changes.rulesToDelete.forEach((ruleId: number) => {
+                                    rows.push({ action: 'Delete', ruleId, color: 'red' })
+                                  })
+                                }
                               }
 
-                              // Rules to Update
-                              if (changes.rulesToUpdate && Array.isArray(changes.rulesToUpdate)) {
-                                changes.rulesToUpdate.forEach((ruleId: number) => {
-                                  rows.push({ action: 'Update', ruleId, color: 'blue' })
-                                })
-                              }
-
-                              // Rules to Delete
-                              if (changes.rulesToDelete && Array.isArray(changes.rulesToDelete)) {
-                                changes.rulesToDelete.forEach((ruleId: number) => {
-                                  rows.push({ action: 'Delete', ruleId, color: 'red' })
-                                })
+                              // Show summary if no detailed rows
+                              if (rows.length === 0) {
+                                return (
+                                  <tr>
+                                    <td colSpan={5} className="px-4 py-8 text-center">
+                                      <div className="text-slate-500 text-sm">
+                                        <div className="mb-2">No changes detected</div>
+                                        <div className="text-xs">All rules are same as deployed version</div>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                )
                               }
 
                               return rows.map((row) => {
                                 const rule = changeRequestRules.get(row.ruleId)
                                 const ruleName = rule?.ruleName || rule?.name || `Rule #${row.ruleId}`
-                                const isActive = rule?.active ?? false
 
                                 return (
                                   <tr key={`${row.action}-${row.ruleId}`} className="hover:bg-slate-50">
@@ -713,13 +946,17 @@ export default function ChangeRequestsPage() {
                                     <td className="px-4 py-2 text-sm text-slate-900">#{row.ruleId}</td>
                                     <td className="px-4 py-2 text-sm text-slate-900">{ruleName}</td>
                                     <td className="px-4 py-2">
-                                      {isActive ? (
+                                      {rule?.status === 'ACTIVE' ? (
                                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
                                           Active
                                         </span>
-                                      ) : (
+                                      ) : rule?.status === 'DRAFT' ? (
                                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
                                           Draft
+                                        </span>
+                                      ) : (
+                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-700">
+                                          Inactive
                                         </span>
                                       )}
                                     </td>
@@ -776,6 +1013,133 @@ export default function ChangeRequestsPage() {
                   </button>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Deployment Options Modal */}
+      {showDeploymentModal && selectedChangeRequest && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-semibold text-slate-900 flex items-center gap-2">
+                  <Package className="w-5 h-5 text-indigo-600" />
+                  Deployment Options
+                </h2>
+                <button
+                  onClick={() => setShowDeploymentModal(false)}
+                  className="text-slate-500 hover:text-slate-700"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <p className="text-sm text-blue-800">
+                  <span className="font-semibold">Change Request:</span> {selectedChangeRequest.title}
+                </p>
+                <p className="text-xs text-blue-600 mt-1">
+                  Only <span className="font-semibold">active</span> and <span className="font-semibold">latest</span> rules will be deployed
+                </p>
+              </div>
+
+              <div className="space-y-4">
+                {/* Deployment Option Selection */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    Deployment Option
+                  </label>
+                  <div className="space-y-2">
+                    <label className="flex items-center gap-3 p-3 border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-50">
+                      <input
+                        type="radio"
+                        name="deploymentOption"
+                        value="IMMEDIATE"
+                        checked={deploymentOption === 'IMMEDIATE'}
+                        onChange={(e) => setDeploymentOption(e.target.value as 'IMMEDIATE' | 'SCHEDULED')}
+                        className="w-4 h-4 text-indigo-600"
+                      />
+                      <div>
+                        <div className="font-medium text-slate-900">Deploy Now</div>
+                        <div className="text-xs text-slate-500">Rules will be deployed immediately</div>
+                      </div>
+                    </label>
+
+                    <label className="flex items-center gap-3 p-3 border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-50">
+                      <input
+                        type="radio"
+                        name="deploymentOption"
+                        value="SCHEDULED"
+                        checked={deploymentOption === 'SCHEDULED'}
+                        onChange={(e) => setDeploymentOption(e.target.value as 'IMMEDIATE' | 'SCHEDULED')}
+                        className="w-4 h-4 text-indigo-600"
+                      />
+                      <div>
+                        <div className="font-medium text-slate-900">Schedule Deployment</div>
+                        <div className="text-xs text-slate-500">Deploy at a specific date and time</div>
+                      </div>
+                    </label>
+                  </div>
+                </div>
+
+                {/* Scheduled Time (only shown if SCHEDULED is selected) */}
+                {deploymentOption === 'SCHEDULED' && (
+                  <>
+                    <div>
+                      <label htmlFor="scheduledTime" className="block text-sm font-medium text-slate-700 mb-2">
+                        Scheduled Time <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="datetime-local"
+                        id="scheduledTime"
+                        value={scheduledTime}
+                        onChange={(e) => setScheduledTime(e.target.value)}
+                        min={new Date().toISOString().slice(0, 16)}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        required
+                      />
+                      <p className="text-xs text-slate-500 mt-1">
+                        Deployment will run every minute, starting at the scheduled time
+                      </p>
+                    </div>
+
+                    <div>
+                      <label htmlFor="deploymentNotes" className="block text-sm font-medium text-slate-700 mb-2">
+                        Deployment Notes (Optional)
+                      </label>
+                      <textarea
+                        id="deploymentNotes"
+                        value={deploymentNotes}
+                        onChange={(e) => setDeploymentNotes(e.target.value)}
+                        rows={3}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        placeholder="Add notes about this deployment..."
+                      />
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex justify-end gap-3 mt-6">
+                <button
+                  onClick={() => setShowDeploymentModal(false)}
+                  className="px-4 py-2 text-sm text-slate-700 border border-slate-300 rounded-md hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleConfirmApprove}
+                  className="px-4 py-2 text-sm bg-green-600 text-white rounded-md hover:bg-green-700 focus-ring flex items-center gap-2"
+                >
+                  <CheckCircle className="w-4 h-4" />
+                  {deploymentOption === 'IMMEDIATE' ? 'Approve & Deploy Now' : 'Approve & Schedule'}
+                </button>
+              </div>
             </div>
           </div>
         </div>

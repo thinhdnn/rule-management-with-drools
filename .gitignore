@@ -28,6 +28,10 @@ yarn-error.log*
 .env*.local
 .env
 
+# Spring Boot dev profile (contains sensitive API keys)
+application-dev.yml
+**/application-dev.yml
+
 # vercel
 .vercel
 

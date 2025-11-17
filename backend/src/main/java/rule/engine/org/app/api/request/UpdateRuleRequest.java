@@ -22,7 +22,7 @@ public class UpdateRuleRequest {
     private String ruleName;
     private String label;
     private Integer priority;
-    private Boolean active;
+    private String status; // DRAFT, ACTIVE, INACTIVE
     private FactType factType;
     private String description; // Optional description (not a field of DecisionRule entity)
     private List<Map<String, Object>> conditions; // Structured conditions array

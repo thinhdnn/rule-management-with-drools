@@ -133,7 +133,7 @@ export function SearchableSelect({ value, onChange, options, placeholder = 'Sele
           ) : (
             filteredOptions.map((option, idx) => (
               <div
-                key={option.name}
+                key={`${option.name}-${idx}`}
                 onClick={() => {
                   onChange(option.name)
                   setIsOpen(false)

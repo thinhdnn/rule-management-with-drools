@@ -28,6 +28,25 @@ export const api = {
     factTypes: () => `${API_BASE}/rules/fact-types`,
     containersStatus: () => `${API_BASE}/rules/containers/status`,
     containerStatus: (factType: string) => `${API_BASE}/rules/containers/status/${encodeURIComponent(factType)}`,
+    aiGenerate: () => `${API_BASE}/rules/ai-generate`,
+    // Version snapshot tracking and activation
+    allVersions: (factType?: string) => {
+      const url = `${API_BASE}/rules/versions`
+      return factType ? `${url}?factType=${encodeURIComponent(factType)}` : url
+    },
+    versionSnapshot: (version: string | number, factType?: string) => {
+      const url = `${API_BASE}/rules/versions/${version}/snapshot`
+      return factType ? `${url}?factType=${encodeURIComponent(factType)}` : url
+    },
+    compareVersions: (from: string | number, to: string | number, factType?: string) => {
+      const url = `${API_BASE}/rules/versions/compare`
+      const params = new URLSearchParams()
+      params.append('from', from.toString())
+      params.append('to', to.toString())
+      if (factType) params.append('factType', factType)
+      return `${url}?${params.toString()}`
+    },
+    activateVersion: (version: string | number) => `${API_BASE}/rules/versions/${version}/activate`,
   },
   changeRequests: {
     list: (factType?: string, status?: string) => {
@@ -38,10 +57,22 @@ export const api = {
       return params.toString() ? `${url}?${params.toString()}` : url
     },
     get: (id: string | number) => `${API_BASE}/change-requests/${id}`,
+    previewChanges: (factType?: string) => {
+      const url = `${API_BASE}/change-requests/preview-changes`
+      return factType ? `${url}?factType=${encodeURIComponent(factType)}` : url
+    },
     create: () => `${API_BASE}/change-requests`,
     approve: (id: string | number) => `${API_BASE}/change-requests/${id}/approve`,
     reject: (id: string | number) => `${API_BASE}/change-requests/${id}/reject`,
     factTypes: () => `${API_BASE}/change-requests/fact-types`,
+    scheduledDeployments: {
+      list: (status?: string) => {
+        const url = `${API_BASE}/change-requests/scheduled-deployments`
+        return status ? `${url}?status=${encodeURIComponent(status)}` : url
+      },
+      upcoming: () => `${API_BASE}/change-requests/scheduled-deployments/upcoming`,
+      cancel: (id: string | number) => `${API_BASE}/change-requests/scheduled-deployments/${id}/cancel`,
+    },
   },
 }
 
