@@ -1,5 +1,5 @@
 # Build stage
-FROM gradle:8.5-jdk17 AS build
+FROM gradle:8.5-jdk21 AS build
 
 WORKDIR /app
 
@@ -13,10 +13,13 @@ COPY src ./src
 # Build the application
 RUN ./gradlew build -x test --no-daemon
 
-# Runtime stage
-FROM openjdk:17-jdk-slim
+# Runtime stage - Eclipse Temurin supports ARM64
+FROM eclipse-temurin:21-jre-alpine
 
 WORKDIR /app
+
+# Install curl for health checks
+RUN apk add --no-cache curl
 
 # Copy the built jar from build stage
 COPY --from=build /app/build/libs/*.jar app.jar
