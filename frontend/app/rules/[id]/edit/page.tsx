@@ -65,6 +65,7 @@ type RuleFormData = {
   ruleName: string
   label: string
   priority: number
+  active: boolean
   output: Record<string, string> // Dynamic output fields from metadata
   versionNotes: string
   conditions: Condition[]
@@ -163,6 +164,7 @@ export default function EditRulePage({ params }: Props) {
           ruleName: rule.ruleName,
           label: rule.label || '',
           priority: rule.priority,
+          active: rule.status === 'ACTIVE',
           output,
           versionNotes: '',
           conditions: conditions.length > 0 ? conditions : [{ id: crypto.randomUUID(), field: '', operator: '', value: '', logicalOp: 'AND' }],
