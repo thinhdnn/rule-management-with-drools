@@ -39,15 +39,15 @@ jobs:
         fi
         echo "✅ Docker: $(docker --version)"
         
-        # Check Docker Compose
-        if ! command -v docker-compose &> /dev/null && ! docker compose version &> /dev/null; then
+        # Check Docker Compose (prioritize V2)
+        if ! docker compose version &> /dev/null && ! command -v docker-compose &> /dev/null; then
           echo "❌ Docker Compose is not installed"
           exit 1
         fi
-        if command -v docker-compose &> /dev/null; then
-          echo "✅ Docker Compose: $(docker-compose --version)"
-        else
+        if docker compose version &> /dev/null; then
           echo "✅ Docker Compose: $(docker compose version)"
+        else
+          echo "✅ Docker Compose: $(docker-compose --version)"
         fi
         
         # Detect architecture
@@ -72,9 +72,8 @@ jobs:
       run: |
         echo "🧹 Cleaning up any previous demo containers..."
         
-        # Stop and remove containers
-        docker-compose down -v 2>/dev/null || true
-        docker compose down -v 2>/dev/null || true
+        # Stop and remove containers (prioritize V2)
+        docker compose down -v 2>/dev/null || docker-compose down -v 2>/dev/null || true
         
         # Remove old log files
         rm -f docker-compose.log
@@ -85,11 +84,11 @@ jobs:
       run: |
         echo "🐳 Building and starting services with Docker Compose..."
         
-        # Use docker-compose or docker compose based on availability
-        if command -v docker-compose &> /dev/null; then
-          COMPOSE_CMD="docker-compose"
-        else
+        # Use docker compose (V2) or docker-compose (legacy) based on availability
+        if docker compose version &> /dev/null; then
           COMPOSE_CMD="docker compose"
+        else
+          COMPOSE_CMD="docker-compose"
         fi
         
         # Build and start services in detached mode
@@ -309,11 +308,11 @@ jobs:
         echo "  3. Rules API: ${{ env.BACKEND_URL }}/api/v1/rules"
         echo "  4. All services running in Docker containers!"
         
-        # Use docker-compose or docker compose based on availability
-        if command -v docker-compose &> /dev/null; then
-          COMPOSE_CMD="docker-compose"
-        else
+        # Use docker compose (V2) or docker-compose (legacy) based on availability
+        if docker compose version &> /dev/null; then
           COMPOSE_CMD="docker compose"
+        else
+          COMPOSE_CMD="docker-compose"
         fi
         
         # Keep alive and show logs
@@ -348,11 +347,11 @@ jobs:
       run: |
         echo "🧹 Cleaning up demo..."
         
-        # Use docker-compose or docker compose based on availability
-        if command -v docker-compose &> /dev/null; then
-          COMPOSE_CMD="docker-compose"
-        else
+        # Use docker compose (V2) or docker-compose (legacy) based on availability
+        if docker compose version &> /dev/null; then
           COMPOSE_CMD="docker compose"
+        else
+          COMPOSE_CMD="docker-compose"
         fi
         
         # Stop and remove containers
@@ -368,11 +367,11 @@ jobs:
       run: |
         echo "## 🔍 Debug Information"
         
-        # Use docker-compose or docker compose based on availability
-        if command -v docker-compose &> /dev/null; then
-          COMPOSE_CMD="docker-compose"
-        else
+        # Use docker compose (V2) or docker-compose (legacy) based on availability
+        if docker compose version &> /dev/null; then
           COMPOSE_CMD="docker compose"
+        else
+          COMPOSE_CMD="docker-compose"
         fi
         
         echo "### Docker Container Status:"
