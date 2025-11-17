@@ -6,8 +6,8 @@ WORKDIR /app
 # Copy package files
 COPY package.json package-lock.json* ./
 
-# Install dependencies
-RUN npm ci --only=production
+# Install all dependencies (including devDeps for build tools like TailwindCSS)
+RUN npm ci
 
 # Copy source code
 COPY . .
