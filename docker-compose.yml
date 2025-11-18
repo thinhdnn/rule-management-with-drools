@@ -54,8 +54,11 @@ services:
       dockerfile: Dockerfile
     container_name: drools_frontend
     environment:
-      # Use NEXT_PUBLIC_BACKEND_URL from .env file or default to production URL
-      - NEXT_PUBLIC_BACKEND_URL=${NEXT_PUBLIC_BACKEND_URL:-https://rule.thinhnguyen.dev/be}
+      # BACKEND_URL for server-side API routes (internal Docker network)
+      - BACKEND_URL=http://backend:8080/be
+      # NEXT_PUBLIC_BACKEND_URL for client-side (browser) - use relative URL for Docker
+      # Browser will call Next.js API routes which proxy to backend
+      - NEXT_PUBLIC_BACKEND_URL=${NEXT_PUBLIC_BACKEND_URL:-}
     ports:
       - "9030:3000"
     depends_on:
