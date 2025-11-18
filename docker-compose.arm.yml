@@ -61,8 +61,8 @@ services:
     platform: linux/arm64
     container_name: drools_frontend
     environment:
-      # Use NEXT_PUBLIC_BACKEND_URL from .env file or default to localhost
-      - NEXT_PUBLIC_BACKEND_URL=${NEXT_PUBLIC_BACKEND_URL:-http://localhost:9031}
+      # Use NEXT_PUBLIC_BACKEND_URL from .env file or default to production URL
+      - NEXT_PUBLIC_BACKEND_URL=${NEXT_PUBLIC_BACKEND_URL:-https://rule.thinhnguyen.dev/be}
     ports:
       - "9030:3000"
     depends_on:

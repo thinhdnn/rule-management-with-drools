@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { mapRequestToBackend, transformRule } from '../transform'
 
-const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8080'
+const BACKEND_URL = process.env.BACKEND_URL || 'https://rule.thinhnguyen.dev/be'
 
 export async function GET(
   request: NextRequest,
