@@ -86,8 +86,14 @@ jobs:
           COMPOSE_CMD="docker-compose"
         fi
         
+        # Set NEXT_PUBLIC_BACKEND_URL for Docker demo (use HOST_IP for local network)
+        # Browser will call backend via http://HOST_IP:9031/be
+        export NEXT_PUBLIC_BACKEND_URL="http://${{ env.HOST_IP }}:9031/be"
+        echo "📝 NEXT_PUBLIC_BACKEND_URL=$NEXT_PUBLIC_BACKEND_URL (for browser to call backend)"
+        
         # Build and start services in detached mode
-        $COMPOSE_CMD up -d --build 2>&1 | tee docker-compose.log
+        # Pass NEXT_PUBLIC_BACKEND_URL to docker-compose via environment
+        NEXT_PUBLIC_BACKEND_URL="$NEXT_PUBLIC_BACKEND_URL" $COMPOSE_CMD up -d --build 2>&1 | tee docker-compose.log
         
         echo "⏳ Waiting for services to be healthy..."
         
