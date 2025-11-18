@@ -3,11 +3,6 @@ name: Live Demo with Docker (Self-Hosted)
 on:
   workflow_dispatch:
     inputs:
-      demo_duration:
-        description: 'Demo duration in minutes (max 120)'
-        required: false
-        default: '30'
-        type: string
       demo_message:
         description: 'Demo description/message'
         required: false
@@ -22,7 +17,7 @@ permissions:
 jobs:
   live-demo-docker:
     runs-on: self-hosted
-    timeout-minutes: 135  # Max 135 minutes (setup + demo + cleanup)
+    timeout-minutes: 30  # Build and setup timeout
     
     steps:
     - name: Checkout code
@@ -182,9 +177,9 @@ jobs:
           # 🚀 Live Demo Available! (Docker on Self-Hosted)
           
           **Demo Message:** ${{ github.event.inputs.demo_message }}
-          **Duration:** ${{ github.event.inputs.demo_duration }} minutes
           **Started:** ${new Date().toISOString()}
           **Environment:** Self-Hosted Runner with Docker
+          **Status:** Services running indefinitely (managed by self-hosted runner)
           
           ## 🔗 Access URLs (Local Network)
           
@@ -232,8 +227,8 @@ jobs:
           
           > **⚠️ Important:** 
           > - This demo is accessible only from the local network
-          > - This demo will automatically stop in ${{ github.event.inputs.demo_duration }} minutes
-          > - The services will become inactive after the demo ends
+          > - Services will run indefinitely until manually stopped
+          > - Use GitHub Actions to stop the workflow or manually run cleanup
           
           **Workflow Run:** [${{ github.run_number }}](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
           `;
@@ -260,9 +255,9 @@ jobs:
         # 🚀 Live Demo Available! (Docker - Local Network)
         
         **Demo Message:** ${{ github.event.inputs.demo_message }}
-        **Duration:** ${{ github.event.inputs.demo_duration }} minutes
         **Started:** $(date -u +"%Y-%m-%dT%H:%M:%SZ")
         **Environment:** Self-Hosted Runner with Docker
+        **Status:** Services running indefinitely
         
         ## 🔗 Access URLs (Local Network)
         
@@ -286,27 +281,23 @@ jobs:
         
         ## ⚠️ Important
         - Demo is accessible only from the local network
-        - This demo will automatically stop in ${{ github.event.inputs.demo_duration }} minutes
-        - The services will become inactive after the demo ends
+        - Services will run indefinitely until manually stopped
+        - Use GitHub Actions to stop the workflow or manually run cleanup
         EOF
 
-    - name: Keep Demo Alive
+    - name: Demo Running
       run: |
-        duration_minutes=${{ github.event.inputs.demo_duration }}
-        duration_seconds=$((duration_minutes * 60))
-        
-        echo "🎯 Demo will run for $duration_minutes minutes ($duration_seconds seconds)"
+        echo "✅ Demo services are now running!"
         echo ""
         echo "🌐 Host IP: ${{ env.HOST_IP }}"
+        echo "⏰ Started at: $(date)"
         echo ""
-        echo "⏰ Demo started at: $(date)"
-        echo "⏰ Demo will end at: $(date -d "+$duration_minutes minutes" 2>/dev/null || date -v+${duration_minutes}M 2>/dev/null || echo "$(date) + $duration_minutes minutes")"
-        echo ""
-        echo "🧪 How to test (from local network):"
+        echo "🧪 Access URLs (from local network):"
         echo "  1. Frontend UI: ${{ env.FRONTEND_URL }}"
         echo "  2. Backend API: ${{ env.BACKEND_URL }}/actuator/health"  
         echo "  3. Rules API: ${{ env.BACKEND_URL }}/api/v1/rules"
-        echo "  4. All services running in Docker containers!"
+        echo ""
+        echo "📊 Services Status:"
         
         # Use docker compose (V2) or docker-compose (legacy) based on availability
         if docker compose version &> /dev/null; then
@@ -315,35 +306,13 @@ jobs:
           COMPOSE_CMD="docker-compose"
         fi
         
-        # Keep alive and show logs
-        end_time=$(($(date +%s) + duration_seconds))
-        while [ $(date +%s) -lt $end_time ]; do
-          remaining=$((end_time - $(date +%s)))
-          minutes=$((remaining / 60))
-          seconds=$((remaining % 60))
-          
-          echo "⏳ Demo running... ${minutes}m ${seconds}s remaining"
-          
-          # Show container status and logs every minute
-          if [ $((remaining % 60)) -eq 0 ]; then
-            echo "📊 Container Status:"
-            $COMPOSE_CMD ps
-            echo ""
-            echo "📋 Recent Backend Logs:"
-            $COMPOSE_CMD logs --tail=5 backend || echo "No backend logs"
-            echo ""
-            echo "📋 Recent Frontend Logs:"
-            $COMPOSE_CMD logs --tail=5 frontend || echo "No frontend logs"
-            echo "---"
-          fi
-          
-          sleep 10
-        done
-        
-        echo "⏰ Demo time ended at: $(date)"
+        $COMPOSE_CMD ps
+        echo ""
+        echo "ℹ️  Services will run indefinitely until manually stopped"
+        echo "ℹ️  To stop: Cancel this workflow or run 'docker compose down' manually"
 
     - name: Cleanup Demo
-      if: always()
+      if: failure() || cancelled()
       run: |
         echo "🧹 Cleaning up demo..."
         
@@ -398,12 +367,11 @@ jobs:
       if: always()
       run: |
         echo "## 📊 Demo Summary"
-        echo "**Duration:** ${{ github.event.inputs.demo_duration }} minutes"
         echo "**Host IP:** ${{ env.HOST_IP }}"
         echo "**Frontend URL:** ${{ env.FRONTEND_URL }}"
         echo "**Backend URL:** ${{ env.BACKEND_URL }}"
         echo "**Environment:** Self-Hosted Runner with Docker"
-        echo "**Status:** Demo completed"
+        echo "**Status:** Services stopped"
         echo ""
         echo "🎯 **Docker Architecture:**"
         echo "   - PostgreSQL: Database in container (port 5432)"
