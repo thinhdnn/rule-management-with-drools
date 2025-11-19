@@ -45,9 +45,9 @@ type ValidationStatus = {
 
 type AIGenerateResponse = {
   success: boolean
-  generatedRule: GeneratedRule
-  aiExplanation: string
-  validation: ValidationStatus
+  generatedRule: GeneratedRule | null
+  aiExplanation: string | null
+  validation: ValidationStatus | null
   savedRuleId?: number
   errorMessage?: string
   suggestions?: string[]
@@ -263,25 +263,54 @@ export default function AIBuilderPage() {
           <div className="p-6 space-y-6">
             {/* Success/Error Header */}
             <div className="flex items-start gap-3">
-              {response.success && response.validation.valid ? (
+              {response.success && response.validation?.valid ? (
                 <CheckCircle2 className="text-green-600 shrink-0 mt-0.5" size={24} />
               ) : (
                 <AlertCircle className="text-orange-600 shrink-0 mt-0.5" size={24} />
               )}
               <div className="flex-1">
                 <h2 className="text-lg font-semibold text-slate-900">
-                  {response.success && response.validation.valid
+                  {response.success && response.validation?.valid
                     ? 'Rule Generated Successfully'
+                    : response.errorMessage
+                    ? 'AI Generation Failed'
                     : 'Rule Has Validation Errors'}
                 </h2>
                 {response.aiExplanation && (
                   <p className="text-sm text-slate-600 mt-1">{response.aiExplanation}</p>
                 )}
+                {response.errorMessage && (
+                  <p className="text-sm text-red-600 mt-1">{response.errorMessage}</p>
+                )}
               </div>
             </div>
 
+            {/* Error Message and Suggestions */}
+            {response.errorMessage && (
+              <div className="space-y-3">
+                <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                  <p className="text-sm font-medium text-red-900 mb-2">Error:</p>
+                  <p className="text-sm text-red-700">{response.errorMessage}</p>
+                </div>
+                
+                {response.suggestions && response.suggestions.length > 0 && (
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    <p className="text-sm font-medium text-blue-900 mb-2">Suggestions:</p>
+                    <ul className="space-y-1">
+                      {response.suggestions.map((sug, idx) => (
+                        <li key={idx} className="text-sm text-blue-700 flex items-start gap-2">
+                          <ChevronRight size={16} className="shrink-0 mt-0.5" />
+                          <span>{sug}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Validation Status */}
-            {(!response.validation.valid || response.validation.warnings.length > 0) && (
+            {response.validation && (!response.validation.valid || response.validation.warnings.length > 0) && (
               <div className="space-y-3">
                 {/* Errors */}
                 {response.validation.errors.length > 0 && (
@@ -313,20 +342,6 @@ export default function AIBuilderPage() {
                   </div>
                 )}
 
-                {/* Suggestions */}
-                {response.suggestions && response.suggestions.length > 0 && (
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                    <p className="text-sm font-medium text-blue-900 mb-2">Suggestions:</p>
-                    <ul className="space-y-1">
-                      {response.suggestions.map((sug, idx) => (
-                        <li key={idx} className="text-sm text-blue-700 flex items-start gap-2">
-                          <ChevronRight size={16} className="shrink-0 mt-0.5" />
-                          <span>{sug}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
               </div>
             )}
 
@@ -413,7 +428,7 @@ export default function AIBuilderPage() {
             )}
 
             {/* Action Buttons */}
-            {response.success && response.validation.valid && (
+            {response.success && response.validation?.valid && response.generatedRule && (
               <div className="flex gap-3 pt-4 border-t border-slate-200">
                 <button
                   onClick={handleSave}
