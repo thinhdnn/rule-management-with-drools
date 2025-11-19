@@ -1,6 +1,5 @@
-import { NextRequest, NextResponse } from 'next/server'
-
-const BACKEND_URL = process.env.BACKEND_URL || 'https://rule.thinhnguyen.dev'
+import { NextRequest } from 'next/server'
+import { fetchApi } from '@/lib/api-client'
 
 /**
  * GET /api/rules/:id/versions
@@ -11,26 +10,6 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params
-  try {
-    const res = await fetch(`${BACKEND_URL}/api/v1/rules/${id}/versions`, {
-      cache: 'no-store',
-    })
-    
-    if (!res.ok) {
-      return NextResponse.json(
-        { error: 'Failed to fetch version history' },
-        { status: res.status }
-      )
-    }
-    
-    const data = await res.json()
-    return NextResponse.json(data)
-  } catch (error) {
-    console.error('API proxy error:', error)
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    )
-  }
+  return fetchApi(`/api/v1/rules/${id}/versions`, request)
 }
 

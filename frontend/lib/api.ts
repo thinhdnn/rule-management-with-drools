@@ -1,6 +1,9 @@
-// API configuration - use relative URLs if no backend URL specified (for nginx proxy)
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://rule.thinhnguyen.dev'
-const API_BASE = BACKEND_URL ? `${BACKEND_URL}/api/v1` : '/api/v1'
+// API configuration - use relative URLs if no API URL specified (for nginx proxy)
+// Client-side: Uses NEXT_PUBLIC_API_URL (standard Next.js convention)
+// Falls back to NEXT_PUBLIC_BACKEND_URL for backward compatibility
+// If neither is set, uses relative URLs (assumes same origin/nginx proxy)
+const API_URL = process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_BACKEND_URL
+const API_BASE = API_URL ? `${API_URL}/api/v1` : '/api/v1'
 
 export const api = {
   rules: {

@@ -1,90 +1,58 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { mapRequestToBackend, transformRule } from './transform'
-
-const BACKEND_URL = process.env.BACKEND_URL || 'https://rule.thinhnguyen.dev'
+import { fetchApi } from '@/lib/api-client'
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams
   const query = searchParams.toString()
+  const path = `/api/v1/rules${query ? `?${query}` : ''}`
   
-  try {
-    const res = await fetch(`${BACKEND_URL}/api/v1/rules?${query}`, {
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      cache: 'no-store',
-    })
-    
-    if (!res.ok) {
-      return NextResponse.json(
-        { error: 'Failed to fetch rules' },
-        { status: res.status }
-      )
-    }
-    
-    const data = await res.json()
-    
-    // Transform backend data to frontend format
-    // New lean design: DecisionRule only has metadata + expressions (no business fields!)
-    const items = Array.isArray(data) ? data : []
-    const transformed = items.map((rule: any) => ({
-      id: rule.id?.toString() || '',
-      name: rule.ruleName || 'Unnamed Rule',
-      factType: rule.factType || 'Declaration', // Map factType from backend
-      documentType: 'Import Declaration', // Default (rules apply to all declaration types)
-      ruleType: inferRuleTypeFromExpression(rule.whenExpr || rule.ruleCondition), // Support both formats
-      outputType: inferOutputTypeFromExpression(rule.ruleResult || rule.description), // Use ruleResult or description
-      status: rule.status === 'ACTIVE' ? 'Active' as const : 
-              rule.status === 'INACTIVE' ? 'Inactive' as const : 
-              'Draft' as const,
-      updatedAt: rule.lastModifiedDate || rule.createdDate || rule.updatedAt || rule.createdAt || new Date().toISOString(),
-    }))
-    
-    return NextResponse.json({
-      items: transformed,
-      total: transformed.length,
-    })
-  } catch (error) {
-    console.error('API proxy error:', error)
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    )
+  const response = await fetchApi(path, request)
+  
+  if (!response.ok) {
+    return response
   }
+  
+  const data = await response.json()
+  
+  // Transform backend data to frontend format
+  // New lean design: DecisionRule only has metadata + expressions (no business fields!)
+  const items = Array.isArray(data) ? data : []
+  const transformed = items.map((rule: any) => ({
+    id: rule.id?.toString() || '',
+    name: rule.ruleName || 'Unnamed Rule',
+    factType: rule.factType || 'Declaration', // Map factType from backend
+    documentType: 'Import Declaration', // Default (rules apply to all declaration types)
+    ruleType: inferRuleTypeFromExpression(rule.whenExpr || rule.ruleCondition), // Support both formats
+    outputType: inferOutputTypeFromExpression(rule.ruleResult || rule.description), // Use ruleResult or description
+    status: rule.status === 'ACTIVE' ? 'Active' as const : 
+            rule.status === 'INACTIVE' ? 'Inactive' as const : 
+            'Draft' as const,
+    updatedAt: rule.lastModifiedDate || rule.createdDate || rule.updatedAt || rule.createdAt || new Date().toISOString(),
+  }))
+  
+  return NextResponse.json({
+    items: transformed,
+    total: transformed.length,
+  })
 }
 
 export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json()
-    
-    const backendPayload = mapRequestToBackend(body)
-    
-    const res = await fetch(`${BACKEND_URL}/api/v1/rules`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(backendPayload),
-    })
-    
-    if (!res.ok) {
-      const errorText = await res.text()
-      return NextResponse.json(
-        { error: errorText || 'Failed to create rule' },
-        { status: res.status }
-      )
-    }
-    
-    const data = await res.json()
-    const transformed = transformRule(data)
-    return NextResponse.json(transformed, { status: 201 })
-  } catch (error) {
-    console.error('API proxy error:', error)
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    )
+  const body = await request.json()
+  const backendPayload = mapRequestToBackend(body)
+  
+  const response = await fetchApi('/api/v1/rules', request, {
+    method: 'POST',
+    body: backendPayload,
+  })
+  
+  if (!response.ok) {
+    return response
   }
+  
+  const data = await response.json()
+  const transformed = transformRule(data)
+  return NextResponse.json(transformed, { status: 201 })
 }
 
 // Infer rule type from rule condition content
