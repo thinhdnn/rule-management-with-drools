@@ -46,7 +46,7 @@ CREATE TABLE IF NOT EXISTS decision_rules (
     rule_result TEXT,
     rule_score NUMERIC(19, 2),
     priority INTEGER DEFAULT 0,
-    active BOOLEAN DEFAULT true NOT NULL,
+    status VARCHAR(50) DEFAULT 'DRAFT' NOT NULL,
     
     -- Fact type support (V4)
     fact_type VARCHAR(100) DEFAULT 'Declaration' NOT NULL,
@@ -288,7 +288,7 @@ CREATE TABLE IF NOT EXISTS rule_output (
 -- ========== INDEXES ==========
 
 -- Decision rules indexes
-CREATE INDEX IF NOT EXISTS idx_decision_rules_active ON decision_rules(active);
+CREATE INDEX IF NOT EXISTS idx_decision_rules_status ON decision_rules(status);
 CREATE INDEX IF NOT EXISTS idx_decision_rules_priority ON decision_rules(priority);
 CREATE INDEX IF NOT EXISTS idx_decision_rules_parent ON decision_rules(parent_rule_id);
 CREATE INDEX IF NOT EXISTS idx_decision_rules_latest ON decision_rules(is_latest);
