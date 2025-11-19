@@ -25,7 +25,7 @@ spring:
 server:
   port: 8080
   servlet:
-    context-path: /be
+    context-path: /
 
 # CORS Configuration
 # Comma-separated list of allowed origins
