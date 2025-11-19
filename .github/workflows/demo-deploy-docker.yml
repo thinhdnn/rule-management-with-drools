@@ -91,6 +91,10 @@ jobs:
         echo "✅ Cleanup completed"
 
     - name: Build and Start Services with Docker Compose
+      env:
+        HOST_IP: ${{ env.HOST_IP }}
+        OPENAI_ENABLED: ${{ secrets.OPENAI_ENABLED }}
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       run: |
         echo "🐳 Building and starting services with Docker Compose..."
         
@@ -103,12 +107,25 @@ jobs:
         
         # Set NEXT_PUBLIC_BACKEND_URL for Docker demo (use HOST_IP for local network)
         # Browser will call backend via http://HOST_IP:9031/be
-        export NEXT_PUBLIC_BACKEND_URL="http://${{ env.HOST_IP }}:9031/be"
+        export NEXT_PUBLIC_BACKEND_URL="http://${HOST_IP}:9031/be"
         echo "📝 NEXT_PUBLIC_BACKEND_URL=$NEXT_PUBLIC_BACKEND_URL (for browser to call backend)"
+
+        # Set OpenAI environment variables (optional)
+        export OPENAI_ENABLED_VALUE="${OPENAI_ENABLED:-false}"
+        export OPENAI_API_KEY_VALUE="${OPENAI_API_KEY:-}"
+        echo "🧠 OPENAI_ENABLED=$OPENAI_ENABLED_VALUE"
+        if [ -n "$OPENAI_API_KEY_VALUE" ]; then
+          echo "🔐 OPENAI_API_KEY is set (hidden)"
+        else
+          echo "ℹ️  OPENAI_API_KEY not provided"
+        fi
         
         # Build and start services in detached mode
         # Pass NEXT_PUBLIC_BACKEND_URL to docker-compose via environment
-        NEXT_PUBLIC_BACKEND_URL="$NEXT_PUBLIC_BACKEND_URL" $COMPOSE_CMD up -d --build 2>&1 | tee docker-compose.log
+        NEXT_PUBLIC_BACKEND_URL="$NEXT_PUBLIC_BACKEND_URL" \
+        OPENAI_ENABLED="$OPENAI_ENABLED_VALUE" \
+        OPENAI_API_KEY="$OPENAI_API_KEY_VALUE" \
+        $COMPOSE_CMD up -d --build 2>&1 | tee docker-compose.log
         
         echo "⏳ Waiting for services to be healthy..."
         

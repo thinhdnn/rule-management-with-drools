@@ -36,6 +36,9 @@ services:
       - SPRING_DATASOURCE_USERNAME=postgres
       - SPRING_DATASOURCE_PASSWORD=postgres
       - SPRING_JPA_HIBERNATE_DDL_AUTO=update
+      # AI configuration (optional)
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_ENABLED=${OPENAI_ENABLED:-false}
     ports:
       - "9031:8080"
     depends_on:
