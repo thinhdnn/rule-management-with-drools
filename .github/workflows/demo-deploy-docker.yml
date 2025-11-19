@@ -20,6 +20,20 @@ jobs:
     timeout-minutes: 30  # Build and setup timeout
     
     steps:
+    - name: Remove existing repository
+      run: |
+        echo "🧹 Removing existing repository if present..."
+        WORKSPACE="${{ github.workspace }}"
+        if [ -d "$WORKSPACE/.git" ]; then
+          echo "⚠️  Found existing repository at $WORKSPACE, removing..."
+          cd "$WORKSPACE/.."
+          REPO_NAME=$(basename "$WORKSPACE")
+          rm -rf "$REPO_NAME"
+          echo "✅ Existing repository '$REPO_NAME' removed"
+        else
+          echo "✅ No existing repository found at $WORKSPACE"
+        fi
+    
     - name: Checkout code
       uses: actions/checkout@v4
 
