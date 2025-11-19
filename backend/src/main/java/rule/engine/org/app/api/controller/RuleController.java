@@ -180,6 +180,8 @@ public class RuleController {
                     
                     // Build and save rule
                     DecisionRule rule = buildRuleFromRequest(ruleToSave);
+                    // Mark as AI-generated since it comes from AI generation endpoint
+                    rule.setGeneratedByAi(true);
                     String ruleContent = buildCompleteDrlFromRequest(ruleToSave, rule);
                     
                     if (ruleContent == null || ruleContent.isBlank()) {
@@ -959,10 +961,16 @@ public class RuleController {
             
             // IMPORTANT: For new rules (CreateRuleRequest), set defaults
             if (request instanceof CreateRuleRequest) {
+                CreateRuleRequest createRequest = (CreateRuleRequest) request;
                 rule.setIsLatest(true);
                 rule.setVersion(1);
                 rule.setParentRuleId(null); // No parent for new rules
                 rule.setStatus(RuleStatus.DRAFT); // New rules start as DRAFT
+                
+                // Set generatedByAi flag if provided in request
+                if (createRequest.getGeneratedByAi() != null) {
+                    rule.setGeneratedByAi(createRequest.getGeneratedByAi());
+                }
             }
 
             return rule;

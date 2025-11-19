@@ -27,6 +27,12 @@ server:
   servlet:
     context-path: /be
 
+# CORS Configuration
+# Comma-separated list of allowed origins
+# Patterns like http://localhost:* are supported
+cors:
+  allowed-origins: http://localhost:3000,http://localhost,https://rule.thinhnguyen.dev
+
 management:
   endpoints:
     web:

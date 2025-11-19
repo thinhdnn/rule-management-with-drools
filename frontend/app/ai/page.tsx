@@ -125,27 +125,33 @@ export default function AIBuilderPage() {
     setError(null)
 
     try {
-      // Send with previewOnly=false to save directly
-      const request: AIGenerateRequest = {
-        naturalLanguageInput: naturalInput,
-        factType: selectedFactType,
-        additionalContext: additionalContext || undefined,
-        previewOnly: false,
-      }
-
-      const result = await fetchApi<AIGenerateResponse>(
-        api.rules.aiGenerate(),
+      // Save the already-generated rule directly using the create rule API
+      // This avoids calling OpenAI API again unnecessarily
+      const ruleToSave = response.generatedRule
+      
+      const savedRule = await fetchApi<any>(
+        api.rules.create(),
         {
           method: 'POST',
-          body: JSON.stringify(request),
+          body: JSON.stringify({
+            ruleName: ruleToSave.ruleName,
+            label: ruleToSave.description || ruleToSave.ruleName,
+            description: ruleToSave.description || ruleToSave.ruleName,
+            factType: ruleToSave.factType,
+            priority: ruleToSave.priority || 0,
+            active: ruleToSave.enabled !== false,
+            conditions: ruleToSave.conditions || [],
+            output: ruleToSave.output || {},
+            generatedByAi: true, // Mark as AI-generated rule
+          }),
         }
       )
 
-      if (result.success && result.savedRuleId) {
+      if (savedRule?.id) {
         // Navigate to rule detail page
-        router.push(`/rules/${result.savedRuleId}`)
+        router.push(`/rules/${savedRule.id}`)
       } else {
-        setError(result.errorMessage || 'Failed to save rule')
+        setError('Failed to save rule: No rule ID returned')
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save rule')
