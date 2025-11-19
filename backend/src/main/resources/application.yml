@@ -50,3 +50,21 @@ openai:
   timeout: 30 
   enabled: ${OPENAI_ENABLED:false}
 
+security:
+  jwt:
+    secret: ${AUTH_JWT_SECRET:change-me}
+    issuer: rule-engine-service
+    access-token-ttl: PT15M
+    refresh-token-ttl: P7D
+
+auth:
+  bootstrap:
+    administrator:
+      email: ${AUTH_BOOTSTRAP_ADMIN_EMAIL:rule.admin@local}
+      password: ${AUTH_BOOTSTRAP_ADMIN_PASSWORD:ChangeMe123!}
+      display-name: ${AUTH_BOOTSTRAP_ADMIN_NAME:Rule Administrator}
+    editor:
+      email: ${AUTH_BOOTSTRAP_EDITOR_EMAIL:rule.editor@local}
+      password: ${AUTH_BOOTSTRAP_EDITOR_PASSWORD:ChangeMe123!}
+      display-name: ${AUTH_BOOTSTRAP_EDITOR_NAME:Rule Editor}
+

@@ -4,8 +4,13 @@
 // If neither is set, uses relative URLs (assumes same origin/nginx proxy)
 const API_URL = process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_BACKEND_URL
 const API_BASE = API_URL ? `${API_URL}/api/v1` : '/api/v1'
+const AUTH_BASE = API_URL ? `${API_URL}/api/auth` : '/api/auth'
 
 export const api = {
+  auth: {
+    login: () => `${AUTH_BASE}/login`,
+    me: () => `${AUTH_BASE}/me`,
+  },
   rules: {
     list: () => `${API_BASE}/rules`,
     get: (id: string | number) => `${API_BASE}/rules/${id}`,
@@ -79,16 +84,19 @@ export const api = {
   },
 }
 
-export async function fetchApi<T>(
-  url: string,
-  options?: RequestInit
-): Promise<T> {
+export async function fetchApi<T>(url: string, options?: RequestInit): Promise<T> {
+  const token = typeof window !== 'undefined' ? window.localStorage.getItem('accessToken') : null
+  const headers = new Headers(options?.headers)
+  if (!headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json')
+  }
+  if (token && !headers.has('Authorization')) {
+    headers.set('Authorization', `Bearer ${token}`)
+  }
+
   const response = await fetch(url, {
     ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...options?.headers,
-    },
+    headers,
   })
 
   if (!response.ok) {
