@@ -72,6 +72,7 @@ export const api = {
     create: () => `${API_BASE}/change-requests`,
     approve: (id: string | number) => `${API_BASE}/change-requests/${id}/approve`,
     reject: (id: string | number) => `${API_BASE}/change-requests/${id}/reject`,
+    cancel: (id: string | number) => `${API_BASE}/change-requests/${id}/cancel`,
     factTypes: () => `${API_BASE}/change-requests/fact-types`,
     scheduledDeployments: {
       list: (status?: string) => {

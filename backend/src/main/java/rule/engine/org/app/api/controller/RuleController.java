@@ -2,8 +2,11 @@ package rule.engine.org.app.api.controller;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 import rule.engine.org.app.api.request.RuleOutputRequest;
 import rule.engine.org.app.api.request.CreateRuleRequest;
 import rule.engine.org.app.api.request.UpdateRuleRequest;
@@ -43,6 +46,7 @@ import rule.engine.org.app.domain.service.AIRuleGeneratorService;
 import rule.engine.org.app.domain.entity.ui.KieContainerVersion;
 import rule.engine.org.app.api.request.AIGenerateRuleRequest;
 import rule.engine.org.app.api.response.AIGenerateRuleResponse;
+import rule.engine.org.app.security.UserPrincipal;
 import rule.engine.org.app.util.RuleFieldExtractor;
 import rule.engine.org.app.util.DrlConstants;
 
@@ -92,11 +96,13 @@ public class RuleController {
 
     @GetMapping
     public List<DecisionRule> getAllRules(
+            @AuthenticationPrincipal UserPrincipal currentUser,
             @RequestParam(required = false, defaultValue = "true") Boolean latestOnly) {
+        String userId = requireUserId(currentUser);
         if (latestOnly) {
-            return ruleVersionService.getAllLatestRules();
+            return ruleVersionService.getAllLatestRulesForUser(userId);
         }
-        return decisionRuleRepository.findAll();
+        return decisionRuleRepository.findByCreatedByOrderByCreatedAtDesc(userId);
     }
 
     /**
@@ -243,8 +249,11 @@ public class RuleController {
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<RuleResponse> getRule(@PathVariable Long id) {
-        Optional<DecisionRule> ruleOpt = decisionRuleRepository.findById(id);
+    public ResponseEntity<RuleResponse> getRule(
+            @PathVariable Long id,
+            @AuthenticationPrincipal UserPrincipal currentUser) {
+        String userId = requireUserId(currentUser);
+        Optional<DecisionRule> ruleOpt = decisionRuleRepository.findByIdAndCreatedBy(id, userId);
         
         if (ruleOpt.isEmpty()) {
             return ResponseEntity.notFound().build();
@@ -767,8 +776,11 @@ public class RuleController {
     }
 
     @GetMapping("/active")
-    public List<DecisionRule> getActiveRules() {
-        return decisionRuleRepository.findByStatus(RuleStatus.ACTIVE);
+    public List<DecisionRule> getActiveRules(@AuthenticationPrincipal UserPrincipal currentUser) {
+        String userId = requireUserId(currentUser);
+        return decisionRuleRepository.findByStatus(RuleStatus.ACTIVE).stream()
+                .filter(rule -> userId.equals(rule.getCreatedBy()))
+                .collect(Collectors.toList());
     }
 
     @GetMapping("/metadata")
@@ -817,9 +829,14 @@ public class RuleController {
      * Get execution history for a specific declaration
      */
     @GetMapping("/executions/declaration/{declarationId}")
-    public ResponseEntity<List<RuleExecutionResponse>> getExecutionsByDeclaration(@PathVariable String declarationId) {
+    public ResponseEntity<List<RuleExecutionResponse>> getExecutionsByDeclaration(
+            @PathVariable String declarationId,
+            @AuthenticationPrincipal UserPrincipal currentUser) {
+        String userId = requireUserId(currentUser);
         List<RuleExecutionResult> results = executionResultRepository.findByDeclarationId(declarationId);
         List<RuleExecutionResponse> responses = results.stream()
+            .filter(result -> result.getDecisionRule() != null
+                    && userId.equals(result.getDecisionRule().getCreatedBy()))
             .map(this::toExecutionResponse)
             .collect(Collectors.toList());
         return ResponseEntity.ok(responses);
@@ -829,7 +846,10 @@ public class RuleController {
      * Get execution history for a specific rule
      */
     @GetMapping("/{ruleId}/executions")
-    public ResponseEntity<List<RuleExecutionResponse>> getExecutionsByRule(@PathVariable Long ruleId) {
+    public ResponseEntity<List<RuleExecutionResponse>> getExecutionsByRule(
+            @PathVariable Long ruleId,
+            @AuthenticationPrincipal UserPrincipal currentUser) {
+        enforceRuleOwnership(ruleId, currentUser);
         List<RuleExecutionResult> results = executionResultRepository.findByDecisionRuleId(ruleId);
         List<RuleExecutionResponse> responses = results.stream()
             .map(this::toExecutionResponse)
@@ -841,7 +861,10 @@ public class RuleController {
      * Get declarations flagged by a specific rule
      */
     @GetMapping("/{ruleId}/flagged")
-    public ResponseEntity<List<RuleExecutionResponse>> getFlaggedByRule(@PathVariable Long ruleId) {
+    public ResponseEntity<List<RuleExecutionResponse>> getFlaggedByRule(
+            @PathVariable Long ruleId,
+            @AuthenticationPrincipal UserPrincipal currentUser) {
+        enforceRuleOwnership(ruleId, currentUser);
         List<RuleExecutionResult> results = executionResultRepository.findFlaggedByRule(ruleId);
         List<RuleExecutionResponse> responses = results.stream()
             .map(this::toExecutionResponse)
@@ -853,7 +876,10 @@ public class RuleController {
      * Get count of how many times a rule has fired
      */
     @GetMapping("/{ruleId}/fire-count")
-    public ResponseEntity<Long> getRuleFireCount(@PathVariable Long ruleId) {
+    public ResponseEntity<Long> getRuleFireCount(
+            @PathVariable Long ruleId,
+            @AuthenticationPrincipal UserPrincipal currentUser) {
+        enforceRuleOwnership(ruleId, currentUser);
         Long count = executionResultRepository.countRuleFires(ruleId);
         return ResponseEntity.ok(count);
     }
@@ -864,9 +890,17 @@ public class RuleController {
      * Get version history for a specific rule
      */
     @GetMapping("/{id}/versions")
-    public ResponseEntity<List<DecisionRule>> getRuleVersions(@PathVariable Long id) {
+    public ResponseEntity<List<DecisionRule>> getRuleVersions(
+            @PathVariable Long id,
+            @AuthenticationPrincipal UserPrincipal currentUser) {
+        String userId = requireUserId(currentUser);
+        if (decisionRuleRepository.findByIdAndCreatedBy(id, userId).isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
         try {
-            List<DecisionRule> versions = ruleVersionService.getVersionHistory(id);
+            List<DecisionRule> versions = ruleVersionService.getVersionHistory(id).stream()
+                    .filter(rule -> userId.equals(rule.getCreatedBy()))
+                    .collect(Collectors.toList());
             return ResponseEntity.ok(versions);
         } catch (RuntimeException e) {
             return ResponseEntity.notFound().build();
@@ -877,8 +911,12 @@ public class RuleController {
      * Get the latest version of a rule
      */
     @GetMapping("/{id}/versions/latest")
-    public ResponseEntity<DecisionRule> getLatestVersion(@PathVariable Long id) {
+    public ResponseEntity<DecisionRule> getLatestVersion(
+            @PathVariable Long id,
+            @AuthenticationPrincipal UserPrincipal currentUser) {
+        String userId = requireUserId(currentUser);
         return ruleVersionService.getLatestVersion(id)
+            .filter(rule -> userId.equals(rule.getCreatedBy()))
             .map(ResponseEntity::ok)
             .orElse(ResponseEntity.notFound().build());
     }
@@ -917,6 +955,20 @@ public class RuleController {
             result.getRuleScore(),
             result.getExecutedAt()
         );
+    }
+
+    private String requireUserId(UserPrincipal currentUser) {
+        if (currentUser == null || currentUser.getId() == null) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "User context is missing");
+        }
+        return currentUser.getId().toString();
+    }
+
+    private void enforceRuleOwnership(Long ruleId, UserPrincipal currentUser) {
+        String userId = requireUserId(currentUser);
+        if (decisionRuleRepository.findByIdAndCreatedBy(ruleId, userId).isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Rule not found");
+        }
     }
     
     /**

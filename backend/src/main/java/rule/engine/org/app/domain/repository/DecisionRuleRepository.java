@@ -30,6 +30,9 @@ public interface DecisionRuleRepository extends JpaRepository<DecisionRule, Long
      * Find all rules that are the latest version (for list view)
      */
     List<DecisionRule> findByIsLatestTrue();
+    List<DecisionRule> findByIsLatestTrueAndCreatedByOrderByCreatedAtDesc(String createdBy);
+    List<DecisionRule> findByCreatedByOrderByCreatedAtDesc(String createdBy);
+    java.util.Optional<DecisionRule> findByIdAndCreatedBy(Long id, String createdBy);
     
     /**
      * Find all latest active rules, ordered by priority

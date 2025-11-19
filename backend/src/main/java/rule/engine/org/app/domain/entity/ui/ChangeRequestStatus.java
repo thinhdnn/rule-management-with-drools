@@ -9,7 +9,8 @@ import com.fasterxml.jackson.annotation.JsonValue;
 public enum ChangeRequestStatus {
     PENDING("Pending"),
     APPROVED("Approved"),
-    REJECTED("Rejected");
+    REJECTED("Rejected"),
+    CANCELLED("Cancelled");
     
     private final String value;
     

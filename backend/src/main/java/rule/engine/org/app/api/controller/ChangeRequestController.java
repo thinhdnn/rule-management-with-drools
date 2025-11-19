@@ -4,8 +4,11 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 import rule.engine.org.app.api.request.ApproveChangeRequestRequest;
 import rule.engine.org.app.api.request.RejectChangeRequestRequest;
 import rule.engine.org.app.api.response.CreateChangeRequestResponse;
@@ -22,6 +25,8 @@ import rule.engine.org.app.domain.repository.ChangeRequestRepository;
 import rule.engine.org.app.domain.repository.DecisionRuleRepository;
 import rule.engine.org.app.domain.repository.KieContainerVersionRepository;
 import rule.engine.org.app.domain.service.RuleEngineManager;
+import rule.engine.org.app.domain.entity.security.UserRole;
+import rule.engine.org.app.security.UserPrincipal;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.time.Instant;
@@ -109,26 +114,27 @@ public class ChangeRequestController {
 
     /**
      * Get all change requests, optionally filtered by fact type and status
+     * Administrators see all change requests, regular users only see their own
      */
     @GetMapping
     public ResponseEntity<List<ChangeRequest>> getAllChangeRequests(
             @RequestParam(required = false) String factType,
-            @RequestParam(required = false) String status) {
+            @RequestParam(required = false) String status,
+            @AuthenticationPrincipal UserPrincipal currentUser) {
         try {
+            String userId = requireUserId(currentUser);
             List<ChangeRequest> requests;
             FactType factTypeEnum = factType != null && !factType.isEmpty() 
                 ? FactType.fromValue(factType) : null;
             ChangeRequestStatus statusEnum = status != null && !status.isEmpty() 
                 ? ChangeRequestStatus.fromValue(status) : null;
             
-            if (factTypeEnum != null && statusEnum != null) {
-                requests = changeRequestRepository.findByFactTypeAndStatusOrderByCreatedAtDesc(factTypeEnum, statusEnum);
-            } else if (factTypeEnum != null) {
-                requests = changeRequestRepository.findByFactTypeOrderByCreatedAtDesc(factTypeEnum);
-            } else if (statusEnum != null) {
-                requests = changeRequestRepository.findByStatusOrderByCreatedAtDesc(statusEnum);
+            if (isAdministrator(currentUser)) {
+                // Administrators see all change requests
+                requests = changeRequestRepository.findAllChangeRequests(factTypeEnum, statusEnum);
             } else {
-                requests = changeRequestRepository.findAllByOrderByCreatedAtDesc();
+                // Regular users only see their own change requests
+                requests = changeRequestRepository.findOwnedChangeRequests(factTypeEnum, statusEnum, userId);
             }
             return ResponseEntity.ok(requests);
         } catch (Exception e) {
@@ -139,11 +145,22 @@ public class ChangeRequestController {
 
     /**
      * Get a specific change request by ID
+     * Administrators can view any change request, regular users can only view their own
      */
     @GetMapping("/{id}")
-    public ResponseEntity<ChangeRequest> getChangeRequest(@PathVariable Long id) {
+    public ResponseEntity<ChangeRequest> getChangeRequest(
+            @PathVariable Long id,
+            @AuthenticationPrincipal UserPrincipal currentUser) {
         try {
-            Optional<ChangeRequest> request = changeRequestRepository.findById(id);
+            String userId = requireUserId(currentUser);
+            Optional<ChangeRequest> request;
+            if (isAdministrator(currentUser)) {
+                // Administrators can view any change request
+                request = changeRequestRepository.findById(id);
+            } else {
+                // Regular users can only view their own change requests
+                request = changeRequestRepository.findByIdAndCreatedBy(id, userId);
+            }
             return request.map(ResponseEntity::ok)
                     .orElse(ResponseEntity.notFound().build());
         } catch (Exception e) {
@@ -155,15 +172,19 @@ public class ChangeRequestController {
     /**
      * Preview changes before creating a change request
      * Returns detected changes without saving
+     * Only detects changes for rules created by the current user
      */
     @GetMapping("/preview-changes")
-    public ResponseEntity<?> previewChanges(@RequestParam(required = false) String factType) {
+    public ResponseEntity<?> previewChanges(
+            @RequestParam(required = false) String factType,
+            @AuthenticationPrincipal UserPrincipal currentUser) {
         try {
+            String userId = requireUserId(currentUser);
             FactType ft = factType != null && !factType.isEmpty() 
                 ? FactType.valueOf(factType.toUpperCase()) 
                 : FactType.DECLARATION;
             
-            ChangeRequestChanges changes = detectChanges(ft);
+            ChangeRequestChanges changes = detectChanges(ft, userId);
             
             Map<String, Object> response = new HashMap<>();
             response.put("success", true);
@@ -184,14 +205,18 @@ public class ChangeRequestController {
     /**
      * Create a new change request
      * Automatically detects changes compared to the last deployed version
+     * Only detects changes for rules created by the current user
      */
     @PostMapping
-    public ResponseEntity<?> createChangeRequest(@RequestBody CreateChangeRequestRequest request) {
+    public ResponseEntity<?> createChangeRequest(
+            @RequestBody CreateChangeRequestRequest request,
+            @AuthenticationPrincipal UserPrincipal currentUser) {
         try {
+            String userId = requireUserId(currentUser);
             FactType factType = request.getFactType() != null ? request.getFactType() : FactType.DECLARATION;
             
-            // Auto-detect changes vs deployed version
-            ChangeRequestChanges detectedChanges = detectChanges(factType);
+            // Auto-detect changes vs deployed version (only for user's own rules)
+            ChangeRequestChanges detectedChanges = detectChanges(factType, userId);
             
             // Build ChangeRequest entity
             ChangeRequest changeRequest = new ChangeRequest();
@@ -229,23 +254,29 @@ public class ChangeRequestController {
     /**
      * Detect changes compared to last deployed version
      * Returns rules that will be included (activated) or excluded (deactivated)
+     * Only detects changes for rules created by the specified user
      * 
      * Logic:
-     * - Compare LATEST rules (both active AND draft) with deployed version
-     * - Rules to Include: New draft rules + Modified rules (new versions)
-     * - Rules to Exclude: Previously deployed rules that are now removed/replaced
+     * - Compare LATEST rules (both active AND draft) created by user with deployed version
+     * - Rules to Include: New draft rules + Modified rules (new versions) created by user
+     * - Rules to Exclude: Previously deployed rules created by user that are now removed/replaced
      */
-    private ChangeRequestChanges detectChanges(FactType factType) {
+    private ChangeRequestChanges detectChanges(FactType factType, String userId) {
         ChangeRequestChanges changes = new ChangeRequestChanges();
         
         // Get latest deployed version
         Optional<KieContainerVersion> deployedVersion = containerVersionRepository
             .findTopByFactTypeOrderByVersionDesc(factType);
         
-        // Get ALL current latest rules (active + draft)
+        // Get current latest rules created by this user (active + draft)
         // Draft rules are new rules that need to be activated through change request
-        List<DecisionRule> currentLatestRules = decisionRuleRepository
+        List<DecisionRule> allLatestRules = decisionRuleRepository
             .findByFactTypeAndIsLatestTrue(factType);
+        
+        // Filter to only include rules created by this user
+        List<DecisionRule> currentLatestRules = allLatestRules.stream()
+            .filter(rule -> userId.equals(rule.getCreatedBy()))
+            .collect(Collectors.toList());
         
         Set<Long> currentLatestRuleIds = currentLatestRules.stream()
             .map(DecisionRule::getId)
@@ -253,8 +284,7 @@ public class ChangeRequestController {
         
         if (deployedVersion.isEmpty()) {
             // First deployment
-            // Include all draft rules (need to be activated)
-            // Active rules shouldn't exist if never deployed, but include them too
+            // Include all draft rules created by this user (need to be activated)
             changes.setRulesToInclude(new ArrayList<>(currentLatestRuleIds));
             return changes;
         }
@@ -269,21 +299,31 @@ public class ChangeRequestController {
                 .collect(Collectors.toSet());
         }
         
+        // Filter deployed rules to only include those created by this user
+        Set<Long> userDeployedRuleIds = new HashSet<>();
+        if (!deployedRuleIdsSet.isEmpty()) {
+            List<DecisionRule> deployedRules = decisionRuleRepository.findAllById(deployedRuleIdsSet);
+            userDeployedRuleIds = deployedRules.stream()
+                .filter(rule -> userId.equals(rule.getCreatedBy()))
+                .map(DecisionRule::getId)
+                .collect(Collectors.toSet());
+        }
+        
         // Detect changes:
         // 1. Rules to Include: 
-        //    a) New draft rules (NOT in deployed version)
-        //    b) Modified rules (new version with different ID than deployed)
+        //    a) New draft rules created by user (NOT in deployed version)
+        //    b) Modified rules (new version with different ID than deployed) created by user
         List<Long> rulesToInclude = new ArrayList<>();
         for (Long ruleId : currentLatestRuleIds) {
-            if (!deployedRuleIdsSet.contains(ruleId)) {
+            if (!userDeployedRuleIds.contains(ruleId)) {
                 rulesToInclude.add(ruleId);
             }
         }
         
-        // 2. Rules to Exclude: Deployed rules that are NO LONGER in latest set
+        // 2. Rules to Exclude: Deployed rules created by user that are NO LONGER in latest set
         //    (Deactivated or replaced by new version)
         List<Long> rulesToExclude = new ArrayList<>();
-        for (Long deployedRuleId : deployedRuleIdsSet) {
+        for (Long deployedRuleId : userDeployedRuleIds) {
             if (!currentLatestRuleIds.contains(deployedRuleId)) {
                 rulesToExclude.add(deployedRuleId);
             }
@@ -299,12 +339,17 @@ public class ChangeRequestController {
      * Approve a change request
      * This will apply the changes and either deploy immediately or schedule deployment
      * IMPORTANT: Only rules with status=ACTIVE AND isLatest=true will be deployed
+     * Only RULE_ADMINISTRATOR can approve change requests
      */
     @PostMapping("/{id}/approve")
     public ResponseEntity<?> approveChangeRequest(
             @PathVariable Long id,
-            @RequestBody(required = false) ApproveChangeRequestRequest requestBody) {
+            @RequestBody(required = false) ApproveChangeRequestRequest requestBody,
+            @AuthenticationPrincipal UserPrincipal currentUser) {
         try {
+            // Only administrators can approve change requests
+            requireAdministrator(currentUser);
+            
             Optional<ChangeRequest> requestOpt = changeRequestRepository.findById(id);
             if (requestOpt.isEmpty()) {
                 return ResponseEntity.notFound().build();
@@ -377,9 +422,9 @@ public class ChangeRequestController {
             }
             
             // Update change request status
+            String userId = requireUserId(currentUser);
             request.setStatus(ChangeRequestStatus.APPROVED);
-            request.setApprovedBy(requestBody != null && requestBody.getApprovedBy() != null 
-                ? requestBody.getApprovedBy() : "system");
+            request.setApprovedBy(userId);
             request.setApprovedDate(Instant.now());
             changeRequestRepository.save(request);
             
@@ -474,12 +519,17 @@ public class ChangeRequestController {
 
     /**
      * Reject a change request
+     * Only RULE_ADMINISTRATOR can reject change requests
      */
     @PostMapping("/{id}/reject")
     public ResponseEntity<?> rejectChangeRequest(
             @PathVariable Long id,
-            @RequestBody RejectChangeRequestRequest requestBody) {
+            @RequestBody RejectChangeRequestRequest requestBody,
+            @AuthenticationPrincipal UserPrincipal currentUser) {
         try {
+            // Only administrators can reject change requests
+            requireAdministrator(currentUser);
+            
             Optional<ChangeRequest> requestOpt = changeRequestRepository.findById(id);
             if (requestOpt.isEmpty()) {
                 return ResponseEntity.notFound().build();
@@ -496,9 +546,9 @@ public class ChangeRequestController {
             }
             
             // Update change request status
+            String userId = requireUserId(currentUser);
             request.setStatus(ChangeRequestStatus.REJECTED);
-            request.setRejectedBy(requestBody != null && requestBody.getRejectedBy() != null 
-                ? requestBody.getRejectedBy() : "system");
+            request.setRejectedBy(userId);
             request.setRejectedDate(Instant.now());
             request.setRejectionReason(requestBody != null ? requestBody.getRejectionReason() : null);
             changeRequestRepository.save(request);
@@ -511,6 +561,65 @@ public class ChangeRequestController {
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             log.error("Failed to reject change request {}", id, e);
+            ErrorResponse errorResponse = ErrorResponse.builder()
+                .success(false)
+                .error(e.getMessage())
+                .errorType(e.getClass().getName())
+                .build();
+            return ResponseEntity.internalServerError().body(errorResponse);
+        }
+    }
+
+    /**
+     * Cancel a change request
+     * Only the user who created the change request can cancel it
+     * Administrators can only approve or reject, not cancel
+     */
+    @PostMapping("/{id}/cancel")
+    public ResponseEntity<?> cancelChangeRequest(
+            @PathVariable Long id,
+            @AuthenticationPrincipal UserPrincipal currentUser) {
+        try {
+            String userId = requireUserId(currentUser);
+            Optional<ChangeRequest> requestOpt = changeRequestRepository.findById(id);
+            
+            if (requestOpt.isEmpty()) {
+                return ResponseEntity.notFound().build();
+            }
+            
+            ChangeRequest request = requestOpt.get();
+            
+            // Only the creator can cancel their own change request
+            if (!userId.equals(request.getCreatedBy())) {
+                throw new ResponseStatusException(
+                        HttpStatus.FORBIDDEN,
+                        "You can only cancel your own change requests");
+            }
+            
+            // Only allow canceling pending change requests
+            if (request.getStatus() != ChangeRequestStatus.PENDING) {
+                ErrorResponse errorResponse = ErrorResponse.builder()
+                    .success(false)
+                    .error("Only pending change requests can be cancelled")
+                    .errorType("ValidationException")
+                    .build();
+                return ResponseEntity.badRequest().body(errorResponse);
+            }
+            
+            // Update change request status to CANCELLED
+            request.setStatus(ChangeRequestStatus.CANCELLED);
+            changeRequestRepository.save(request);
+            
+            Map<String, Object> response = Map.of(
+                "success", true,
+                "message", "Change request cancelled successfully"
+            );
+            
+            return ResponseEntity.ok(response);
+        } catch (ResponseStatusException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("Failed to cancel change request {}", id, e);
             ErrorResponse errorResponse = ErrorResponse.builder()
                 .success(false)
                 .error(e.getMessage())
@@ -620,6 +729,28 @@ public class ChangeRequestController {
                 .errorType(e.getClass().getName())
                 .build();
             return ResponseEntity.internalServerError().body(errorResponse);
+        }
+    }
+
+    private String requireUserId(UserPrincipal currentUser) {
+        if (currentUser == null || currentUser.getId() == null) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "User context is missing");
+        }
+        return currentUser.getId().toString();
+    }
+
+    private boolean isAdministrator(UserPrincipal currentUser) {
+        if (currentUser == null || currentUser.getRoles() == null) {
+            return false;
+        }
+        return currentUser.getRoles().contains(UserRole.RULE_ADMINISTRATOR);
+    }
+
+    private void requireAdministrator(UserPrincipal currentUser) {
+        if (!isAdministrator(currentUser)) {
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN,
+                    "Only RULE_ADMINISTRATOR can perform this action");
         }
     }
 }

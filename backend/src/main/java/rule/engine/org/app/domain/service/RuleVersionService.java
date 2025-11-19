@@ -179,6 +179,13 @@ public class RuleVersionService {
         return decisionRuleRepository.findByIsLatestTrue();
     }
 
+    public List<DecisionRule> getAllLatestRulesForUser(String userId) {
+        if (userId == null) {
+            return java.util.Collections.emptyList();
+        }
+        return decisionRuleRepository.findByIsLatestTrueAndCreatedByOrderByCreatedAtDesc(userId);
+    }
+
     /**
      * Check if a rule is the latest version
      * 

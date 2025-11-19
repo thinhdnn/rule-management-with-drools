@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useRouter } from 'next/navigation'
 import { api, fetchApi } from '@/lib/api'
+import { useAuth } from '@/components/AuthProvider'
 import { FileCheck, Plus, CheckCircle, XCircle, Package, Clock, Eye, ExternalLink } from 'lucide-react'
 
 export type ChangeRequest = {
@@ -10,7 +11,7 @@ export type ChangeRequest = {
   factType: string
   title: string
   description?: string
-  status: 'Pending' | 'Approved' | 'Rejected'
+  status: 'Pending' | 'Approved' | 'Rejected' | 'Cancelled'
   changesJson?: string
   approvedBy?: string
   approvedDate?: string
@@ -23,6 +24,7 @@ export type ChangeRequest = {
 
 export default function ChangeRequestsPage() {
   const router = useRouter()
+  const { user } = useAuth()
   const [factTypes, setFactTypes] = useState<string[]>([])
   const [selectedFactType, setSelectedFactType] = useState<string>('All')
   const [selectedStatus, setSelectedStatus] = useState<string>('All')
@@ -43,6 +45,9 @@ export default function ChangeRequestsPage() {
   const [previewChanges, setPreviewChanges] = useState<any>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
   const [previewRules, setPreviewRules] = useState<Map<number, any>>(new Map())
+
+  // Check if current user is administrator
+  const isAdministrator = user?.roles?.includes('RULE_ADMINISTRATOR') ?? false
 
   // Load fact types on mount
   useEffect(() => {
@@ -176,7 +181,6 @@ export default function ChangeRequestsPage() {
 
     try {
       const requestBody: any = {
-        approvedBy: 'current-user',
         deploymentOption,
       }
 
@@ -214,13 +218,30 @@ export default function ChangeRequestsPage() {
     try {
       await fetchApi(api.changeRequests.reject(id), {
         method: 'POST',
-        body: JSON.stringify({ rejectedBy: 'current-user', rejectionReason: reason }),
+        body: JSON.stringify({ rejectionReason: reason }),
       })
       refetch()
       alert('Change request rejected successfully!')
     } catch (err) {
       console.error('Failed to reject change request:', err)
       alert(err instanceof Error ? err.message : 'Failed to reject change request')
+    }
+  }
+
+  const handleCancel = async (id: number) => {
+    if (!confirm('Are you sure you want to cancel this change request?')) {
+      return
+    }
+
+    try {
+      await fetchApi(api.changeRequests.cancel(id), {
+        method: 'POST',
+      })
+      refetch()
+      alert('Change request cancelled successfully!')
+    } catch (err) {
+      console.error('Failed to cancel change request:', err)
+      alert(err instanceof Error ? err.message : 'Failed to cancel change request')
     }
   }
 
@@ -283,6 +304,13 @@ export default function ChangeRequestsPage() {
           <span className={`${baseClasses} bg-red-100 text-red-800`}>
             <XCircle className="w-3 h-3" />
             Rejected
+          </span>
+        )
+      case 'Cancelled':
+        return (
+          <span className={`${baseClasses} bg-slate-100 text-slate-800`}>
+            <XCircle className="w-3 h-3" />
+            Cancelled
           </span>
         )
       default:
@@ -375,6 +403,7 @@ export default function ChangeRequestsPage() {
             <option value="Pending">Pending</option>
             <option value="Approved">Approved</option>
             <option value="Rejected">Rejected</option>
+            <option value="Cancelled">Cancelled</option>
           </select>
         </div>
       </div>
@@ -424,7 +453,7 @@ export default function ChangeRequestsPage() {
                           <Eye className="w-3 h-3" />
                           View
                         </button>
-                        {cr.status === 'Pending' && (
+                        {cr.status === 'Pending' && isAdministrator && (
                           <>
                             <button
                               onClick={() => handleApprove(cr.id)}
@@ -439,6 +468,14 @@ export default function ChangeRequestsPage() {
                               Reject
                             </button>
                           </>
+                        )}
+                        {cr.status === 'Pending' && user?.id === cr.createdBy && (
+                          <button
+                            onClick={() => handleCancel(cr.id)}
+                            className="px-3 py-1 text-xs bg-slate-600 text-white rounded hover:bg-slate-700 focus-ring"
+                          >
+                            Cancel
+                          </button>
                         )}
                         {cr.status === 'Rejected' && cr.rejectionReason && (
                           <span className="text-xs text-red-600" title={cr.rejectionReason}>
@@ -993,24 +1030,39 @@ export default function ChangeRequestsPage() {
               {/* Action Buttons for Pending Requests */}
               {selectedChangeRequest.status === 'Pending' && (
                 <div className="flex justify-end gap-2 pt-4 border-t border-outlineVariant">
-                  <button
-                    onClick={() => {
-                      setShowDetailModal(false)
-                      handleApprove(selectedChangeRequest.id)
-                    }}
-                    className="px-4 py-2 text-sm bg-green-600 text-white rounded-md hover:bg-green-700 focus-ring"
-                  >
-                    Approve
-                  </button>
-                  <button
-                    onClick={() => {
-                      setShowDetailModal(false)
-                      handleReject(selectedChangeRequest.id)
-                    }}
-                    className="px-4 py-2 text-sm bg-red-600 text-white rounded-md hover:bg-red-700 focus-ring"
-                  >
-                    Reject
-                  </button>
+                  {isAdministrator && (
+                    <>
+                      <button
+                        onClick={() => {
+                          setShowDetailModal(false)
+                          handleApprove(selectedChangeRequest.id)
+                        }}
+                        className="px-4 py-2 text-sm bg-green-600 text-white rounded-md hover:bg-green-700 focus-ring"
+                      >
+                        Approve
+                      </button>
+                      <button
+                        onClick={() => {
+                          setShowDetailModal(false)
+                          handleReject(selectedChangeRequest.id)
+                        }}
+                        className="px-4 py-2 text-sm bg-red-600 text-white rounded-md hover:bg-red-700 focus-ring"
+                      >
+                        Reject
+                      </button>
+                    </>
+                  )}
+                  {user?.id === selectedChangeRequest.createdBy && (
+                    <button
+                      onClick={() => {
+                        setShowDetailModal(false)
+                        handleCancel(selectedChangeRequest.id)
+                      }}
+                      className="px-4 py-2 text-sm bg-slate-600 text-white rounded-md hover:bg-slate-700 focus-ring"
+                    >
+                      Cancel
+                    </button>
+                  )}
                 </div>
               )}
             </div>
