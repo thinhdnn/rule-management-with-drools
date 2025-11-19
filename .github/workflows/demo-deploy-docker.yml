@@ -22,16 +22,17 @@ jobs:
     steps:
     - name: Remove existing repository
       run: |
-        echo "🧹 Removing existing repository if present..."
+        echo "🧹 Cleaning up existing repository if present..."
         WORKSPACE="${{ github.workspace }}"
-        if [ -d "$WORKSPACE/.git" ]; then
-          echo "⚠️  Found existing repository at $WORKSPACE, removing..."
-          cd "$WORKSPACE/.."
-          REPO_NAME=$(basename "$WORKSPACE")
-          rm -rf "$REPO_NAME"
-          echo "✅ Existing repository '$REPO_NAME' removed"
+        if [ -d "$WORKSPACE" ]; then
+          echo "⚠️  Found existing directory at $WORKSPACE, cleaning up..."
+          # Remove all contents but keep the directory structure
+          find "$WORKSPACE" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+          echo "✅ Existing repository contents removed"
         else
-          echo "✅ No existing repository found at $WORKSPACE"
+          echo "✅ No existing directory found, will be created by checkout"
+          # Ensure parent directory exists
+          mkdir -p "$(dirname "$WORKSPACE")"
         fi
     
     - name: Checkout code
