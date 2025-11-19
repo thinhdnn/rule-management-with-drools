@@ -27,9 +27,9 @@ COPY --from=build /app/build/libs/*.jar app.jar
 # Expose port
 EXPOSE 8080
 
-# Health check - use /be/actuator/health due to context-path
+# Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
-  CMD curl -f http://localhost:8080/be/actuator/health || exit 1
+  CMD curl -f http://localhost:8080/actuator/health || exit 1
 
 # Run the application
 ENTRYPOINT ["java", "-jar", "app.jar"]
