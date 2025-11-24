@@ -27,9 +27,13 @@ import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.stream.Collectors;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @Service
 public class RuleEngineManager {
+    
+    private static final Logger log = LoggerFactory.getLogger(RuleEngineManager.class);
     
     private final DecisionRuleRepository decisionRuleRepository;
     private final KieContainerVersionRepository containerVersionRepository;
@@ -83,7 +87,12 @@ public class RuleEngineManager {
             
             // Build container for each fact type
             for (FactType factType : factTypes) {
-                rebuildRulesForFactType(factType.getValue(), false);
+                try {
+                    rebuildRulesForFactType(factType.getValue(), false);
+                } catch (Exception e) {
+                    log.error("Failed to initialize container for fact type {}: {}. Application will continue but this fact type will not be available until the rule errors are fixed.", 
+                        factType.getValue(), e.getMessage(), e);
+                }
             }
         } finally {
             lock.writeLock().unlock();
@@ -203,7 +212,21 @@ public class RuleEngineManager {
                 lastHash = currentRulesHash;
             }
             
-            KieContainerBuildResult buildResult = buildKieContainer(rules, factType, currentVersion);
+            KieContainerBuildResult buildResult;
+            try {
+                buildResult = buildKieContainer(rules, factType, currentVersion);
+            } catch (RuntimeException e) {
+                // Log detailed error information
+                log.error("Failed to build KieContainer for fact type '{}': {}", factType, e.getMessage());
+                if (e.getMessage() != null && e.getMessage().contains("Error building KieModule")) {
+                    log.error("Rule compilation errors detected. Please fix the following issues:");
+                    log.error("1. Check rule syntax in the database for fact type: {}", factType);
+                    log.error("2. Ensure all rules have proper variable bindings (e.g., $var : FactType(...))");
+                    log.error("3. Verify field names match the fact type class structure");
+                }
+                // Re-throw to let caller handle (they may want to skip or handle differently)
+                throw e;
+            }
             
             // Atomic swap
             ContainerInfo oldInfo = containers.get(factType);
@@ -838,6 +861,8 @@ public class RuleEngineManager {
         // groupId: "org.rule"
         // artifactId: factType in lowercase (e.g., "declaration", "cargoreport") - Maven convention
         // version: use actual version number (e.g., "1.0.0", "2.0.0", "3.0.0")
+        // Note: factType should match the class name (e.g., "Declaration", "CargoReport")
+        // which must be imported in DrlConstants.DRL_IMPORTS
         String groupId = "org.rule";
         String artifactId = factType.toLowerCase();
         String version = versionNumber + ".0.0";
@@ -847,17 +872,28 @@ public class RuleEngineManager {
         StringBuilder drl = new StringBuilder();
         
         // DRL header (package, imports, globals)
-        drl.append(DrlConstants.buildDrlHeader());
+        // Import only classes relevant to factType (Declaration or CargoReport)
+        // Convert String factType to FactType enum
+        FactType factTypeEnum;
+        try {
+            factTypeEnum = FactType.fromValue(factType);
+        } catch (IllegalArgumentException e) {
+            // Default to DECLARATION if factType is unknown
+            factTypeEnum = FactType.DECLARATION;
+        }
+        drl.append(DrlConstants.buildDrlHeader(factTypeEnum));
         
         for (DecisionRule rule : rules) {
             // Use ruleContent directly (complete DRL)
             String ruleContent = rule.getRuleContent();
             if (ruleContent == null || ruleContent.isBlank()) {
                 // Fallback: build minimal DRL if ruleContent is missing
+                // factType must match imported class name: "Declaration" or "CargoReport"
                 String droolsRuleName = rule.getRuleName() + "_" + rule.getId();
                 drl.append("rule \"").append(droolsRuleName).append("\"\n");
                 drl.append("salience ").append(rule.getPriority()).append("\n");
                 drl.append("when\n");
+                // Use factType directly (e.g., "CargoReport") - must match imported class name
                 drl.append("    $d : ").append(factType).append("()\n");
                 drl.append("then\n");
                 drl.append("    System.out.println(\"[DROOLS] Rule '").append(rule.getRuleName())

@@ -30,8 +30,9 @@ server:
 # CORS Configuration
 # Comma-separated list of allowed origins
 # Patterns like http://localhost:* are supported
+# For development, include localhost patterns: http://localhost:*,https://localhost:*
 cors:
-  allowed-origins: http://localhost:3000,http://localhost,https://rule.thinhnguyen.dev
+  allowed-origins: http://localhost:*,https://localhost:*,https://rule.thinhnguyen.dev
 
 management:
   endpoints:
@@ -52,7 +53,7 @@ openai:
 
 security:
   jwt:
-    secret: ${AUTH_JWT_SECRET:change-me}
+    secret: ${AUTH_JWT_SECRET:change-me-in-production-use-32-char-secret-minimum}
     issuer: rule-engine-service
     access-token-ttl: PT15M
     refresh-token-ttl: P7D

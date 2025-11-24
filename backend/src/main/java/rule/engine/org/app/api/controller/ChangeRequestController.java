@@ -26,6 +26,7 @@ import rule.engine.org.app.domain.repository.DecisionRuleRepository;
 import rule.engine.org.app.domain.repository.KieContainerVersionRepository;
 import rule.engine.org.app.domain.service.RuleEngineManager;
 import rule.engine.org.app.domain.entity.security.UserRole;
+import rule.engine.org.app.domain.service.DeploymentSchedulerService;
 import rule.engine.org.app.security.UserPrincipal;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -77,6 +78,7 @@ public class ChangeRequestController {
     private final RuleEngineManager ruleEngineManager;
     private final ObjectMapper objectMapper;
     private final rule.engine.org.app.domain.repository.ScheduledDeploymentRepository scheduledDeploymentRepository;
+    private final DeploymentSchedulerService deploymentSchedulerService;
 
     public ChangeRequestController(
             ChangeRequestRepository changeRequestRepository,
@@ -84,13 +86,15 @@ public class ChangeRequestController {
             KieContainerVersionRepository containerVersionRepository,
             RuleEngineManager ruleEngineManager,
             ObjectMapper objectMapper,
-            rule.engine.org.app.domain.repository.ScheduledDeploymentRepository scheduledDeploymentRepository) {
+            rule.engine.org.app.domain.repository.ScheduledDeploymentRepository scheduledDeploymentRepository,
+            DeploymentSchedulerService deploymentSchedulerService) {
         this.changeRequestRepository = changeRequestRepository;
         this.decisionRuleRepository = decisionRuleRepository;
         this.containerVersionRepository = containerVersionRepository;
         this.ruleEngineManager = ruleEngineManager;
         this.objectMapper = objectMapper;
         this.scheduledDeploymentRepository = scheduledDeploymentRepository;
+        this.deploymentSchedulerService = deploymentSchedulerService;
     }
     
     /**
@@ -181,7 +185,7 @@ public class ChangeRequestController {
         try {
             String userId = requireUserId(currentUser);
             FactType ft = factType != null && !factType.isEmpty() 
-                ? FactType.valueOf(factType.toUpperCase()) 
+                ? FactType.fromValue(factType) 
                 : FactType.DECLARATION;
             
             ChangeRequestChanges changes = detectChanges(ft, userId);
@@ -694,26 +698,7 @@ public class ChangeRequestController {
     @PostMapping("/scheduled-deployments/{id}/cancel")
     public ResponseEntity<?> cancelScheduledDeployment(@PathVariable Long id) {
         try {
-            Optional<rule.engine.org.app.domain.entity.ui.ScheduledDeployment> deploymentOpt = 
-                scheduledDeploymentRepository.findById(id);
-            
-            if (deploymentOpt.isEmpty()) {
-                return ResponseEntity.notFound().build();
-            }
-            
-            rule.engine.org.app.domain.entity.ui.ScheduledDeployment deployment = deploymentOpt.get();
-            
-            if (deployment.getStatus() != rule.engine.org.app.domain.entity.ui.ScheduledDeployment.DeploymentStatus.PENDING) {
-                ErrorResponse errorResponse = ErrorResponse.builder()
-                    .success(false)
-                    .error("Can only cancel PENDING deployments")
-                    .errorType("ValidationException")
-                    .build();
-                return ResponseEntity.badRequest().body(errorResponse);
-            }
-            
-            deployment.setStatus(rule.engine.org.app.domain.entity.ui.ScheduledDeployment.DeploymentStatus.CANCELLED);
-            scheduledDeploymentRepository.save(deployment);
+            deploymentSchedulerService.cancelDeployment(id);
             
             Map<String, Object> response = Map.of(
                 "success", true,
@@ -721,6 +706,15 @@ public class ChangeRequestController {
             );
             
             return ResponseEntity.ok(response);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.notFound().build();
+        } catch (IllegalStateException e) {
+            ErrorResponse errorResponse = ErrorResponse.builder()
+                .success(false)
+                .error(e.getMessage())
+                .errorType("ValidationException")
+                .build();
+            return ResponseEntity.badRequest().body(errorResponse);
         } catch (Exception e) {
             log.error("Failed to cancel scheduled deployment {}", id, e);
             ErrorResponse errorResponse = ErrorResponse.builder()

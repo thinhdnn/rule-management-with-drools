@@ -30,8 +30,8 @@ public class ScheduledDeployment extends BaseAuditableEntity {
     
     /**
      * Fact type to deploy
+     * Uses FactTypeConverter (auto-applied) to store enum value instead of enum name
      */
-    @Enumerated(EnumType.STRING)
     @Column(name = "fact_type", nullable = false, length = 50)
     private FactType factType;
     

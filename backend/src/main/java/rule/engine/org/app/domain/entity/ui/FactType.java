@@ -16,29 +16,22 @@ public enum FactType {
     FactType(String value) {
         this.value = value;
     }
-    
-    /**
-     * Get string value for JSON serialization
-     */
+
     @JsonValue
     public String getValue() {
         return value;
     }
-    
-    /**
-     * Convert string value to enum for JSON deserialization
-     */
+
     @JsonCreator
     public static FactType fromValue(String value) {
-        if (value == null) {
-            return DECLARATION; // Default
-        }
-        for (FactType factType : values()) {
-            if (factType.value.equalsIgnoreCase(value)) {
-                return factType;
+        for (FactType type : values()) {
+            if (type.value.equalsIgnoreCase(value) || type.name().equalsIgnoreCase(value)) {
+                return type;
             }
         }
-        return DECLARATION; // Default
+        throw new IllegalArgumentException("Unknown FactType: " + value);
     }
+    
+
 }
 

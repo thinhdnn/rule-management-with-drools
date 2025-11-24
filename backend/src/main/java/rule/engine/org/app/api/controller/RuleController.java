@@ -1079,8 +1079,8 @@ public class RuleController {
         // Build complete DRL with package, imports, globals, and rule definition
         StringBuilder drl = new StringBuilder();
         
-        // DRL header (package, imports, globals)
-        drl.append(DrlConstants.buildDrlHeader());
+        // DRL header (package, imports, globals) - import only classes relevant to factType
+        drl.append(DrlConstants.buildDrlHeader(factType));
         
         // Rule definition
         String ruleName = rule.getRuleName() != null ? rule.getRuleName() : "Rule";

@@ -16,37 +16,32 @@ import java.util.List;
 @Configuration
 public class CorsConfig implements WebMvcConfigurer {
 
-    @Value("${cors.allowed-origins:http://localhost:3000,http://localhost,https://rule.thinhnguyen.dev}")
+    @Value("${cors.allowed-origins:}")
     private String allowedOrigins;
+
+    /**
+     * Parse allowed origins from configuration string.
+     * Returns empty list if configuration is empty or blank.
+     *
+     * @return List of trimmed, non-empty origin patterns
+     */
+    private List<String> parseOrigins() {
+        if (allowedOrigins == null || allowedOrigins.trim().isEmpty()) {
+            return List.of();
+        }
+        return Arrays.stream(allowedOrigins.split(","))
+                .map(String::trim)
+                .filter(origin -> !origin.isEmpty())
+                .toList();
+    }
 
     @Override
     public void addCorsMappings(CorsRegistry registry) {
-        // Parse allowed origins from configuration
-        List<String> origins = Arrays.asList(allowedOrigins.split(","));
-        
-        // Build origin patterns array
-        String[] originPatterns = new String[origins.size() + 2];
-        originPatterns[0] = "http://localhost:*";
-        originPatterns[1] = "https://localhost:*";
-        
-        int index = 2;
-        for (String origin : origins) {
-            origin = origin.trim();
-            if (!origin.isEmpty()) {
-                originPatterns[index++] = origin;
-            }
-        }
-        
-        // Resize array if needed
-        if (index < originPatterns.length) {
-            String[] trimmed = new String[index];
-            System.arraycopy(originPatterns, 0, trimmed, 0, index);
-            originPatterns = trimmed;
-        }
+        List<String> originPatterns = parseOrigins();
         
         // Configure CORS for all paths
         registry.addMapping("/**")
-                .allowedOriginPatterns(originPatterns)
+                .allowedOriginPatterns(originPatterns.toArray(new String[0]))
                 .allowedMethods("*")
                 .allowedHeaders("*")
                 .exposedHeaders("Content-Type", "Authorization", "X-Total-Count", 
@@ -61,24 +56,14 @@ public class CorsConfig implements WebMvcConfigurer {
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         CorsConfiguration config = new CorsConfiguration();
         
-        // Parse allowed origins from configuration
-        List<String> origins = Arrays.asList(allowedOrigins.split(","));
-        
         // When credentials are allowed, we must use origin patterns, not exact origins
         config.setAllowCredentials(true);
         
-        // Add specific origin patterns for development and production
-        // Allow localhost with any port for development
-        config.addAllowedOriginPattern("http://localhost:*");
-        config.addAllowedOriginPattern("https://localhost:*");
-        
         // Add configured origins as patterns
         // Spring's addAllowedOriginPattern supports both exact origins and patterns
+        List<String> origins = parseOrigins();
         for (String origin : origins) {
-            origin = origin.trim();
-            if (!origin.isEmpty()) {
-                config.addAllowedOriginPattern(origin);
-            }
+            config.addAllowedOriginPattern(origin);
         }
         
         // Allow all HTTP methods

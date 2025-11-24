@@ -18,18 +18,24 @@ export async function GET(request: NextRequest) {
   // Transform backend data to frontend format
   // New lean design: DecisionRule only has metadata + expressions (no business fields!)
   const items = Array.isArray(data) ? data : []
-  const transformed = items.map((rule: any) => ({
-    id: rule.id?.toString() || '',
-    name: rule.ruleName || 'Unnamed Rule',
-    factType: rule.factType || 'Declaration', // Map factType from backend
-    documentType: 'Import Declaration', // Default (rules apply to all declaration types)
-    ruleType: inferRuleTypeFromExpression(rule.whenExpr || rule.ruleCondition), // Support both formats
-    outputType: inferOutputTypeFromExpression(rule.ruleResult || rule.description), // Use ruleResult or description
-    status: rule.status === 'ACTIVE' ? 'Active' as const : 
-            rule.status === 'INACTIVE' ? 'Inactive' as const : 
-            'Draft' as const,
-    updatedAt: rule.lastModifiedDate || rule.createdDate || rule.updatedAt || rule.createdAt || new Date().toISOString(),
-  }))
+  const transformed = items.map((rule: any) => {
+    // Map documentType based on factType
+    const factType = rule.factType || 'Declaration'
+    const documentType = factType === 'CargoReport' ? 'Cargo Report' : 'Import Declaration'
+    
+    return {
+      id: rule.id?.toString() || '',
+      name: rule.ruleName || 'Unnamed Rule',
+      factType, // Map factType from backend
+      documentType,
+      ruleType: inferRuleTypeFromExpression(rule.whenExpr || rule.ruleCondition), // Support both formats
+      outputType: inferOutputTypeFromExpression(rule.ruleResult || rule.description), // Use ruleResult or description
+      status: rule.status === 'ACTIVE' ? 'Active' as const : 
+              rule.status === 'INACTIVE' ? 'Inactive' as const : 
+              'Draft' as const,
+      updatedAt: rule.lastModifiedDate || rule.createdDate || rule.updatedAt || rule.createdAt || new Date().toISOString(),
+    }
+  })
   
   return NextResponse.json({
     items: transformed,

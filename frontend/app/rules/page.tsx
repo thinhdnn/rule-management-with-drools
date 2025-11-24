@@ -11,7 +11,7 @@ export type Rule = {
   id: string
   name: string
   factType: string
-  documentType: 'Import Declaration' | 'Valuation' | 'Container'
+  documentType: 'Import Declaration' | 'Valuation' | 'Container' | 'Cargo Report'
   ruleType: 'Risk' | 'Classification' | 'Compliance' | 'Valuation'
   outputType: 'Score' | 'Channel' | 'Flag' | 'Notification'
   status: 'Active' | 'Draft' | 'Inactive'
@@ -69,19 +69,25 @@ export default function RulesPage() {
     queryFn: async () => {
       const rules = await fetchApi<any[]>(api.rules.list())
       // Transform backend format to frontend format
-      let items: Rule[] = rules.map((rule: any) => ({
-        id: rule.id?.toString() || '',
-        name: rule.ruleName || 'Unnamed Rule',
-        factType: rule.factType || 'Declaration',
-        documentType: 'Import Declaration' as const,
-        ruleType: inferRuleTypeFromExpression(rule.whenExpr || rule.ruleCondition),
-        outputType: inferOutputTypeFromExpression(rule.ruleResult || rule.description),
-        status: rule.status === 'ACTIVE' ? 'Active' as const : 
-                rule.status === 'INACTIVE' ? 'Inactive' as const : 
-                'Draft' as const,
-        generatedByAi: rule.generatedByAi || false,
-        updatedAt: rule.lastModifiedDate || rule.createdDate || rule.updatedAt || rule.createdAt || new Date().toISOString(),
-      }))
+      let items: Rule[] = rules.map((rule: any) => {
+        // Map documentType based on factType
+        const factType = rule.factType || 'Declaration'
+        const documentType = factType === 'CargoReport' ? 'Cargo Report' : 'Import Declaration'
+        
+        return {
+          id: rule.id?.toString() || '',
+          name: rule.ruleName || 'Unnamed Rule',
+          factType,
+          documentType: documentType as 'Import Declaration' | 'Valuation' | 'Container' | 'Cargo Report',
+          ruleType: inferRuleTypeFromExpression(rule.whenExpr || rule.ruleCondition),
+          outputType: inferOutputTypeFromExpression(rule.ruleResult || rule.description),
+          status: rule.status === 'ACTIVE' ? 'Active' as const : 
+                  rule.status === 'INACTIVE' ? 'Inactive' as const : 
+                  'Draft' as const,
+          generatedByAi: rule.generatedByAi || false,
+          updatedAt: rule.lastModifiedDate || rule.createdDate || rule.updatedAt || rule.createdAt || new Date().toISOString(),
+        }
+      })
       
       // Filter by selected fact type
       if (selectedFactType !== 'All') {
