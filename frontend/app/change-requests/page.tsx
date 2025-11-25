@@ -2,9 +2,11 @@
 import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useRouter } from 'next/navigation'
+import { FileCheck, Plus, CheckCircle, XCircle, Package, Clock, Eye, ExternalLink } from 'lucide-react'
 import { api, fetchApi } from '@/lib/api'
 import { useAuth } from '@/components/AuthProvider'
-import { FileCheck, Plus, CheckCircle, XCircle, Package, Clock, Eye, ExternalLink } from 'lucide-react'
+import { UserTimeMeta } from '@/components/UserTimeMeta'
+import { formatDateTime } from '@/lib/datetime'
 
 export type ChangeRequest = {
   id: number
@@ -440,8 +442,13 @@ export default function ChangeRequestsPage() {
                     <td className="px-4 py-3 text-sm text-slate-900">{cr.title}</td>
                     <td className="px-4 py-3 text-sm text-slate-600">{cr.factType}</td>
                     <td className="px-4 py-3">{getStatusBadge(cr.status)}</td>
-                    <td className="px-4 py-3 text-sm text-slate-600">
-                      {cr.createdAt ? new Date(cr.createdAt).toLocaleDateString() : '-'}
+                    <td className="px-4 py-3">
+                      <UserTimeMeta
+                        user={cr.createdBy}
+                        timestamp={cr.createdAt}
+                        fallbackUser={null}
+                        hideUser={false}
+                      />
                     </td>
                     <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center gap-2">
@@ -527,7 +534,7 @@ export default function ChangeRequestsPage() {
                         </span>
                       </td>
                       <td className="px-4 py-3 text-sm text-slate-700">
-                        {new Date(deployment.scheduledTime).toLocaleString()}
+                        {formatDateTime(deployment.scheduledTime) || '-'}
                       </td>
                       <td className="px-4 py-3">
                         {deployment.status === 'PENDING' && (
@@ -842,44 +849,34 @@ export default function ChangeRequestsPage() {
                     <div className="text-sm text-slate-900 whitespace-pre-wrap">{selectedChangeRequest.description}</div>
                   </div>
                 )}
-                <div className="flex items-center gap-4">
+                <div className="flex flex-wrap items-start gap-4">
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">Status</label>
                     <div>{getStatusBadge(selectedChangeRequest.status)}</div>
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Created</label>
-                    <div className="text-sm text-slate-600">
-                      {selectedChangeRequest.createdAt ? new Date(selectedChangeRequest.createdAt).toLocaleString() : '-'}
-                    </div>
-                  </div>
-                  {selectedChangeRequest.createdBy && (
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">Created By</label>
-                      <div className="text-sm text-slate-600">{selectedChangeRequest.createdBy}</div>
-                    </div>
-                  )}
+                  <UserTimeMeta
+                    label="Created"
+                    user={selectedChangeRequest.createdBy}
+                    timestamp={selectedChangeRequest.createdAt}
+                    fallbackUser={null}
+                  />
                 </div>
                 {selectedChangeRequest.status === 'Approved' && selectedChangeRequest.approvedBy && (
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Approved</label>
-                    <div className="text-sm text-slate-600">
-                      By {selectedChangeRequest.approvedBy} on{' '}
-                      {selectedChangeRequest.approvedDate
-                        ? new Date(selectedChangeRequest.approvedDate).toLocaleString()
-                        : '-'}
-                    </div>
-                  </div>
+                  <UserTimeMeta
+                    label="Approved"
+                    user={selectedChangeRequest.approvedBy}
+                    timestamp={selectedChangeRequest.approvedDate}
+                    fallbackUser={null}
+                  />
                 )}
                 {selectedChangeRequest.status === 'Rejected' && selectedChangeRequest.rejectedBy && (
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Rejected</label>
-                    <div className="text-sm text-slate-600">
-                      By {selectedChangeRequest.rejectedBy} on{' '}
-                      {selectedChangeRequest.rejectedDate
-                        ? new Date(selectedChangeRequest.rejectedDate).toLocaleString()
-                        : '-'}
-                    </div>
+                    <UserTimeMeta
+                      label="Rejected"
+                      user={selectedChangeRequest.rejectedBy}
+                      timestamp={selectedChangeRequest.rejectedDate}
+                      fallbackUser={null}
+                    />
                     {selectedChangeRequest.rejectionReason && (
                       <div className="mt-1 text-sm text-red-600">{selectedChangeRequest.rejectionReason}</div>
                     )}

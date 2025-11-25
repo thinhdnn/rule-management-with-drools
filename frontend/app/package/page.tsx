@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { fetchApi, api } from '@/lib/api'
 import { Package, RefreshCw, Clock, User, Hash, FileText, Play, X, Server } from 'lucide-react'
+import { UserTimeMeta } from '@/components/UserTimeMeta'
 
 interface PackageInfo {
   version: number
@@ -412,26 +413,12 @@ export default function PackagePage() {
             )}
           </div>
           <div className="space-y-3">
-            {packageInfo.deployedAt && (
-              <div className="flex items-start gap-2">
-                <Clock size={16} className="text-slate-400 mt-1" />
-                <div>
-                  <div className="text-sm text-slate-500 mb-1">Deployed At</div>
-                  <div className="text-sm">
-                    {new Date(packageInfo.deployedAt).toLocaleString()}
-                  </div>
-                </div>
-              </div>
-            )}
-            {packageInfo.deployedBy && (
-              <div className="flex items-start gap-2">
-                <User size={16} className="text-slate-400 mt-1" />
-                <div>
-                  <div className="text-sm text-slate-500 mb-1">Deployed By</div>
-                  <div className="text-sm">{packageInfo.deployedBy}</div>
-                </div>
-              </div>
-            )}
+            <UserTimeMeta
+              label="Deployed"
+              user={packageInfo.deployedBy}
+              timestamp={packageInfo.deployedAt}
+              fallbackUser={null}
+            />
             {packageInfo.changesDescription && (
               <div className="flex items-start gap-2">
                 <FileText size={16} className="text-slate-400 mt-1" />
@@ -554,8 +541,7 @@ export default function PackagePage() {
                   <th className="text-left py-2 px-4 text-sm font-semibold text-slate-700">Release ID</th>
                   <th className="text-left py-2 px-4 text-sm font-semibold text-slate-700">Changes</th>
                   <th className="text-left py-2 px-4 text-sm font-semibold text-slate-700">Rule Details</th>
-                  <th className="text-left py-2 px-4 text-sm font-semibold text-slate-700">Deployed At</th>
-                  <th className="text-left py-2 px-4 text-sm font-semibold text-slate-700">Deployed By</th>
+                  <th className="text-left py-2 px-4 text-sm font-semibold text-slate-700">Deployed</th>
                   <th className="text-right py-2 px-4 text-sm font-semibold text-slate-700">Actions</th>
                 </tr>
               </thead>
@@ -659,11 +645,12 @@ export default function PackagePage() {
                         <span className="text-slate-400">-</span>
                       )}
                     </td>
-                    <td className="py-3 px-4 text-sm">
-                      {new Date(version.deployedAt).toLocaleString()}
-                    </td>
-                    <td className="py-3 px-4 text-sm">
-                      {version.deployedBy || <span className="text-slate-400">-</span>}
+                    <td className="py-3 px-4">
+                      <UserTimeMeta
+                        user={version.deployedBy}
+                        timestamp={version.deployedAt}
+                        fallbackUser={null}
+                      />
                     </td>
                     <td className="py-3 px-4 text-right">
                       {idx === 0 ? (

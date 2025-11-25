@@ -2,8 +2,9 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Clock, Eye, RotateCcw, GitBranch } from 'lucide-react'
+import { Eye, RotateCcw, GitBranch } from 'lucide-react'
 import type { RuleVersion } from './VersionDropdown'
+import { UserTimeMeta } from '@/components/UserTimeMeta'
 
 type Props = {
   versions: RuleVersion[]
@@ -14,16 +15,6 @@ type Props = {
 export function VersionTimeline({ versions, currentVersionId, onRestore }: Props) {
   const router = useRouter()
   const [restoringId, setRestoringId] = useState<number | null>(null)
-
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    })
-  }
 
   const handleRestore = async (versionId: number) => {
     if (!onRestore) return
@@ -89,16 +80,13 @@ export function VersionTimeline({ versions, currentVersionId, onRestore }: Props
                     )}
                   </div>
 
-                  <div className="flex items-center gap-2 text-sm text-slate-500">
-                    <Clock className="w-3.5 h-3.5" />
-                    <span>{formatDate(version.updatedAt)}</span>
-                    {version.updatedBy && (
-                      <>
-                        <span>•</span>
-                        <span>by {version.updatedBy}</span>
-                      </>
-                    )}
-                  </div>
+                  <UserTimeMeta
+                    label="Updated"
+                    user={version.updatedBy}
+                    timestamp={version.updatedAt}
+                    className="mt-1"
+                    fallbackUser={null}
+                  />
                 </div>
               </div>
 

@@ -3,12 +3,14 @@
 import { use, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, Loader2, Edit, Trash2, AlertTriangle, FileText } from 'lucide-react'
+import { api, fetchApi } from '@/lib/api'
+import { transformRule } from '@/app/api/rules/transform'
 import { SearchableSelect } from '@/components/SearchableSelect'
 import { VersionDropdown, type RuleVersion } from '@/components/VersionDropdown'
 import { VersionTimeline } from '@/components/VersionTimeline'
 import { VersionCompare } from '@/components/VersionCompare'
-import { api, fetchApi } from '@/lib/api'
-import { transformRule } from '@/app/api/rules/transform'
+import { UserTimeMeta } from '@/components/UserTimeMeta'
+import { formatDateTime } from '@/lib/datetime'
 
 type RuleOutput = {
   action: string | null
@@ -545,14 +547,19 @@ export default function RuleDetailPage({ params }: Props) {
             </div>
 
             {/* Timestamps */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-6 border-t border-outlineVariant text-sm text-slate-600">
-              <div>
-                <span className="font-medium">Created:</span> {rule.createdAt ? new Date(rule.createdAt).toLocaleString() : '—'}
-              </div>
-              <div>
-                <span className="font-medium">Last Updated:</span> {rule.updatedAt ? new Date(rule.updatedAt).toLocaleString() : '—'}
-                {rule.updatedBy && <span className="ml-2 text-slate-400">by {rule.updatedBy}</span>}
-              </div>
+            <div className="grid grid-cols-1 gap-4 pt-6 text-sm text-slate-600 border-t border-outlineVariant md:grid-cols-2">
+              <UserTimeMeta
+                label="Created"
+                user={rule.createdBy}
+                timestamp={rule.createdAt}
+                fallbackUser={null}
+              />
+              <UserTimeMeta
+                label="Last Updated"
+                user={rule.updatedBy}
+                timestamp={rule.updatedAt}
+                fallbackUser={null}
+              />
             </div>
           </>
         ) : activeTab === 'history' ? (
@@ -603,7 +610,7 @@ export default function RuleDetailPage({ params }: Props) {
                     <option value="">Select version...</option>
                     {versions.map((v) => (
                       <option key={v.id} value={v.id}>
-                        v{v.version} {v.isLatest && '(Latest)'} - {new Date(v.updatedAt).toLocaleDateString()}
+                        v{v.version} {v.isLatest && '(Latest)'} - {formatDateTime(v.updatedAt, { month: 'short', day: '2-digit', year: 'numeric' }) || '-'}
                       </option>
                     ))}
                   </select>
@@ -641,7 +648,7 @@ export default function RuleDetailPage({ params }: Props) {
                     <option value="">Select version...</option>
                     {versions.map((v) => (
                       <option key={v.id} value={v.id}>
-                        v{v.version} {v.isLatest && '(Latest)'} - {new Date(v.updatedAt).toLocaleDateString()}
+                        v{v.version} {v.isLatest && '(Latest)'} - {formatDateTime(v.updatedAt, { month: 'short', day: '2-digit', year: 'numeric' }) || '-'}
                       </option>
                     ))}
                   </select>

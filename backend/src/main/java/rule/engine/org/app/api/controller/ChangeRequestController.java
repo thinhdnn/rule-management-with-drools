@@ -14,6 +14,7 @@ import rule.engine.org.app.api.request.RejectChangeRequestRequest;
 import rule.engine.org.app.api.response.CreateChangeRequestResponse;
 import rule.engine.org.app.api.response.ApproveChangeRequestResponse;
 import rule.engine.org.app.api.response.RejectChangeRequestResponse;
+import rule.engine.org.app.api.response.ChangeRequestResponse;
 import rule.engine.org.app.api.response.ErrorResponse;
 import rule.engine.org.app.domain.entity.ui.ChangeRequest;
 import rule.engine.org.app.domain.entity.ui.ChangeRequestStatus;
@@ -27,6 +28,7 @@ import rule.engine.org.app.domain.repository.KieContainerVersionRepository;
 import rule.engine.org.app.domain.service.RuleEngineManager;
 import rule.engine.org.app.domain.entity.security.UserRole;
 import rule.engine.org.app.domain.service.DeploymentSchedulerService;
+import rule.engine.org.app.domain.service.UserDisplayNameService;
 import rule.engine.org.app.security.UserPrincipal;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -79,6 +81,7 @@ public class ChangeRequestController {
     private final ObjectMapper objectMapper;
     private final rule.engine.org.app.domain.repository.ScheduledDeploymentRepository scheduledDeploymentRepository;
     private final DeploymentSchedulerService deploymentSchedulerService;
+    private final UserDisplayNameService userDisplayNameService;
 
     public ChangeRequestController(
             ChangeRequestRepository changeRequestRepository,
@@ -87,7 +90,8 @@ public class ChangeRequestController {
             RuleEngineManager ruleEngineManager,
             ObjectMapper objectMapper,
             rule.engine.org.app.domain.repository.ScheduledDeploymentRepository scheduledDeploymentRepository,
-            DeploymentSchedulerService deploymentSchedulerService) {
+            DeploymentSchedulerService deploymentSchedulerService,
+            UserDisplayNameService userDisplayNameService) {
         this.changeRequestRepository = changeRequestRepository;
         this.decisionRuleRepository = decisionRuleRepository;
         this.containerVersionRepository = containerVersionRepository;
@@ -95,6 +99,7 @@ public class ChangeRequestController {
         this.objectMapper = objectMapper;
         this.scheduledDeploymentRepository = scheduledDeploymentRepository;
         this.deploymentSchedulerService = deploymentSchedulerService;
+        this.userDisplayNameService = userDisplayNameService;
     }
     
     /**
@@ -121,7 +126,7 @@ public class ChangeRequestController {
      * Administrators see all change requests, regular users only see their own
      */
     @GetMapping
-    public ResponseEntity<List<ChangeRequest>> getAllChangeRequests(
+    public ResponseEntity<List<ChangeRequestResponse>> getAllChangeRequests(
             @RequestParam(required = false) String factType,
             @RequestParam(required = false) String status,
             @AuthenticationPrincipal UserPrincipal currentUser) {
@@ -140,7 +145,10 @@ public class ChangeRequestController {
                 // Regular users only see their own change requests
                 requests = changeRequestRepository.findOwnedChangeRequests(factTypeEnum, statusEnum, userId);
             }
-            return ResponseEntity.ok(requests);
+            List<ChangeRequestResponse> responses = requests.stream()
+                .map(this::buildChangeRequestResponse)
+                .collect(java.util.stream.Collectors.toList());
+            return ResponseEntity.ok(responses);
         } catch (Exception e) {
             log.error("Failed to fetch change requests", e);
             return ResponseEntity.internalServerError().build();
@@ -152,7 +160,7 @@ public class ChangeRequestController {
      * Administrators can view any change request, regular users can only view their own
      */
     @GetMapping("/{id}")
-    public ResponseEntity<ChangeRequest> getChangeRequest(
+    public ResponseEntity<ChangeRequestResponse> getChangeRequest(
             @PathVariable Long id,
             @AuthenticationPrincipal UserPrincipal currentUser) {
         try {
@@ -165,7 +173,8 @@ public class ChangeRequestController {
                 // Regular users can only view their own change requests
                 request = changeRequestRepository.findByIdAndCreatedBy(id, userId);
             }
-            return request.map(ResponseEntity::ok)
+            return request.map(this::buildChangeRequestResponse)
+                    .map(ResponseEntity::ok)
                     .orElse(ResponseEntity.notFound().build());
         } catch (Exception e) {
             log.error("Failed to fetch change request {}", id, e);
@@ -746,6 +755,28 @@ public class ChangeRequestController {
                     HttpStatus.FORBIDDEN,
                     "Only RULE_ADMINISTRATOR can perform this action");
         }
+    }
+
+    /**
+     * Build ChangeRequestResponse DTO from ChangeRequest entity
+     * Maps UUIDs to display names for user fields
+     */
+    private ChangeRequestResponse buildChangeRequestResponse(ChangeRequest request) {
+        return ChangeRequestResponse.builder()
+            .id(request.getId())
+            .factType(request.getFactType() != null ? request.getFactType().getValue() : null)
+            .title(request.getTitle())
+            .description(request.getDescription())
+            .status(request.getStatus() != null ? request.getStatus().name() : null)
+            .changesJson(request.getChangesJson())
+            .approvedBy(userDisplayNameService.getDisplayName(request.getApprovedBy()))
+            .approvedDate(request.getApprovedDate())
+            .rejectedBy(userDisplayNameService.getDisplayName(request.getRejectedBy()))
+            .rejectedDate(request.getRejectedDate())
+            .rejectionReason(request.getRejectionReason())
+            .createdAt(request.getCreatedAt())
+            .createdBy(userDisplayNameService.getDisplayName(request.getCreatedBy()))
+            .build();
     }
 }
 

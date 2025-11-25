@@ -3,6 +3,7 @@ import { useMemo, useState, useEffect, useRef } from 'react'
 import type { Rule } from '@/app/rules/page'
 import { MoreVertical } from 'lucide-react'
 import { api, fetchApi } from '@/lib/api'
+import { UserTimeMeta } from '@/components/UserTimeMeta'
 
 type Props = {
   items: Rule[]
@@ -141,7 +142,12 @@ export function DataTable({ items, loading, error, onRetry, sortField, sortDir, 
                 <td className="px-4 py-3">
                   <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${StatusColor[r.status]}`}>{r.status}</span>
                 </td>
-                <td className="px-4 py-3">{new Date(r.updatedAt).toLocaleString(undefined, { month: 'short', day: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
+                <td className="px-4 py-3">
+                  <UserTimeMeta
+                    timestamp={r.updatedAt}
+                    hideUser={true}
+                  />
+                </td>
                 <td className="px-2 py-3 text-right relative">
                   <div 
                     className="relative inline-block" 

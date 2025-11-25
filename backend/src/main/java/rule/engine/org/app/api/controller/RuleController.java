@@ -43,6 +43,7 @@ import rule.engine.org.app.domain.repository.KieContainerVersionRepository;
 import rule.engine.org.app.domain.service.RuleEngineManager;
 import rule.engine.org.app.domain.service.RuleVersionService;
 import rule.engine.org.app.domain.service.AIRuleGeneratorService;
+import rule.engine.org.app.domain.service.UserDisplayNameService;
 import rule.engine.org.app.domain.entity.ui.KieContainerVersion;
 import rule.engine.org.app.api.request.AIGenerateRuleRequest;
 import rule.engine.org.app.api.response.AIGenerateRuleResponse;
@@ -77,6 +78,7 @@ public class RuleController {
     private final KieContainerVersionRepository containerVersionRepository;
     private final AIRuleGeneratorService aiRuleGeneratorService;
     private final EntityScannerService entityScannerService;
+    private final UserDisplayNameService userDisplayNameService;
 
     public RuleController(DecisionRuleRepository decisionRuleRepository,
                         RuleExecutionResultRepository executionResultRepository,
@@ -88,7 +90,8 @@ public class RuleController {
                         RuleOutputGroupRepository outputGroupRepository,
                         KieContainerVersionRepository containerVersionRepository,
                         AIRuleGeneratorService aiRuleGeneratorService,
-                        EntityScannerService entityScannerService) {
+                        EntityScannerService entityScannerService,
+                        UserDisplayNameService userDisplayNameService) {
         this.decisionRuleRepository = decisionRuleRepository;
         this.executionResultRepository = executionResultRepository;
         this.ruleEngineManager = ruleEngineManager;
@@ -100,6 +103,7 @@ public class RuleController {
         this.containerVersionRepository = containerVersionRepository;
         this.aiRuleGeneratorService = aiRuleGeneratorService;
         this.entityScannerService = entityScannerService;
+        this.userDisplayNameService = userDisplayNameService;
     }
 
     @GetMapping
@@ -575,7 +579,7 @@ public class RuleController {
                 .changesDescription(version.getChangesDescription())
                 .ruleIds(version.getRuleIds())
                 .deployedAt(version.getCreatedAt())
-                .deployedBy(version.getCreatedBy());
+                .deployedBy(userDisplayNameService.getDisplayName(version.getCreatedBy()));
             
             // Parse rule changes JSON for current version
             if (version.getRuleChangesJson() != null && !version.getRuleChangesJson().isEmpty()) {
@@ -602,7 +606,7 @@ public class RuleController {
                         .changesDescription(v.getChangesDescription())
                         .ruleIds(v.getRuleIds())
                         .deployedAt(v.getCreatedAt())
-                        .deployedBy(v.getCreatedBy());
+                        .deployedBy(userDisplayNameService.getDisplayName(v.getCreatedBy()));
                 
                 // Parse rule changes JSON if available
                 if (v.getRuleChangesJson() != null && !v.getRuleChangesJson().isEmpty()) {
@@ -1600,8 +1604,8 @@ public class RuleController {
             .versionNotes(rule.getVersionNotes())
             .createdAt(rule.getCreatedAt())
             .updatedAt(rule.getUpdatedAt())
-            .createdBy(rule.getCreatedBy())
-            .updatedBy(rule.getUpdatedBy());
+            .createdBy(userDisplayNameService.getDisplayName(rule.getCreatedBy()))
+            .updatedBy(userDisplayNameService.getDisplayName(rule.getUpdatedBy()));
         
         // Extract fields from request DTO if provided
         String description = null;

@@ -6,6 +6,7 @@ import { StatsCard } from '@/components/dashboard/StatsCard'
 import { ActivityFeed } from '@/components/dashboard/ActivityFeed'
 import { ContainerStatus } from '@/components/dashboard/ContainerStatus'
 import { api, fetchApi } from '@/lib/api'
+import { formatDateTime } from '@/lib/datetime'
 import type {
   ContainerStatusResponse,
   DashboardActivityItem,
@@ -209,7 +210,7 @@ export default function HomePage() {
                       </div>
                       {deployment.scheduledTime && (
                         <p className="mt-2 text-xs text-slate-500">
-                          {new Date(deployment.scheduledTime).toLocaleString()}
+                          {formatDateTime(deployment.scheduledTime) || '-'}
                         </p>
                       )}
                     </li>

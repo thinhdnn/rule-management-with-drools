@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { ChevronDown, Clock, Check } from 'lucide-react'
+import { UserTimeMeta } from '@/components/UserTimeMeta'
 
 export type RuleVersion = {
   id: number
@@ -48,25 +49,6 @@ export function VersionDropdown({ currentVersion, versions, onVersionChange }: P
     } else {
       router.push(`/rules/${versionId}`)
     }
-  }
-
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString)
-    const now = new Date()
-    const diffMs = now.getTime() - date.getTime()
-    const diffMins = Math.floor(diffMs / 60000)
-    const diffHours = Math.floor(diffMs / 3600000)
-    const diffDays = Math.floor(diffMs / 86400000)
-
-    if (diffMins < 60) return `${diffMins}m ago`
-    if (diffHours < 24) return `${diffHours}h ago`
-    if (diffDays < 7) return `${diffDays}d ago`
-    
-    return date.toLocaleDateString('en-US', { 
-      month: 'short', 
-      day: 'numeric',
-      year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined
-    })
   }
 
   return (
@@ -119,16 +101,15 @@ export function VersionDropdown({ currentVersion, versions, onVersionChange }: P
                       </p>
                     )}
                     
-                    {v.updatedBy && (
-                      <p className="text-xs text-slate-400 mt-1">
-                        by {v.updatedBy}
-                      </p>
-                    )}
+                    <UserTimeMeta
+                      user={v.updatedBy}
+                      timestamp={v.updatedAt}
+                      relative
+                      className="mt-1"
+                      fallbackUser={null}
+                    />
                   </div>
                   
-                  <p className="text-xs text-slate-400 whitespace-nowrap">
-                    {formatDate(v.updatedAt)}
-                  </p>
                 </div>
               </button>
             ))}

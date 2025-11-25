@@ -2,6 +2,7 @@
 
 import React, { useMemo } from 'react'
 import { ArrowRight, AlertCircle } from 'lucide-react'
+import { UserTimeMeta } from '@/components/UserTimeMeta'
 
 type Condition = {
   id: string
@@ -194,9 +195,14 @@ export function VersionCompare({ oldVersion, newVersion, metadata }: Props) {
           <div className="text-center">
             <p className="text-xs text-slate-500 mb-1">Old Version</p>
             <p className="text-lg font-semibold text-slate-900">v{oldVersion.version}</p>
-            <p className="text-xs text-slate-400">
-              {new Date(oldVersion.updatedAt).toLocaleDateString()}
-            </p>
+            <div className="mt-1">
+              <UserTimeMeta
+                user={oldVersion.updatedBy}
+                timestamp={oldVersion.updatedAt}
+                fallbackUser={null}
+                hideUser={false}
+              />
+            </div>
           </div>
           
           <ArrowRight className="w-5 h-5 text-slate-400" />
@@ -204,9 +210,14 @@ export function VersionCompare({ oldVersion, newVersion, metadata }: Props) {
           <div className="text-center">
             <p className="text-xs text-slate-500 mb-1">New Version</p>
             <p className="text-lg font-semibold text-slate-900">v{newVersion.version}</p>
-            <p className="text-xs text-slate-400">
-              {new Date(newVersion.updatedAt).toLocaleDateString()}
-            </p>
+            <div className="mt-1">
+              <UserTimeMeta
+                user={newVersion.updatedBy}
+                timestamp={newVersion.updatedAt}
+                fallbackUser={null}
+                hideUser={false}
+              />
+            </div>
           </div>
         </div>
 

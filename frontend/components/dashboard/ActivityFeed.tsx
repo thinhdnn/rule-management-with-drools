@@ -1,9 +1,10 @@
 "use client"
 
+import type { ComponentType } from 'react'
 import { Bell, CheckCircle2, Clock4, History, Loader2, TriangleAlert } from 'lucide-react'
+import { UserTimeMeta } from '@/components/UserTimeMeta'
 import type { DashboardActivityItem } from '@/types/dashboard'
 import { cn } from '@/lib/utils'
-import type { ComponentType } from 'react'
 
 interface ActivityFeedProps {
   items: DashboardActivityItem[]
@@ -15,22 +16,6 @@ const statusStyles: Record<string, { badge: string; icon: ComponentType<{ classN
   approved: { badge: 'bg-emerald-50 text-emerald-700 ring-emerald-100', icon: CheckCircle2 },
   deployed: { badge: 'bg-sky-50 text-sky-700 ring-sky-100', icon: History },
   rejected: { badge: 'bg-rose-50 text-rose-700 ring-rose-100', icon: TriangleAlert },
-}
-
-function timeAgo(value?: string) {
-  if (!value) return '—'
-  const timestamp = new Date(value).getTime()
-  if (Number.isNaN(timestamp)) {
-    return '—'
-  }
-  const diff = Date.now() - timestamp
-  const minutes = Math.floor(diff / 60000)
-  if (minutes < 1) return 'just now'
-  if (minutes < 60) return `${minutes}m ago`
-  const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours}h ago`
-  const days = Math.floor(hours / 24)
-  return `${days}d ago`
 }
 
 export function ActivityFeed({ items, loading }: ActivityFeedProps) {
@@ -85,11 +70,12 @@ export function ActivityFeed({ items, loading }: ActivityFeedProps) {
                   </span>
                 )}
               </div>
-              <div className="mt-1 flex items-center gap-2 text-sm text-slate-500">
-                <span>{item.user || 'System'}</span>
-                <span>•</span>
-                <span>{timeAgo(item.timestamp)}</span>
-              </div>
+              <UserTimeMeta
+                user={item.user}
+                timestamp={item.timestamp}
+                relative
+                className="mt-1"
+              />
             </div>
           </div>
         )
