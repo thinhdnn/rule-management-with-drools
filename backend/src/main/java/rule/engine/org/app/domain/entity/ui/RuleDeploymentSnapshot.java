@@ -27,8 +27,8 @@ public class RuleDeploymentSnapshot extends BaseAuditableEntity {
     
     /**
      * Fact type for this deployment
+     * Uses FactTypeConverter to convert enum to value (Declaration/CargoReport) instead of enum name
      */
-    @Enumerated(EnumType.STRING)
     @Column(name = "fact_type", nullable = false, length = 50)
     private FactType factType;
     

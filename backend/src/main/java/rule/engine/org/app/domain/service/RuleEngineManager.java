@@ -894,10 +894,10 @@ public class RuleEngineManager {
                 drl.append("salience ").append(rule.getPriority()).append("\n");
                 drl.append("when\n");
                 // Use factType directly (e.g., "CargoReport") - must match imported class name
-                drl.append("    $d : ").append(factType).append("()\n");
+                // Determine correct variable name based on fact type
+                String factVariable = (factTypeEnum == FactType.CARGO_REPORT) ? "$c" : "$d";
+                drl.append("    ").append(factVariable).append(" : ").append(factType).append("()\n");
                 drl.append("then\n");
-                drl.append("    System.out.println(\"[DROOLS] Rule '").append(rule.getRuleName())
-                   .append("' matched for ").append(factType.toLowerCase()).append(": \" + $d);\n");
                 drl.append("end\n\n");
             } else {
                 // ruleContent is complete DRL (includes package, imports, globals, and rule)

@@ -49,7 +49,12 @@ import rule.engine.org.app.api.response.AIGenerateRuleResponse;
 import rule.engine.org.app.security.UserPrincipal;
 import rule.engine.org.app.util.RuleFieldExtractor;
 import rule.engine.org.app.util.DrlConstants;
+import rule.engine.org.app.util.EntityScannerService;
 
+import java.lang.reflect.Field;
+import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.Type;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -71,6 +76,7 @@ public class RuleController {
     private final RuleOutputGroupRepository outputGroupRepository;
     private final KieContainerVersionRepository containerVersionRepository;
     private final AIRuleGeneratorService aiRuleGeneratorService;
+    private final EntityScannerService entityScannerService;
 
     public RuleController(DecisionRuleRepository decisionRuleRepository,
                         RuleExecutionResultRepository executionResultRepository,
@@ -81,7 +87,8 @@ public class RuleController {
                         RuleOutputRepository outputRepository,
                         RuleOutputGroupRepository outputGroupRepository,
                         KieContainerVersionRepository containerVersionRepository,
-                        AIRuleGeneratorService aiRuleGeneratorService) {
+                        AIRuleGeneratorService aiRuleGeneratorService,
+                        EntityScannerService entityScannerService) {
         this.decisionRuleRepository = decisionRuleRepository;
         this.executionResultRepository = executionResultRepository;
         this.ruleEngineManager = ruleEngineManager;
@@ -92,6 +99,7 @@ public class RuleController {
         this.outputGroupRepository = outputGroupRepository;
         this.containerVersionRepository = containerVersionRepository;
         this.aiRuleGeneratorService = aiRuleGeneratorService;
+        this.entityScannerService = entityScannerService;
     }
 
     @GetMapping
@@ -1158,10 +1166,6 @@ public class RuleController {
         // Add to totalResults
         then.append("    totalResults.getHits().add(output);\n");
         
-        // Log rule match
-        then.append("    System.out.println(\"[DROOLS] Rule '").append(rule.getRuleName() != null ? rule.getRuleName() : "Unknown")
-            .append("' matched for declaration: \" + $d.getDeclarationId());\n");
-        
         return then.toString();
     }
     
@@ -1186,7 +1190,21 @@ public class RuleController {
         Map<String, String> fieldTypeByName = RuleFieldExtractor.extractInputFields(factTypeEnum.getValue()).stream()
             .collect(Collectors.toMap(FieldDefinition::getName, FieldDefinition::getType, (a, b) -> a));
 
-        StringBuilder conditionBuilder = new StringBuilder();
+        // Determine fact type variable and class name based on factType
+        String factVariable;
+        String factClassName;
+        if (factTypeEnum == FactType.CARGO_REPORT) {
+            factVariable = "$c";
+            factClassName = "CargoReport";
+        } else {
+            factVariable = "$d";
+            factClassName = "Declaration";
+        }
+
+        // Separate regular conditions from collection conditions
+        List<String> regularConditions = new ArrayList<>();
+        List<String> collectionConditions = new ArrayList<>();
+        
         for (int i = 0; i < conditions.size(); i++) {
             Map<String, Object> condition = conditions.get(i);
             Object fieldObj = condition.get("field");
@@ -1199,14 +1217,6 @@ public class RuleController {
             String operator = operatorObj.toString();
             Object valueObj = condition.get("value");
 
-            // Convert field path from declaration.fieldName to $d.fieldName for Drools
-            // e.g., declaration.importerName -> $d.importerName
-            // e.g., declaration.governmentAgencyGoodsItems.customsValueAmount -> $d.governmentAgencyGoodsItems.customsValueAmount
-            String droolsFieldPath = field;
-            if (field.startsWith("declaration.")) {
-                droolsFieldPath = "$d." + field.substring("declaration.".length());
-            }
-
             String fieldType = fieldTypeByName.getOrDefault(field, "string");
             String valueExpression = buildValueExpression(valueObj, fieldType);
 
@@ -1214,32 +1224,182 @@ public class RuleController {
                 continue;
             }
 
-            conditionBuilder.append(droolsFieldPath).append(' ').append(operator).append(' ').append(valueExpression);
-
-            if (i < conditions.size() - 1) {
-                String logicalOp = String.valueOf(condition.getOrDefault("logicalOp", "AND"));
-                conditionBuilder.append(logicalOp.equalsIgnoreCase("OR") ? " || " : " && ");
+            // Check if field path contains a collection (e.g., cargoReport.consignments.grossMassMeasure)
+            String droolsCondition = buildDroolsConditionForField(field, operator, valueExpression, factTypeEnum);
+            if (droolsCondition != null) {
+                // Collection condition - goes outside fact pattern
+                collectionConditions.add(droolsCondition);
+            } else {
+                // Regular condition - goes inside fact pattern
+                String droolsFieldPath = field;
+                if (field.startsWith("declaration.")) {
+                    droolsFieldPath = "$d." + field.substring("declaration.".length());
+                } else if (field.startsWith("cargoReport.")) {
+                    droolsFieldPath = "$c." + field.substring("cargoReport.".length());
+                }
+                regularConditions.add(droolsFieldPath + " " + operator + " " + valueExpression);
             }
         }
 
-        if (conditionBuilder.length() == 0) {
+        // Build WHEN clause
+        StringBuilder whenClause = new StringBuilder();
+        
+        // Fact pattern with regular conditions
+        if (regularConditions.isEmpty() && collectionConditions.isEmpty()) {
             return null;
         }
-
-        // Determine fact type variable and class name based on factType
-        String factVariable;
-        String factClassName;
-        if (factTypeEnum == FactType.CARGO_REPORT) {
-            factVariable = "$c";
-            factClassName = "CargoReport";
+        
+        if (regularConditions.isEmpty()) {
+            whenClause.append(factVariable).append(" : ").append(factClassName).append("()");
         } else {
-            factVariable = "$d";
-            factClassName = "Declaration";
+            String regularConditionStr = String.join(" && ", regularConditions);
+            whenClause.append(factVariable).append(" : ").append(factClassName).append("(").append(regularConditionStr).append(")");
         }
-
-        return factVariable + " : " + factClassName + "(" + conditionBuilder + ")";
+        
+        // Add collection conditions after fact pattern
+        if (!collectionConditions.isEmpty()) {
+            whenClause.append("\n    ").append(String.join("\n    ", collectionConditions));
+        }
+        
+        return whenClause.toString();
     }
-
+    
+    /**
+     * Build Drools condition for a field, handling collection fields with 'from' clause.
+     * Supports:
+     * - Single level collections: entity.collection.field (e.g., cargoReport.consignments.grossMassMeasure)
+     * - Nested collections: entity.collection1.collection2.field (e.g., cargoReport.consignments.consignmentItems.hsId)
+     * Returns null if field is not a collection field (use simple field access instead).
+     */
+    private String buildDroolsConditionForField(String fieldPath, String operator, String valueExpression, FactType factType) {
+        String[] parts = fieldPath.split("\\.");
+        
+        // Get fact variable
+        String factVariable = (factType == FactType.CARGO_REPORT) ? "$c" : "$d";
+        
+        // Get entity class
+        Class<?> entityClass = entityScannerService.getMainEntityClass(factType);
+        if (entityClass == null) {
+            return null;
+        }
+        
+        // Case 1: Single level collection (entity.collection.field) - 3 parts
+        if (parts.length == 3) {
+            String collectionFieldName = parts[1]; // consignments, governmentAgencyGoodsItems, etc.
+            String relatedFieldName = parts[2]; // grossMassMeasure, hsId, etc.
+            
+            return buildSingleLevelCollectionCondition(entityClass, collectionFieldName, relatedFieldName, 
+                    operator, valueExpression, factVariable);
+        }
+        
+        // Case 2: Nested collection (entity.collection1.collection2.field) - 4 parts
+        if (parts.length == 4) {
+            String firstCollectionName = parts[1]; // consignments
+            String secondCollectionName = parts[2]; // consignmentItems
+            String finalFieldName = parts[3]; // hsId, grossWeightMeasure, etc.
+            
+            return buildNestedCollectionCondition(entityClass, firstCollectionName, secondCollectionName, 
+                    finalFieldName, operator, valueExpression, factVariable);
+        }
+        
+        // Not a collection field path
+        return null;
+    }
+    
+    /**
+     * Build condition for single level collection: exists Entity(field op value) from $var.collection
+     */
+    private String buildSingleLevelCollectionCondition(Class<?> entityClass, String collectionFieldName, 
+            String relatedFieldName, String operator, String valueExpression, String factVariable) {
+        try {
+            Field collectionField = entityClass.getDeclaredField(collectionFieldName);
+            jakarta.persistence.OneToMany oneToMany = collectionField.getAnnotation(jakarta.persistence.OneToMany.class);
+            if (oneToMany == null) {
+                return null; // Not a collection field
+            }
+            
+            // Get the related entity class from List<RelatedEntity>
+            Type genericType = collectionField.getGenericType();
+            if (genericType instanceof ParameterizedType) {
+                ParameterizedType paramType = (ParameterizedType) genericType;
+                Type[] actualTypes = paramType.getActualTypeArguments();
+                if (actualTypes.length > 0 && actualTypes[0] instanceof Class) {
+                    Class<?> relatedEntityClass = (Class<?>) actualTypes[0];
+                    String relatedEntityClassName = relatedEntityClass.getSimpleName();
+                    
+                    // Generate Drools syntax: exists EntityClass(fieldName operator value) from $variable.collectionName
+                    return "exists " + relatedEntityClassName + "(" + relatedFieldName + " " + operator + " " + valueExpression + ") from " + factVariable + "." + collectionFieldName;
+                }
+            }
+        } catch (NoSuchFieldException e) {
+            log.debug("Field {} not found in entity class {}", collectionFieldName, entityClass.getSimpleName());
+            return null;
+        }
+        
+        return null;
+    }
+    
+    /**
+     * Build condition for nested collection: exists Entity1(exists Entity2(field op value) from collection2) from $var.collection1
+     */
+    private String buildNestedCollectionCondition(Class<?> entityClass, String firstCollectionName, 
+            String secondCollectionName, String finalFieldName, String operator, String valueExpression, String factVariable) {
+        try {
+            // Get first collection field
+            Field firstCollectionField = entityClass.getDeclaredField(firstCollectionName);
+            jakarta.persistence.OneToMany firstOneToMany = firstCollectionField.getAnnotation(jakarta.persistence.OneToMany.class);
+            if (firstOneToMany == null) {
+                return null;
+            }
+            
+            // Get the first related entity class
+            Type firstGenericType = firstCollectionField.getGenericType();
+            if (!(firstGenericType instanceof ParameterizedType)) {
+                return null;
+            }
+            
+            ParameterizedType firstParamType = (ParameterizedType) firstGenericType;
+            Type[] firstActualTypes = firstParamType.getActualTypeArguments();
+            if (firstActualTypes.length == 0 || !(firstActualTypes[0] instanceof Class)) {
+                return null;
+            }
+            
+            Class<?> firstRelatedEntityClass = (Class<?>) firstActualTypes[0];
+            
+            // Get second collection field from first related entity
+            Field secondCollectionField = firstRelatedEntityClass.getDeclaredField(secondCollectionName);
+            jakarta.persistence.OneToMany secondOneToMany = secondCollectionField.getAnnotation(jakarta.persistence.OneToMany.class);
+            if (secondOneToMany == null) {
+                return null;
+            }
+            
+            // Get the second related entity class
+            Type secondGenericType = secondCollectionField.getGenericType();
+            if (!(secondGenericType instanceof ParameterizedType)) {
+                return null;
+            }
+            
+            ParameterizedType secondParamType = (ParameterizedType) secondGenericType;
+            Type[] secondActualTypes = secondParamType.getActualTypeArguments();
+            if (secondActualTypes.length == 0 || !(secondActualTypes[0] instanceof Class)) {
+                return null;
+            }
+            
+            Class<?> secondRelatedEntityClass = (Class<?>) secondActualTypes[0];
+            String firstEntityClassName = firstRelatedEntityClass.getSimpleName();
+            String secondEntityClassName = secondRelatedEntityClass.getSimpleName();
+            
+            // Generate nested Drools syntax:
+            // exists FirstEntity(exists SecondEntity(field op value) from secondCollection) from $var.firstCollection
+            String innerCondition = "exists " + secondEntityClassName + "(" + finalFieldName + " " + operator + " " + valueExpression + ") from " + secondCollectionName;
+            return "exists " + firstEntityClassName + "(" + innerCondition + ") from " + factVariable + "." + firstCollectionName;
+            
+        } catch (NoSuchFieldException e) {
+            log.debug("Nested collection field not found: {} -> {}", firstCollectionName, secondCollectionName);
+            return null;
+        }
+    }
+    
     private String buildValueExpression(Object valueObj, String fieldType) {
         if (valueObj == null) {
             return "null";
