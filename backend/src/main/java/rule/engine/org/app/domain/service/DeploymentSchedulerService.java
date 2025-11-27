@@ -126,6 +126,38 @@ public class DeploymentSchedulerService {
     }
     
     /**
+     * Deploy a scheduled deployment immediately without waiting for scheduled time
+     * 
+     * @param deploymentId The ID of the scheduled deployment
+     * @param reason The reason for deploying immediately (optional)
+     */
+    @Transactional
+    public void deployNow(Long deploymentId, String reason) {
+        ScheduledDeployment deployment = scheduledDeploymentRepository
+            .findById(deploymentId)
+            .orElseThrow(() -> new IllegalArgumentException("Deployment not found: " + deploymentId));
+        
+        if (deployment.getStatus() != ScheduledDeployment.DeploymentStatus.PENDING) {
+            throw new IllegalStateException(
+                "Cannot deploy immediately. Deployment is in status: " + deployment.getStatus() + 
+                ". Only PENDING deployments can be deployed immediately."
+            );
+        }
+        
+        // Save the deployment reason
+        if (reason != null && !reason.trim().isEmpty()) {
+            deployment.setImmediateDeploymentReason(reason.trim());
+            scheduledDeploymentRepository.save(deployment);
+        }
+        
+        log.info("Deploying scheduled deployment {} immediately (was scheduled for {}). Reason: {}", 
+            deploymentId, deployment.getScheduledTime(), reason != null ? reason : "N/A");
+        
+        // Execute the deployment immediately
+        executeDeployment(deployment);
+    }
+    
+    /**
      * Cancel a scheduled deployment
      */
     @Transactional

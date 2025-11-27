@@ -63,6 +63,9 @@ export default function ChangeRequestsPage() {
   const [deploymentOption, setDeploymentOption] = useState<'IMMEDIATE' | 'SCHEDULED'>('IMMEDIATE')
   const [scheduledTime, setScheduledTime] = useState<string>('')
   const [deploymentNotes, setDeploymentNotes] = useState<string>('')
+  const [showDeployNowModal, setShowDeployNowModal] = useState(false)
+  const [selectedDeploymentId, setSelectedDeploymentId] = useState<number | null>(null)
+  const [deployNowReason, setDeployNowReason] = useState<string>('')
   const [changeRequestRules, setChangeRequestRules] = useState<Map<number, any>>(new Map())
   const [createForm, setCreateForm] = useState({
     factType: 'Declaration',
@@ -650,29 +653,59 @@ export default function ChangeRequestsPage() {
                         {deployment.retryCount} / {deployment.maxRetries}
                       </td>
                       <td className="px-4 py-3 text-sm text-slate-700">
-                        {deployment.deploymentNotes || '-'}
+                        <div className="space-y-1">
+                          {deployment.deploymentNotes && (
+                            <div>
+                              <span className="text-xs text-slate-500">Notes: </span>
+                              {deployment.deploymentNotes}
+                            </div>
+                          )}
+                          {deployment.immediateDeploymentReason && (
+                            <div className="text-green-700">
+                              <span className="text-xs font-medium">Deploy Reason: </span>
+                              {deployment.immediateDeploymentReason}
+                            </div>
+                          )}
+                          {!deployment.deploymentNotes && !deployment.immediateDeploymentReason && (
+                            <span>-</span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-4 py-3 text-right">
                         {deployment.status === 'PENDING' && (
-                          <button
-                            onClick={async () => {
-                              if (confirm('Cancel this scheduled deployment?')) {
-                                try {
-                                  await fetchApi(api.changeRequests.scheduledDeployments.cancel(deployment.id), {
-                                    method: 'POST',
-                                  })
-                                  refetchScheduled()
-                                  alert('Deployment cancelled successfully')
-                                } catch (err) {
-                                  console.error('Failed to cancel deployment:', err)
-                                  alert(err instanceof Error ? err.message : 'Failed to cancel deployment')
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              onClick={() => {
+                                setSelectedDeploymentId(deployment.id)
+                                setDeployNowReason('')
+                                setShowDeployNowModal(true)
+                              }}
+                              className="px-3 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700 focus-ring flex items-center gap-1"
+                              title="Deploy Now"
+                            >
+                              <Package className="w-3 h-3" />
+                              Deploy Now
+                            </button>
+                            <button
+                              onClick={async () => {
+                                if (confirm('Cancel this scheduled deployment?')) {
+                                  try {
+                                    await fetchApi(api.changeRequests.scheduledDeployments.cancel(deployment.id), {
+                                      method: 'POST',
+                                    })
+                                    refetchScheduled()
+                                    alert('Deployment cancelled successfully')
+                                  } catch (err) {
+                                    console.error('Failed to cancel deployment:', err)
+                                    alert(err instanceof Error ? err.message : 'Failed to cancel deployment')
+                                  }
                                 }
-                              }
-                            }}
-                            className="px-3 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700"
-                          >
-                            Cancel
-                          </button>
+                              }}
+                              className="px-3 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700 focus-ring"
+                            >
+                              Cancel
+                            </button>
+                          </div>
                         )}
                         {deployment.status === 'FAILED' && deployment.errorMessage && (
                           <span className="text-xs text-red-600" title={deployment.errorMessage}>
@@ -1388,6 +1421,101 @@ export default function ChangeRequestsPage() {
                 >
                   <CheckCircle className="w-4 h-4" />
                   {deploymentOption === 'IMMEDIATE' ? 'Approve & Deploy Now' : 'Approve & Schedule'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Deploy Now Modal */}
+      {showDeployNowModal && selectedDeploymentId && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-semibold text-slate-900 flex items-center gap-2">
+                  <Package className="w-5 h-5 text-green-600" />
+                  Deploy Now
+                </h2>
+                <button
+                  onClick={() => {
+                    setShowDeployNowModal(false)
+                    setSelectedDeploymentId(null)
+                    setDeployNowReason('')
+                  }}
+                  className="text-slate-500 hover:text-slate-700"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                <p className="text-sm text-yellow-800">
+                  This deployment will be executed immediately instead of waiting for the scheduled time.
+                </p>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label htmlFor="deployNowReason" className="block text-sm font-medium text-slate-700 mb-2">
+                    Reason for Immediate Deployment <span className="text-red-500">*</span>
+                  </label>
+                  <textarea
+                    id="deployNowReason"
+                    value={deployNowReason}
+                    onChange={(e) => setDeployNowReason(e.target.value)}
+                    rows={4}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                    placeholder="Please provide a reason for deploying immediately..."
+                    required
+                  />
+                  <p className="text-xs text-slate-500 mt-1">
+                    This reason will be recorded for audit purposes
+                  </p>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex justify-end gap-3 mt-6">
+                <button
+                  onClick={() => {
+                    setShowDeployNowModal(false)
+                    setSelectedDeploymentId(null)
+                    setDeployNowReason('')
+                  }}
+                  className="px-4 py-2 text-sm text-slate-700 border border-slate-300 rounded-md hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={async () => {
+                    if (!deployNowReason.trim()) {
+                      alert('Please provide a reason for immediate deployment')
+                      return
+                    }
+
+                    try {
+                      await fetchApi(api.changeRequests.scheduledDeployments.deployNow(selectedDeploymentId), {
+                        method: 'POST',
+                        body: JSON.stringify({ reason: deployNowReason.trim() }),
+                      })
+                      setShowDeployNowModal(false)
+                      setSelectedDeploymentId(null)
+                      setDeployNowReason('')
+                      refetchScheduled()
+                      alert('Deployment executed immediately')
+                    } catch (err) {
+                      console.error('Failed to deploy immediately:', err)
+                      alert(err instanceof Error ? err.message : 'Failed to deploy immediately')
+                    }
+                  }}
+                  className="px-4 py-2 text-sm bg-green-600 text-white rounded-md hover:bg-green-700 focus-ring flex items-center gap-2"
+                >
+                  <Package className="w-4 h-4" />
+                  Deploy Now
                 </button>
               </div>
             </div>

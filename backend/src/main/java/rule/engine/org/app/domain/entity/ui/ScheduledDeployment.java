@@ -55,6 +55,12 @@ public class ScheduledDeployment extends BaseAuditableEntity {
     private String deploymentNotes;
     
     /**
+     * Reason for immediate deployment (when deployed before scheduled time)
+     */
+    @Column(name = "immediate_deployment_reason", columnDefinition = "TEXT")
+    private String immediateDeploymentReason;
+    
+    /**
      * Actual execution time (when deployed)
      */
     @Column(name = "executed_at")

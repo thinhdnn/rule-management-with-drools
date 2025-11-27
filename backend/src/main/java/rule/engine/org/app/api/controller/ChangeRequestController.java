@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 import rule.engine.org.app.api.request.ApproveChangeRequestRequest;
 import rule.engine.org.app.api.request.RejectChangeRequestRequest;
+import rule.engine.org.app.api.request.DeployNowRequest;
 import rule.engine.org.app.api.response.CreateChangeRequestResponse;
 import rule.engine.org.app.api.response.ApproveChangeRequestResponse;
 import rule.engine.org.app.api.response.RejectChangeRequestResponse;
@@ -1105,6 +1106,46 @@ public class ChangeRequestController {
         } catch (Exception e) {
             log.error("Failed to fetch upcoming deployments", e);
             return ResponseEntity.internalServerError().build();
+        }
+    }
+    
+    /**
+     * Deploy a scheduled deployment immediately without waiting for scheduled time
+     */
+    @PostMapping("/scheduled-deployments/{id}/deploy-now")
+    public ResponseEntity<?> deployScheduledDeploymentNow(
+            @PathVariable Long id,
+            @RequestBody(required = false) DeployNowRequest request) {
+        try {
+            String reason = (request != null && request.getReason() != null) 
+                ? request.getReason() 
+                : null;
+            
+            deploymentSchedulerService.deployNow(id, reason);
+            
+            Map<String, Object> response = Map.of(
+                "success", true,
+                "message", "Scheduled deployment executed immediately"
+            );
+            
+            return ResponseEntity.ok(response);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.notFound().build();
+        } catch (IllegalStateException e) {
+            ErrorResponse errorResponse = ErrorResponse.builder()
+                .success(false)
+                .error(e.getMessage())
+                .errorType("ValidationException")
+                .build();
+            return ResponseEntity.badRequest().body(errorResponse);
+        } catch (Exception e) {
+            log.error("Failed to deploy scheduled deployment {} immediately", id, e);
+            ErrorResponse errorResponse = ErrorResponse.builder()
+                .success(false)
+                .error(e.getMessage())
+                .errorType(e.getClass().getName())
+                .build();
+            return ResponseEntity.internalServerError().body(errorResponse);
         }
     }
     

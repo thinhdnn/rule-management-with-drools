@@ -88,6 +88,7 @@ export const api = {
         return status ? `${url}?status=${encodeURIComponent(status)}` : url
       },
       upcoming: () => `${API_BASE}/change-requests/scheduled-deployments/upcoming`,
+      deployNow: (id: string | number) => `${API_BASE}/change-requests/scheduled-deployments/${id}/deploy-now`,
       cancel: (id: string | number) => `${API_BASE}/change-requests/scheduled-deployments/${id}/cancel`,
     },
   },
