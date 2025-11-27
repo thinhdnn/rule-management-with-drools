@@ -33,6 +33,13 @@ export const api = {
       return factType ? `${url}?factType=${encodeURIComponent(factType)}` : url
     },
     execute: () => `${API_BASE}/rules/execute`,
+    executions: (source?: string, limit?: number) => {
+      const url = `${API_BASE}/rules/executions`
+      const params = new URLSearchParams()
+      if (source) params.append('source', source)
+      if (limit) params.append('limit', limit.toString())
+      return params.toString() ? `${url}?${params.toString()}` : url
+    },
     factTypes: () => `${API_BASE}/rules/fact-types`,
     containersStatus: () => `${API_BASE}/rules/containers/status`,
     containerStatus: (factType: string) => `${API_BASE}/rules/containers/status/${encodeURIComponent(factType)}`,
@@ -73,6 +80,7 @@ export const api = {
     approve: (id: string | number) => `${API_BASE}/change-requests/${id}/approve`,
     reject: (id: string | number) => `${API_BASE}/change-requests/${id}/reject`,
     cancel: (id: string | number) => `${API_BASE}/change-requests/${id}/cancel`,
+    validate: () => `${API_BASE}/change-requests/validate`,
     factTypes: () => `${API_BASE}/change-requests/fact-types`,
     scheduledDeployments: {
       list: (status?: string) => {
@@ -95,12 +103,33 @@ export async function fetchApi<T>(url: string, options?: RequestInit): Promise<T
     headers.set('Authorization', `Bearer ${token}`)
   }
 
+  // Debug logging for authentication issues
+  if (typeof window !== 'undefined' && url.includes('/executions')) {
+    console.log('Executions API call:', {
+      url,
+      hasToken: !!token,
+      tokenLength: token?.length,
+      headers: Object.fromEntries(headers.entries())
+    })
+  }
+
   const response = await fetch(url, {
     ...options,
     headers,
   })
 
   if (!response.ok) {
+    // Handle 401 Unauthorized - clear token and redirect to login
+    if (response.status === 401) {
+      if (typeof window !== 'undefined') {
+        window.localStorage.removeItem('accessToken')
+        // Only redirect if not already on login page
+        if (window.location.pathname !== '/login') {
+          window.location.href = '/login'
+        }
+      }
+    }
+    
     const errorText = await response.text()
     let errorMessage = errorText
     try {

@@ -1,6 +1,6 @@
 package rule.engine.org.app.config;
 
-import jakarta.annotation.PostConstruct;
+import org.springframework.beans.factory.InitializingBean;
 import org.springframework.context.annotation.Configuration;
 import rule.engine.org.app.util.DrlConstants;
 import rule.engine.org.app.util.EntityScannerService;
@@ -10,7 +10,7 @@ import rule.engine.org.app.util.EntityScannerService;
  * Ensures entity scanning happens before DrlConstants is used.
  */
 @Configuration
-public class DrlConstantsConfig {
+public class DrlConstantsConfig implements InitializingBean {
 
     private final EntityScannerService entityScannerService;
 
@@ -21,9 +21,10 @@ public class DrlConstantsConfig {
     /**
      * Initialize DrlConstants with EntityScannerService after entity scanning is complete.
      * This runs after EntityScannerService's @PostConstruct method.
+     * Using InitializingBean ensures this runs during bean initialization phase.
      */
-    @PostConstruct
-    public void initializeDrlConstants() {
+    @Override
+    public void afterPropertiesSet() {
         DrlConstants.setEntityScannerService(entityScannerService);
     }
 }

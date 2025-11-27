@@ -92,7 +92,14 @@ public class AIRuleGeneratorService {
             AIRuleValidationService.ValidationResult validation = 
                 validationService.validateRule(generatedRule, factType);
             
-            // Step 6: Build response
+            // Step 6: AI DRL Syntax Review - Review conditions for DRL compatibility
+            List<String> drlWarnings = reviewDrlCompatibility(generatedRule, factType);
+            if (!drlWarnings.isEmpty()) {
+                validation.getWarnings().addAll(drlWarnings);
+                log.warn("DRL compatibility warnings detected: {}", drlWarnings);
+            }
+            
+            // Step 7: Build response
             responseBuilder
                 .success(validation.isValid())
                 .generatedRule(generatedRule)
@@ -156,7 +163,7 @@ public class AIRuleGeneratorService {
             .writeValueAsString(metadataJson);
         
         return String.format("""
-            You are an expert rule generator for a customs declaration and cargo inspection system.
+            You are an expert Drools DRL rule generator for a customs declaration and cargo inspection system.
             Your task is to convert natural language rule descriptions into structured JSON rules.
             
             IMPORTANT CONSTRAINTS - YOU MUST FOLLOW THESE STRICTLY:
@@ -281,7 +288,6 @@ public class AIRuleGeneratorService {
                 .model(openAIConfig.getModel())
                 .addUserMessage(prompt)
                 .temperature(openAIConfig.getTemperature())
-                .maxTokens(openAIConfig.getMaxTokens())
                 .build();
             
             ChatCompletion completion = openAIClient.chat().completions().create(params);
@@ -393,6 +399,173 @@ public class AIRuleGeneratorService {
         }
         
         return suggestions;
+    }
+    
+    /**
+     * AI-powered DRL syntax review.
+     * Reviews conditions and output for Drools DRL compatibility issues.
+     * Detects unsupported operations like "divided by", "multiplied by", etc.
+     * 
+     * @param rule The generated rule to review
+     * @param factType The fact type
+     * @return List of DRL compatibility warnings
+     */
+    private List<String> reviewDrlCompatibility(CreateRuleRequest rule, String factType) {
+        List<String> warnings = new ArrayList<>();
+        
+        // Check if AI is enabled
+        if (openAIClient == null || !openAIConfig.getEnabled()) {
+            return warnings; // Skip review if AI is disabled
+        }
+        
+        try {
+            // Build review prompt
+            String reviewPrompt = buildDrlReviewPrompt(rule, factType);
+            
+            // Call OpenAI for review
+            String reviewResponse = callOpenAIForReview(reviewPrompt);
+            
+            // Parse review response
+            List<String> aiWarnings = parseReviewResponse(reviewResponse);
+            warnings.addAll(aiWarnings);
+            
+            log.debug("DRL review completed: {} warnings found", warnings.size());
+            
+        } catch (Exception e) {
+            log.warn("Failed to perform AI DRL review: {}", e.getMessage());
+            // Don't fail the whole generation if review fails
+        }
+        
+        return warnings;
+    }
+    
+    /**
+     * Build prompt for DRL syntax review
+     */
+    private String buildDrlReviewPrompt(CreateRuleRequest rule, String factType) throws JsonProcessingException {
+        // Convert rule to JSON for review
+        Map<String, Object> ruleJson = new HashMap<>();
+        ruleJson.put("ruleName", rule.getRuleName());
+        ruleJson.put("factType", factType);
+        ruleJson.put("conditions", rule.getConditions());
+        ruleJson.put("output", rule.getOutput());
+        
+        String ruleJsonStr = objectMapper.writerWithDefaultPrettyPrinter()
+            .writeValueAsString(ruleJson);
+        
+        return String.format("""
+            You are a Drools DRL syntax expert. Review the following rule conditions and output for DRL compatibility.
+            
+            IMPORTANT: Drools DRL does NOT support:
+            1. Mathematical operations in conditions (e.g., "divided by", "multiplied by", "plus", "minus")
+            2. Complex calculations in WHEN clause (e.g., "field1 / field2", "field1 + field2")
+            3. Nested arithmetic expressions
+            
+            RULE TO REVIEW:
+            %s
+            
+            TASK:
+            Analyze the conditions array and identify any that would cause DRL compilation errors.
+            Common issues:
+            - Conditions that require arithmetic operations (division, multiplication, addition, subtraction)
+            - Conditions comparing calculated values (e.g., "field1 / field2 < 10")
+            - Conditions with complex expressions
+            
+            OUTPUT FORMAT - Return ONLY valid JSON:
+            {
+              "hasIssues": true/false,
+              "warnings": [
+                "Warning message 1",
+                "Warning message 2"
+              ],
+              "suggestions": [
+                "Suggestion 1",
+                "Suggestion 2"
+              ]
+            }
+            
+            If no issues found, return:
+            {
+              "hasIssues": false,
+              "warnings": [],
+              "suggestions": []
+            }
+            
+            IMPORTANT: Return ONLY the JSON structure. Do not include markdown or additional text.
+            """,
+            ruleJsonStr
+        );
+    }
+    
+    /**
+     * Call OpenAI API for DRL review (with lower temperature for more consistent results)
+     */
+    private String callOpenAIForReview(String prompt) {
+        try {
+            log.debug("Calling OpenAI API for DRL review");
+            
+            ChatCompletionCreateParams params = ChatCompletionCreateParams.builder()
+                .model(openAIConfig.getModel())
+                .addUserMessage(prompt)
+                .temperature(0.1) // Lower temperature for more consistent review
+                .build();
+            
+            ChatCompletion completion = openAIClient.chat().completions().create(params);
+            
+            String response = completion.choices().get(0).message().content().orElse("");
+            log.debug("DRL review response received: {} characters", response.length());
+            
+            return response;
+            
+        } catch (Exception e) {
+            log.error("Error calling OpenAI API for DRL review", e);
+            throw new RuntimeException("Failed to call OpenAI API for review: " + e.getMessage(), e);
+        }
+    }
+    
+    /**
+     * Parse AI review response and extract warnings
+     */
+    @SuppressWarnings("unchecked")
+    private List<String> parseReviewResponse(String reviewResponse) {
+        List<String> warnings = new ArrayList<>();
+        
+        try {
+            // Clean up response
+            String cleaned = reviewResponse.trim();
+            if (cleaned.startsWith("```json")) {
+                cleaned = cleaned.substring(7);
+            }
+            if (cleaned.startsWith("```")) {
+                cleaned = cleaned.substring(3);
+            }
+            if (cleaned.endsWith("```")) {
+                cleaned = cleaned.substring(0, cleaned.length() - 3);
+            }
+            cleaned = cleaned.trim();
+            
+            // Parse JSON
+            Map<String, Object> review = objectMapper.readValue(cleaned, Map.class);
+            
+            Boolean hasIssues = (Boolean) review.get("hasIssues");
+            if (hasIssues != null && hasIssues) {
+                List<String> warningList = (List<String>) review.get("warnings");
+                if (warningList != null) {
+                    warnings.addAll(warningList);
+                }
+                
+                List<String> suggestions = (List<String>) review.get("suggestions");
+                if (suggestions != null && !suggestions.isEmpty()) {
+                    warnings.add("Suggestions: " + String.join("; ", suggestions));
+                }
+            }
+            
+        } catch (Exception e) {
+            log.warn("Failed to parse DRL review response: {}", e.getMessage());
+            // Don't fail if parsing fails
+        }
+        
+        return warnings;
     }
 }
 

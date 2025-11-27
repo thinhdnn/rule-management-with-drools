@@ -22,6 +22,31 @@ export type ChangeRequest = {
   rejectionReason?: string
   createdAt?: string
   createdBy?: string
+  validationStatus?: string
+  validationMessage?: string
+  validationReleaseId?: string
+  validationRuleCount?: number
+  validationError?: string
+  validationCheckedAt?: string
+  validationResultJson?: string
+  executionTestStatus?: string
+  executionTestMessage?: string
+  executionTestHitsCount?: number
+  executionTestTotalScore?: number
+  executionTestFinalAction?: string
+  executionTestResultJson?: string
+}
+
+type ChangeRequestValidationResult = {
+  success: boolean
+  message: string
+  factType?: string
+  compiledRuleCount?: number
+  totalChanges?: number
+  rulesToInclude?: number
+  rulesToExclude?: number
+  releaseId?: string
+  error?: string
 }
 
 export default function ChangeRequestsPage() {
@@ -47,6 +72,8 @@ export default function ChangeRequestsPage() {
   const [previewChanges, setPreviewChanges] = useState<any>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
   const [previewRules, setPreviewRules] = useState<Map<number, any>>(new Map())
+  const [validationLoading, setValidationLoading] = useState(false)
+  const [validationResult, setValidationResult] = useState<ChangeRequestValidationResult | null>(null)
 
   // Check if current user is administrator
   const isAdministrator = user?.roles?.includes('RULE_ADMINISTRATOR') ?? false
@@ -82,6 +109,15 @@ export default function ChangeRequestsPage() {
       loadPreviewChanges()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [createForm.factType, showCreateModal])
+
+  useEffect(() => {
+    if (!showCreateModal) {
+      setValidationResult(null)
+      setValidationLoading(false)
+      return
+    }
+    setValidationResult(null)
   }, [createForm.factType, showCreateModal])
 
   const loadPreviewChanges = async () => {
@@ -125,7 +161,42 @@ export default function ChangeRequestsPage() {
     enabled: currentTab === 'scheduled',
   })
 
+  const validateCurrentChanges = async (): Promise<ChangeRequestValidationResult | null> => {
+    if (!createForm.factType) {
+      return null
+    }
+
+    setValidationLoading(true)
+    setValidationResult(null)
+    try {
+      const response = await fetchApi<ChangeRequestValidationResult>(api.changeRequests.validate(), {
+        method: 'POST',
+        body: JSON.stringify({ factType: createForm.factType }),
+      })
+      setValidationResult(response)
+      return response
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to validate change request'
+      const failure: ChangeRequestValidationResult = { success: false, message }
+      setValidationResult(failure)
+      return failure
+    } finally {
+      setValidationLoading(false)
+    }
+  }
+
   const handleCreate = async () => {
+    if (!createForm.factType) {
+      alert('Please select a fact type before submitting.')
+      return
+    }
+
+    const validation = await validateCurrentChanges()
+    if (!validation || !validation.success) {
+      alert(validation?.message || 'Validation failed. Please fix issues before submitting.')
+      return
+    }
+
     try {
       const payload = {
         factType: createForm.factType,
@@ -150,6 +221,14 @@ export default function ChangeRequestsPage() {
       console.error('Failed to create change request:', err)
       alert(err instanceof Error ? err.message : 'Failed to create change request')
     }
+  }
+
+  const handleValidateBuild = async () => {
+    if (!createForm.factType) {
+      alert('Please select a fact type before validating.')
+      return
+    }
+    await validateCurrentChanges()
   }
 
   const handleApprove = async (id: number) => {
@@ -789,6 +868,48 @@ export default function ChangeRequestsPage() {
                   </div>
                 )}
               </div>
+              
+              {validationResult && (
+                <div
+                  className={`border rounded-md p-4 text-sm ${
+                    validationResult.success
+                      ? 'border-green-200 bg-green-50'
+                      : 'border-red-200 bg-red-50'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span
+                      className={`font-semibold ${
+                        validationResult.success ? 'text-green-800' : 'text-red-800'
+                      }`}
+                    >
+                      {validationResult.success ? 'Validation succeeded' : 'Validation failed'}
+                    </span>
+                    {validationResult.releaseId && (
+                      <span className="text-xs text-slate-500">
+                        ReleaseId: {validationResult.releaseId}
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-1 text-slate-700">{validationResult.message}</p>
+                  {validationResult.error && !validationResult.success && (
+                    <p className="mt-2 text-xs text-red-700 break-words">
+                      {validationResult.error}
+                    </p>
+                  )}
+                  <div className="mt-2 text-xs text-slate-600 flex flex-wrap gap-4">
+                    <span>
+                      Compiled rules: {validationResult.compiledRuleCount ?? previewChanges?.totalChanges ?? 0}
+                    </span>
+                    {typeof validationResult.rulesToInclude === 'number' && (
+                      <span>Include: {validationResult.rulesToInclude}</span>
+                    )}
+                    {typeof validationResult.rulesToExclude === 'number' && (
+                      <span>Exclude: {validationResult.rulesToExclude}</span>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
             <div className="p-6 border-t border-outlineVariant flex justify-end gap-2">
               <button
@@ -796,14 +917,25 @@ export default function ChangeRequestsPage() {
                   setShowCreateModal(false)
                   setPreviewChanges(null)
                   setPreviewRules(new Map())
+                  setValidationResult(null)
                 }}
                 className="px-4 py-2 text-sm border border-outlineVariant rounded-md hover:bg-slate-50 focus-ring"
               >
                 Cancel
               </button>
               <button
+                onClick={handleValidateBuild}
+                disabled={previewLoading || validationLoading}
+                className="px-4 py-2 text-sm border border-indigo-200 text-indigo-700 rounded-md hover:bg-indigo-50 disabled:opacity-50 disabled:cursor-not-allowed focus-ring flex items-center gap-2"
+              >
+                {validationLoading && (
+                  <span className="inline-block w-4 h-4 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
+                )}
+                Validate Build
+              </button>
+              <button
                 onClick={handleCreate}
-                disabled={!createForm.title || !createForm.factType || previewLoading}
+                disabled={!createForm.title || !createForm.factType || previewLoading || validationLoading}
                 className="px-4 py-2 text-sm bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed focus-ring"
               >
                 Create Change Request
@@ -883,6 +1015,75 @@ export default function ChangeRequestsPage() {
                   </div>
                 )}
               </div>
+
+              {selectedChangeRequest.validationStatus && (
+                <div className="border border-outlineVariant rounded-md p-4 space-y-2 bg-slate-50">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-slate-700">Build Validation</span>
+                    <span
+                      className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${
+                        selectedChangeRequest.validationStatus === 'SUCCESS'
+                          ? 'bg-green-100 text-green-800'
+                          : 'bg-red-100 text-red-800'
+                      }`}
+                    >
+                      {selectedChangeRequest.validationStatus}
+                    </span>
+                  </div>
+                  {selectedChangeRequest.validationMessage && (
+                    <p className="text-sm text-slate-700">{selectedChangeRequest.validationMessage}</p>
+                  )}
+                  <div className="text-xs text-slate-500 flex flex-wrap gap-4">
+                    {selectedChangeRequest.validationCheckedAt && (
+                      <span>Checked at: {formatDateTime(selectedChangeRequest.validationCheckedAt)}</span>
+                    )}
+                    {typeof selectedChangeRequest.validationRuleCount === 'number' && (
+                      <span>Compiled rules: {selectedChangeRequest.validationRuleCount}</span>
+                    )}
+                    {selectedChangeRequest.validationReleaseId && (
+                      <span>ReleaseId: {selectedChangeRequest.validationReleaseId}</span>
+                    )}
+                  </div>
+                  {selectedChangeRequest.validationError && (
+                    <p className="text-xs text-red-600 whitespace-pre-wrap break-words">
+                      {selectedChangeRequest.validationError}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {selectedChangeRequest.executionTestStatus && (
+                <div className="border border-outlineVariant rounded-md p-4 space-y-2 bg-blue-50">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-slate-700">Execution Test</span>
+                    <span
+                      className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${
+                        selectedChangeRequest.executionTestStatus === 'PASSED'
+                          ? 'bg-green-100 text-green-800'
+                          : selectedChangeRequest.executionTestStatus === 'FAILED'
+                          ? 'bg-red-100 text-red-800'
+                          : 'bg-slate-100 text-slate-800'
+                      }`}
+                    >
+                      {selectedChangeRequest.executionTestStatus}
+                    </span>
+                  </div>
+                  {selectedChangeRequest.executionTestMessage && (
+                    <p className="text-sm text-slate-700">{selectedChangeRequest.executionTestMessage}</p>
+                  )}
+                  <div className="text-xs text-slate-500 flex flex-wrap gap-4">
+                    {typeof selectedChangeRequest.executionTestHitsCount === 'number' && (
+                      <span>Rule hits: {selectedChangeRequest.executionTestHitsCount}</span>
+                    )}
+                    {typeof selectedChangeRequest.executionTestTotalScore === 'number' && (
+                      <span>Total score: {selectedChangeRequest.executionTestTotalScore.toFixed(2)}</span>
+                    )}
+                    {selectedChangeRequest.executionTestFinalAction && (
+                      <span>Final action: {selectedChangeRequest.executionTestFinalAction}</span>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* Changes Table */}
               {selectedChangeRequest.changesJson && (

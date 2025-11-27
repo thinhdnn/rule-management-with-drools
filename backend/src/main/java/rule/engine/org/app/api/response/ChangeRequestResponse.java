@@ -30,5 +30,18 @@ public class ChangeRequestResponse {
     private String rejectionReason;
     private Instant createdAt;
     private String createdBy;
+    private String validationStatus;
+    private String validationMessage;
+    private String validationReleaseId;
+    private Integer validationRuleCount;
+    private String validationError;
+    private Instant validationCheckedAt;
+    private String validationResultJson;
+    private String executionTestStatus;
+    private String executionTestMessage;
+    private Integer executionTestHitsCount;
+    private java.math.BigDecimal executionTestTotalScore;
+    private String executionTestFinalAction;
+    private String executionTestResultJson;
 }
 

@@ -51,5 +51,19 @@ public interface RuleExecutionResultRepository extends JpaRepository<RuleExecuti
            "AND r.ruleAction = 'FLAG' " +
            "ORDER BY r.executedAt DESC")
     List<RuleExecutionResult> findFlaggedByRule(@Param("ruleId") Long ruleId);
+
+    /**
+     * Find all execution results for rules created by a specific user
+     * Optionally filter by execution source
+     * Uses JOIN FETCH to eagerly load DecisionRule to avoid LazyInitializationException
+     */
+    @Query("SELECT r FROM RuleExecutionResult r " +
+           "JOIN FETCH r.decisionRule d " +
+           "WHERE d.createdBy = :userId " +
+           "AND (:source IS NULL OR r.executionSource = :source) " +
+           "ORDER BY r.executedAt DESC")
+    List<RuleExecutionResult> findByUserRulesAndSource(
+            @Param("userId") String userId,
+            @Param("source") String source);
 }
 

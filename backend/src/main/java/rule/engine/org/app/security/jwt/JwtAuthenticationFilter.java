@@ -36,22 +36,62 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     protected void doFilterInternal(
             HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
+        String requestUri = request.getRequestURI();
         String authHeader = request.getHeader(HttpHeaders.AUTHORIZATION);
+        
+        // Enhanced logging for /executions endpoint
+        boolean isExecutionsEndpoint = requestUri.contains("/executions");
+        org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(JwtAuthenticationFilter.class);
+        
+        if (isExecutionsEndpoint) {
+            logger.info("JwtAuthenticationFilter processing /executions - authHeader present: {}, URI: {}", 
+                StringUtils.hasText(authHeader), requestUri);
+        }
+        
         if (StringUtils.hasText(authHeader) && authHeader.startsWith(BEARER_PREFIX)) {
             String token = authHeader.substring(BEARER_PREFIX.length());
             try {
-                if (jwtTokenService.isTokenValid(token)
-                        && SecurityContextHolder.getContext().getAuthentication() == null) {
+                boolean isValid = jwtTokenService.isTokenValid(token);
+                boolean hasExistingAuth = SecurityContextHolder.getContext().getAuthentication() != null;
+                
+                if (isExecutionsEndpoint) {
+                    logger.info("Token validation - isValid: {}, hasExistingAuth: {}", isValid, hasExistingAuth);
+                }
+                
+                if (isValid && !hasExistingAuth) {
                     String username = jwtTokenService.extractUsername(token);
                     UserDetails userDetails = userDetailsService.loadUserByUsername(username);
+                    
+                    if (isExecutionsEndpoint) {
+                        logger.info("Setting authentication for user: {}, principal type: {}", 
+                            username, userDetails.getClass().getName());
+                    }
+                    
                     UsernamePasswordAuthenticationToken authentication =
                             new UsernamePasswordAuthenticationToken(
                                     userDetails, null, userDetails.getAuthorities());
                     authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                     SecurityContextHolder.getContext().setAuthentication(authentication);
+                    
+                    if (isExecutionsEndpoint) {
+                        logger.info("Authentication set successfully for /executions");
+                    }
+                } else if (!isValid) {
+                    logger.warn("Invalid JWT token for request: {}", requestUri);
+                } else if (hasExistingAuth) {
+                    if (isExecutionsEndpoint) {
+                        logger.info("Authentication already exists for /executions");
+                    }
                 }
             } catch (Exception ex) {
+                logger.error("Error processing JWT token for request: {}", requestUri, ex);
                 SecurityContextHolder.clearContext();
+            }
+        } else {
+            // Log missing auth header for protected endpoints
+            if (!requestUri.startsWith("/api/auth/login") 
+                    && !requestUri.startsWith("/actuator")) {
+                logger.warn("Missing or invalid Authorization header for request: {}", requestUri);
             }
         }
 

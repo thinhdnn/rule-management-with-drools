@@ -22,5 +22,6 @@ public class RuleExecutionResponse {
     private String ruleResult;
     private BigDecimal ruleScore;
     private LocalDateTime executedAt;
+    private String executionSource;  // Source of execution: API or UI
 }
 

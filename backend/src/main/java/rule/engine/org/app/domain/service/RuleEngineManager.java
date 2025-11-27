@@ -1,11 +1,13 @@
 package rule.engine.org.app.domain.service;
 
+import jakarta.annotation.PostConstruct;
 import org.kie.api.KieServices;
 import org.kie.api.builder.KieBuilder;
 import org.kie.api.builder.KieFileSystem;
 import org.kie.api.builder.KieModule;
 import org.kie.api.runtime.KieContainer;
 import org.kie.api.runtime.StatelessKieSession;
+import org.springframework.context.annotation.DependsOn;
 import org.springframework.stereotype.Service;
 import rule.engine.org.app.domain.entity.ui.DecisionRule;
 import rule.engine.org.app.domain.entity.ui.FactType;
@@ -31,6 +33,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 @Service
+@DependsOn({"entityScannerService", "ruleFieldExtractor", "drlConstantsConfig"})
 public class RuleEngineManager {
     
     private static final Logger log = LoggerFactory.getLogger(RuleEngineManager.class);
@@ -67,14 +70,13 @@ public class RuleEngineManager {
         this.decisionRuleRepository = decisionRuleRepository;
         this.containerVersionRepository = containerVersionRepository;
         this.snapshotRepository = snapshotRepository;
-        
-        // Load all fact types and build containers
-        initializeContainers();
     }
     
     /**
-     * Initialize containers for all fact types
+     * Initialize containers for all fact types.
+     * Called after all Spring beans are initialized to ensure RuleFieldExtractor is available.
      */
+    @PostConstruct
     private void initializeContainers() {
         lock.writeLock().lock();
         try {
@@ -635,6 +637,127 @@ public class RuleEngineManager {
     }
     
     /**
+     * Validate a ruleset by building a temporary KieContainer without mutating the active container
+     * or persisting a new package version.
+     *
+     * @param factType Fact type to validate
+     * @param rules    Rules that would be deployed
+     * @return Result map with success flag, message, and optional error info
+     */
+    public Map<String, Object> validateRulesBuild(String factType, List<DecisionRule> rules) {
+        Map<String, Object> result = new HashMap<>();
+        
+        if (rules == null || rules.isEmpty()) {
+            result.put("success", false);
+            result.put("message", "No rules available for validation");
+            return result;
+        }
+        
+        long nextVersion = Math.max(1, getContainerVersion(factType) + 1);
+        KieContainerBuildResult buildResult = null;
+        try {
+            buildResult = buildKieContainer(rules, factType, nextVersion);
+            StatelessKieSession session = buildResult.container.newStatelessKieSession();
+            if (session != null) {
+                session.execute(java.util.Collections.emptyList());
+            }
+            result.put("success", true);
+            result.put("message", "Rules compiled successfully");
+            result.put("ruleCount", rules.size());
+            result.put("releaseId", buildResult.kieModule.getReleaseId().toString());
+            // Store container reference - caller must dispose it after use
+            result.put("container", buildResult.container);
+            result.put("kieModule", buildResult.kieModule);
+            // Store buildResult to ensure container is not garbage collected
+            result.put("_buildResult", buildResult);
+        } catch (Exception e) {
+            result.put("success", false);
+            result.put("message", "Rule compilation failed");
+            result.put("error", e.getMessage());
+            // Cleanup on error
+            if (buildResult != null && buildResult.container != null) {
+                try {
+                    buildResult.container.dispose();
+                } catch (Exception disposeEx) {
+                    log.warn("Error disposing container after build failure: {}", disposeEx.getMessage());
+                }
+            }
+        }
+        
+        return result;
+    }
+    
+    /**
+     * Execute rules with sample data using a temporary container
+     * Used for validation testing in change requests
+     *
+     * @param container Temporary KieContainer (from validateRulesBuild)
+     * @param factType  Fact type (e.g., "Declaration")
+     * @param fact      Fact object to evaluate
+     * @return TotalRuleResults
+     */
+    public TotalRuleResults executeWithTemporaryContainer(KieContainer container, String factType, Object fact) {
+        if (container == null) {
+            TotalRuleResults empty = new TotalRuleResults();
+            empty.setRunAt(LocalDateTime.now());
+            empty.setTotalScore(BigDecimal.ZERO);
+            return empty;
+        }
+        
+        try {
+            // Log fact object details
+            log.info("📦 Fact object: class={}, toString={}", 
+                    fact != null ? fact.getClass().getName() : "null",
+                    fact != null ? fact.toString().substring(0, Math.min(200, fact.toString().length())) : "null");
+            
+            // Check KieBase and rule count
+            org.kie.api.KieBase kieBase = container.getKieBase();
+            if (kieBase != null) {
+                int totalRules = kieBase.getKiePackages().stream()
+                        .mapToInt(pkg -> pkg.getRules().size())
+                        .sum();
+                log.info("📊 KieBase contains {} rules across {} packages", 
+                        totalRules, kieBase.getKiePackages().size());
+                
+                // Log rule names
+                kieBase.getKiePackages().forEach(pkg -> {
+                    pkg.getRules().forEach(rule -> {
+                        log.info("  📌 Rule: {}", rule.getName());
+                    });
+                });
+            } else {
+                log.warn("⚠️ KieBase is null in container!");
+            }
+            
+            TotalRuleResults results = new TotalRuleResults();
+            results.setRunAt(LocalDateTime.now());
+            
+            StatelessKieSession session = container.newStatelessKieSession();
+            log.info("🔧 Created StatelessKieSession, setting global 'totalResults'");
+            session.setGlobal("totalResults", results);
+            
+            log.info("⚡ Executing session with fact object...");
+            session.execute(fact);
+            log.info("✅ Session execution completed");
+            
+            aggregateResults(results);
+            
+            log.info("📈 Results after aggregation: hits={}, totalScore={}, finalAction={}", 
+                    results.getHits() != null ? results.getHits().size() : 0,
+                    results.getTotalScore(),
+                    results.getFinalAction());
+            
+            return results;
+        } catch (Exception e) {
+            log.error("❌ Error executing rules with temporary container for fact type {}", factType, e);
+            TotalRuleResults errorResults = new TotalRuleResults();
+            errorResults.setRunAt(LocalDateTime.now());
+            errorResults.setTotalScore(BigDecimal.ZERO);
+            return errorResults;
+        }
+    }
+    
+    /**
      * Verify container can fire rules (test execution)
      * @param factType Fact type (e.g., "Declaration", "Order")
      * @return Map containing verification result
@@ -854,6 +977,9 @@ public class RuleEngineManager {
     }
     
     private KieContainerBuildResult buildKieContainer(List<DecisionRule> rules, String factType, long versionNumber) {
+        log.info("🔨 Building KieContainer for factType={}, version={}, with {} rules", 
+                factType, versionNumber, rules.size());
+        
         KieServices kieServices = KieServices.Factory.get();
         KieFileSystem kfs = kieServices.newKieFileSystem();
         
@@ -883,7 +1009,12 @@ public class RuleEngineManager {
         }
         drl.append(DrlConstants.buildDrlHeader(factTypeEnum));
         
+        int rulesAdded = 0;
         for (DecisionRule rule : rules) {
+            if (rule == null) {
+                log.warn("Null rule encountered, skipping");
+                continue;
+            }
             // Use ruleContent directly (complete DRL)
             String ruleContent = rule.getRuleContent();
             if (ruleContent == null || ruleContent.isBlank()) {
@@ -909,11 +1040,17 @@ public class RuleEngineManager {
                         drl.append("\n");
                     }
                     drl.append("\n"); // Add blank line between rules
+                    rulesAdded++;
+                    log.info("  ✅ Added rule to DRL: ID={}, Name={}", rule.getId(), rule.getRuleName());
+                } else {
+                    log.warn("  ⚠️ Rule definition is empty for rule ID={}, Name={}", rule.getId(), rule.getRuleName());
                 }
             }
         }
         
-        kfs.write("src/main/resources/rules/" + factType.toLowerCase() + "_rules.drl", drl.toString());
+        log.info("📊 Total rules added to DRL: {} out of {}", rulesAdded, rules.size());
+        String drlContent = drl.toString();
+        kfs.write("src/main/resources/rules/" + factType.toLowerCase() + "_rules.drl", drlContent);
         
         KieBuilder kieBuilder = kieServices.newKieBuilder(kfs).buildAll();
         
@@ -940,6 +1077,7 @@ public class RuleEngineManager {
      */
     private String extractRuleDefinition(String completeDrl) {
         if (completeDrl == null || completeDrl.isBlank()) {
+            log.warn("⚠️ extractRuleDefinition: completeDrl is null or blank");
             return null;
         }
         
@@ -949,6 +1087,8 @@ public class RuleEngineManager {
             // If no "rule \"" found, try to find just "rule "
             ruleStart = completeDrl.indexOf("rule ");
             if (ruleStart == -1) {
+                log.warn("⚠️ extractRuleDefinition: No 'rule' keyword found in DRL content (length: {})", 
+                        completeDrl.length());
                 return null;
             }
         }

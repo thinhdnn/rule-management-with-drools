@@ -263,9 +263,12 @@ export default function PackagePage() {
         executeUrl += `?version=${selectedTestVersion}`
       }
       
-      // Execute rules
+      // Execute rules with UI source header to track execution source
       const result = await fetchApi(executeUrl, {
         method: 'POST',
+        headers: {
+          'X-Execution-Source': 'UI',
+        },
         body: JSON.stringify(declarationData),
       })
       

@@ -1,7 +1,7 @@
 "use client"
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { Brain, Sparkles, Loader2, CheckCircle2, AlertCircle, ChevronRight, Save, Eye } from 'lucide-react'
+import { Brain, Sparkles, Loader2, CheckCircle2, AlertCircle, ChevronRight, Save, Eye, Zap, X } from 'lucide-react'
 import { SearchableSelect } from '@/components/SearchableSelect'
 import { api, fetchApi } from '@/lib/api'
 
@@ -67,6 +67,16 @@ export default function AIBuilderPage() {
   // Result state
   const [response, setResponse] = useState<AIGenerateResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
+  
+  // Batch generation state
+  const [batchGenerating, setBatchGenerating] = useState(false)
+  const [batchSaving, setBatchSaving] = useState(false)
+  const [batchResults, setBatchResults] = useState<Array<{
+    prompt: string
+    result: AIGenerateResponse | null
+    error?: string
+  }>>([])
+  const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0, phase: 'generating' as 'generating' | 'saving' })
 
   // Load fact types
   useEffect(() => {
@@ -115,6 +125,236 @@ export default function AIBuilderPage() {
     } finally {
       setGenerating(false)
     }
+  }
+
+  // Example prompts for Declaration
+  const declarationExamplePrompts = [
+    {
+      prompt: 'If totalGrossMassMeasure is greater than 5000kg then set score to 75 and flag as HIGH_WEIGHT',
+      description: 'Total gross mass validation'
+    },
+    {
+      prompt: 'If invoiceAmount is greater than 150000 USD and countryOfExportId equals CN, then set score to 90 and flag as HIGH_RISK',
+      description: 'High-value import from China'
+    },
+    {
+      prompt: 'If any goods item has hsId equals 610910 then set score to 80 and action is REVIEW',
+      description: 'HS code specific validation'
+    },
+    {
+      prompt: 'If transportMeansModeCode equals 1 and packageQuantity is greater than 100, then set score to 70 and flag as SUSPICIOUS_QUANTITY',
+      description: 'Sea transport package validation'
+    },
+    {
+      prompt: 'If any goods item has originCountryId equals CN and dutyRate is greater than 15, then set score to 85 and action is REVIEW',
+      description: 'High duty rate from China'
+    },
+    {
+      prompt: 'If incotermCode equals CIF and totalInsuranceAmount is less than 1000, then set score to 65 and flag as INSUFFICIENT_INSURANCE',
+      description: 'CIF insurance validation'
+    },
+    {
+      prompt: 'If packageQuantity is greater than 50 and totalGrossMassMeasure is less than 500, then set score to 80 and flag as WEIGHT_MISMATCH',
+      description: 'Package weight validation'
+    },
+    {
+      prompt: 'If consignorCountryId equals CN and consigneeCountryId equals VN and countryOfExportId not equals CN, then set score to 90 and flag as COUNTRY_MISMATCH',
+      description: 'Country of export mismatch'
+    },
+    {
+      prompt: 'If officeId equals VNHPH and invoiceAmount is greater than 200000, then set score to 75 and action is REVIEW',
+      description: 'Office-specific high-value check'
+    },
+    {
+      prompt: 'If invoiceCurrencyCode not equals USD and invoiceAmount is greater than 100000, then set score to 70 and flag as NON_STANDARD_CURRENCY',
+      description: 'Currency validation'
+    },
+    {
+      prompt: 'If any goods item has quantityQuantity is greater than 1000 and unitPriceAmount is less than 5, then set score to 85 and flag as SUSPICIOUS_PRICE',
+      description: 'Low unit price validation'
+    },
+    {
+      prompt: 'If totalFreightAmount is greater than 10000 and totalInsuranceAmount is greater than 2000, then set score to 80 and flag as HIGH_FREIGHT_COST',
+      description: 'High freight and insurance cost check'
+    }
+  ]
+
+  // Get example prompts for current fact type
+  const getExamplePrompts = () => {
+    if (selectedFactType === 'Declaration') {
+      return declarationExamplePrompts
+    }
+    return []
+  }
+
+  // Generate all example prompts
+  const handleGenerateAll = async () => {
+    const prompts = getExamplePrompts()
+    if (prompts.length === 0) return
+
+    setBatchGenerating(true)
+    setBatchSaving(false)
+    setBatchResults([])
+    setBatchProgress({ current: 0, total: prompts.length, phase: 'generating' })
+    setError(null)
+
+    const results: Array<{
+      prompt: string
+      result: AIGenerateResponse | null
+      error?: string
+    }> = []
+
+    for (let i = 0; i < prompts.length; i++) {
+      const { prompt, description } = prompts[i]
+      setBatchProgress({ current: i + 1, total: prompts.length, phase: 'generating' })
+
+      try {
+        console.log(`[${i + 1}/${prompts.length}] Generating rule for: ${description}`)
+        
+        const request: AIGenerateRequest = {
+          naturalLanguageInput: prompt,
+          factType: selectedFactType,
+          additionalContext: additionalContext || undefined,
+          previewOnly: true,
+        }
+
+        // Add timeout to prevent hanging requests
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          setTimeout(() => reject(new Error('Request timeout after 60 seconds')), 60000)
+        })
+
+        const fetchPromise = fetchApi<AIGenerateResponse>(
+          api.rules.aiGenerate(),
+          {
+            method: 'POST',
+            body: JSON.stringify(request),
+          }
+        )
+
+        const result = await Promise.race([fetchPromise, timeoutPromise])
+
+        console.log(`[${i + 1}/${prompts.length}] Result:`, {
+          success: result.success,
+          valid: result.validation?.valid,
+          hasRule: !!result.generatedRule,
+          error: result.errorMessage,
+          validationErrors: result.validation?.errors?.length || 0
+        })
+
+        results.push({ prompt, result })
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : 'Failed to generate rule'
+        console.error(`[${i + 1}/${prompts.length}] Error generating rule:`, errorMessage, err)
+        
+        // Even if there's an error, we still add it to results so user can see what failed
+        results.push({
+          prompt,
+          result: null,
+          error: errorMessage
+        })
+      }
+
+      // Small delay to avoid overwhelming the API
+      if (i < prompts.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 500))
+      }
+    }
+
+    console.log('Batch generation completed:', {
+      total: results.length,
+      successful: results.filter(r => r.result?.success && r.result?.validation?.valid).length,
+      failed: results.filter(r => r.error || (r.result && !(r.result.success && r.result.validation?.valid))).length,
+      withErrors: results.filter(r => r.error).length
+    })
+
+    setBatchResults(results)
+    
+    // Automatically save all valid rules
+    const validResults = results.filter(
+      r => r.result?.success && r.result?.validation?.valid && r.result?.generatedRule
+    )
+    
+    if (validResults.length > 0) {
+      console.log(`Auto-saving ${validResults.length} valid rules...`)
+      setBatchSaving(true)
+      setBatchProgress({ current: 0, total: validResults.length, phase: 'saving' })
+      setError(null)
+      
+      let savedCount = 0
+      let failedCount = 0
+      const savedRuleIds: number[] = []
+      
+      for (let i = 0; i < validResults.length; i++) {
+        const item = validResults[i]
+        if (!item.result?.generatedRule) {
+          console.warn(`Skipping item ${i + 1}: no generatedRule`)
+          continue
+        }
+        
+        setBatchProgress({ current: i + 1, total: validResults.length, phase: 'saving' })
+        
+        try {
+          const ruleToSave = item.result.generatedRule
+          console.log(`[${i + 1}/${validResults.length}] Saving rule: ${ruleToSave.ruleName}`)
+          
+          const savedRule = await fetchApi<any>(
+            api.rules.create(),
+            {
+              method: 'POST',
+              body: JSON.stringify({
+                ruleName: ruleToSave.ruleName,
+                label: ruleToSave.description || ruleToSave.ruleName,
+                description: ruleToSave.description || ruleToSave.ruleName,
+                factType: ruleToSave.factType,
+                priority: ruleToSave.priority || 0,
+                active: ruleToSave.enabled !== false,
+                conditions: ruleToSave.conditions || [],
+                output: ruleToSave.output || {},
+                generatedByAi: true,
+              }),
+            }
+          )
+          
+          if (savedRule?.id) {
+            savedCount++
+            savedRuleIds.push(savedRule.id)
+            console.log(`[${i + 1}/${validResults.length}] Successfully saved rule ID: ${savedRule.id}`)
+          } else {
+            failedCount++
+            console.warn(`[${i + 1}/${validResults.length}] Failed to save: no ID returned`, savedRule)
+          }
+        } catch (err) {
+          failedCount++
+          console.error(`[${i + 1}/${validResults.length}] Error saving rule:`, err)
+        }
+        
+        // Small delay between saves
+        if (i < validResults.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 300))
+        }
+      }
+      
+      console.log(`Auto-save completed: ${savedCount} saved, ${failedCount} failed`)
+      
+      if (savedCount > 0) {
+        // Show success message
+        setError(null)
+        // Show success notification
+        const successMessage = `Successfully saved ${savedCount} rule(s)${failedCount > 0 ? `. ${failedCount} failed.` : '!'}`
+        alert(successMessage)
+        // Navigate to rules page after a short delay
+        setTimeout(() => {
+          router.push('/rules')
+        }, 500)
+      } else if (failedCount > 0) {
+        setError(`Failed to save rules. ${failedCount} error(s).`)
+      }
+    } else {
+      setError('No valid rules to save. Please check the generation results.')
+    }
+    
+    setBatchGenerating(false)
+    setBatchSaving(false)
   }
 
   // Save generated rule
@@ -466,50 +706,156 @@ export default function AIBuilderPage() {
       {/* Example Prompts - Dynamic based on Fact Type */}
       {!response && (
         <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-6">
-          <h3 className="text-sm font-semibold text-slate-900 mb-4">
-            📝 Example Prompts for {selectedFactType}:
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-sm font-semibold text-slate-900">
+              📝 Example Prompts for {selectedFactType}:
+            </h3>
+            {getExamplePrompts().length > 0 && (
+              <button
+                onClick={handleGenerateAll}
+                disabled={batchGenerating || batchSaving}
+                className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white text-sm rounded-lg hover:from-purple-700 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+              >
+                {batchGenerating || batchSaving ? (
+                  <>
+                    <Loader2 className="animate-spin" size={16} />
+                    <span>
+                      {batchProgress.phase === 'generating' 
+                        ? `Generating... (${batchProgress.current}/${batchProgress.total})`
+                        : `Saving... (${batchProgress.current}/${batchProgress.total})`
+                      }
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <Zap size={16} />
+                    <span>Generate & Save All ({getExamplePrompts().length})</span>
+                  </>
+                )}
+              </button>
+            )}
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
             {selectedFactType === 'Declaration' ? (
               <>
                 <button
-                  onClick={() => setNaturalInput('If total gross mass is greater than 1000kg then require inspection')}
+                  onClick={() => setNaturalInput('If totalGrossMassMeasure is greater than 5000kg then set score to 75 and flag as HIGH_WEIGHT')}
                   className="text-left p-4 border border-slate-200 rounded-lg hover:border-indigo-300 hover:bg-indigo-50 transition-colors group"
                 >
                   <p className="text-sm text-slate-700 group-hover:text-indigo-700">
-                    If total gross mass is greater than 1000kg then require inspection
+                    If totalGrossMassMeasure is greater than 5000kg then set score to 75 and flag as HIGH_WEIGHT
                   </p>
-                  <p className="text-xs text-slate-500 mt-1">Weight validation rule</p>
+                  <p className="text-xs text-slate-500 mt-1">Total gross mass validation</p>
                 </button>
                 
                 <button
-                  onClick={() => setNaturalInput('If invoice amount is greater than 100000 USD and country of export is China, then flag as HIGH_RISK with score 90')}
+                  onClick={() => setNaturalInput('If invoiceAmount is greater than 150000 USD and countryOfExportId equals CN, then set score to 90 and flag as HIGH_RISK')}
                   className="text-left p-4 border border-slate-200 rounded-lg hover:border-indigo-300 hover:bg-indigo-50 transition-colors group"
                 >
                   <p className="text-sm text-slate-700 group-hover:text-indigo-700">
-                    If invoice amount is greater than 100000 USD and country of export is China, then flag as HIGH_RISK
+                    If invoiceAmount &gt; 150000 USD and countryOfExportId equals CN, then score 90 and flag HIGH_RISK
                   </p>
-                  <p className="text-xs text-slate-500 mt-1">High-value from China</p>
+                  <p className="text-xs text-slate-500 mt-1">High-value import from China</p>
                 </button>
                 
                 <button
-                  onClick={() => setNaturalInput('If HS code is 610910 then score is 80 and action is REVIEW')}
+                  onClick={() => setNaturalInput('If any goods item has hsId equals 610910 then set score to 80 and action is REVIEW')}
                   className="text-left p-4 border border-slate-200 rounded-lg hover:border-indigo-300 hover:bg-indigo-50 transition-colors group"
                 >
                   <p className="text-sm text-slate-700 group-hover:text-indigo-700">
-                    If HS code is 610910 then score is 80 and action is REVIEW
+                    If any goods item has hsId equals 610910 then set score to 80 and action is REVIEW
                   </p>
-                  <p className="text-xs text-slate-500 mt-1">HS code specific rule</p>
+                  <p className="text-xs text-slate-500 mt-1">HS code specific validation</p>
                 </button>
                 
                 <button
-                  onClick={() => setNaturalInput('If transport mode is Air and package quantity is greater than 100, then REVIEW with score 70 and flag SUSPICIOUS_QUANTITY')}
+                  onClick={() => setNaturalInput('If transportMeansModeCode equals 1 and packageQuantity is greater than 100, then set score to 70 and flag as SUSPICIOUS_QUANTITY')}
                   className="text-left p-4 border border-slate-200 rounded-lg hover:border-indigo-300 hover:bg-indigo-50 transition-colors group"
                 >
                   <p className="text-sm text-slate-700 group-hover:text-indigo-700">
-                    If transport mode is Air and package quantity &gt; 100, flag as SUSPICIOUS_QUANTITY
+                    If transportMeansModeCode equals 1 and packageQuantity &gt; 100, then score 70 and flag SUSPICIOUS_QUANTITY
                   </p>
-                  <p className="text-xs text-slate-500 mt-1">Air transport validation</p>
+                  <p className="text-xs text-slate-500 mt-1">Sea transport package validation</p>
+                </button>
+                
+                <button
+                  onClick={() => setNaturalInput('If any goods item has originCountryId equals CN and dutyRate is greater than 15, then set score to 85 and action is REVIEW')}
+                  className="text-left p-4 border border-slate-200 rounded-lg hover:border-indigo-300 hover:bg-indigo-50 transition-colors group"
+                >
+                  <p className="text-sm text-slate-700 group-hover:text-indigo-700">
+                    If any goods item has originCountryId equals CN and dutyRate &gt; 15, then score 85 and REVIEW
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1">High duty rate from China</p>
+                </button>
+                
+                <button
+                  onClick={() => setNaturalInput('If incotermCode equals CIF and totalInsuranceAmount is less than 1000, then set score to 65 and flag as INSUFFICIENT_INSURANCE')}
+                  className="text-left p-4 border border-slate-200 rounded-lg hover:border-indigo-300 hover:bg-indigo-50 transition-colors group"
+                >
+                  <p className="text-sm text-slate-700 group-hover:text-indigo-700">
+                    If incotermCode equals CIF and totalInsuranceAmount &lt; 1000, then score 65 and flag INSUFFICIENT_INSURANCE
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1">CIF insurance validation</p>
+                </button>
+                
+                <button
+                  onClick={() => setNaturalInput('If packageQuantity is greater than 50 and totalGrossMassMeasure is less than 500, then set score to 80 and flag as WEIGHT_MISMATCH')}
+                  className="text-left p-4 border border-slate-200 rounded-lg hover:border-indigo-300 hover:bg-indigo-50 transition-colors group"
+                >
+                  <p className="text-sm text-slate-700 group-hover:text-indigo-700">
+                    If packageQuantity &gt; 50 and totalGrossMassMeasure &lt; 500, then score 80 and flag WEIGHT_MISMATCH
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1">Package weight validation</p>
+                </button>
+                
+                <button
+                  onClick={() => setNaturalInput('If consignorCountryId equals CN and consigneeCountryId equals VN and countryOfExportId not equals CN, then set score to 90 and flag as COUNTRY_MISMATCH')}
+                  className="text-left p-4 border border-slate-200 rounded-lg hover:border-indigo-300 hover:bg-indigo-50 transition-colors group"
+                >
+                  <p className="text-sm text-slate-700 group-hover:text-indigo-700">
+                    If consignorCountryId equals CN and consigneeCountryId equals VN and countryOfExportId not equals CN, then score 90
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1">Country of export mismatch</p>
+                </button>
+                
+                <button
+                  onClick={() => setNaturalInput('If officeId equals VNHPH and invoiceAmount is greater than 200000, then set score to 75 and action is REVIEW')}
+                  className="text-left p-4 border border-slate-200 rounded-lg hover:border-indigo-300 hover:bg-indigo-50 transition-colors group"
+                >
+                  <p className="text-sm text-slate-700 group-hover:text-indigo-700">
+                    If officeId equals VNHPH and invoiceAmount &gt; 200000, then score 75 and action REVIEW
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1">Office-specific high-value check</p>
+                </button>
+                
+                <button
+                  onClick={() => setNaturalInput('If invoiceCurrencyCode not equals USD and invoiceAmount is greater than 100000, then set score to 70 and flag as NON_STANDARD_CURRENCY')}
+                  className="text-left p-4 border border-slate-200 rounded-lg hover:border-indigo-300 hover:bg-indigo-50 transition-colors group"
+                >
+                  <p className="text-sm text-slate-700 group-hover:text-indigo-700">
+                    If invoiceCurrencyCode not equals USD and invoiceAmount &gt; 100000, then score 70 and flag NON_STANDARD_CURRENCY
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1">Currency validation</p>
+                </button>
+                
+                <button
+                  onClick={() => setNaturalInput('If any goods item has quantityQuantity is greater than 1000 and unitPriceAmount is less than 5, then set score to 85 and flag as SUSPICIOUS_PRICE')}
+                  className="text-left p-4 border border-slate-200 rounded-lg hover:border-indigo-300 hover:bg-indigo-50 transition-colors group"
+                >
+                  <p className="text-sm text-slate-700 group-hover:text-indigo-700">
+                    If any goods item has quantityQuantity &gt; 1000 and unitPriceAmount &lt; 5, then score 85 and flag SUSPICIOUS_PRICE
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1">Low unit price validation</p>
+                </button>
+                
+                <button
+                  onClick={() => setNaturalInput('If totalFreightAmount is greater than 10000 and totalInsuranceAmount is greater than 2000, then set score to 80 and flag as HIGH_FREIGHT_COST')}
+                  className="text-left p-4 border border-slate-200 rounded-lg hover:border-indigo-300 hover:bg-indigo-50 transition-colors group"
+                >
+                  <p className="text-sm text-slate-700 group-hover:text-indigo-700">
+                    If totalFreightAmount &gt; 10000 and totalInsuranceAmount &gt; 2000, then score 80 and flag HIGH_FREIGHT_COST
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1">High freight and insurance cost check</p>
                 </button>
               </>
             ) : (
@@ -555,6 +901,146 @@ export default function AIBuilderPage() {
                 </button>
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Batch Generation Results */}
+      {batchResults.length > 0 && (
+        <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="text-sm font-semibold text-slate-900">
+                📊 Batch Generation Results
+              </h3>
+              <p className="text-xs text-slate-500 mt-1">
+                Total: {batchResults.length} | 
+                Successful: <span className="text-green-600 font-medium">
+                  {batchResults.filter(r => r.result?.success && r.result?.validation?.valid).length}
+                </span> | 
+                Failed: <span className="text-red-600 font-medium">
+                  {batchResults.filter(r => r.error || (r.result && !(r.result.success && r.result.validation?.valid))).length}
+                </span>
+              </p>
+            </div>
+            <button
+              onClick={() => {
+                setBatchResults([])
+                setBatchProgress({ current: 0, total: 0 })
+              }}
+              className="text-slate-500 hover:text-slate-700 transition-colors"
+            >
+              <X size={20} />
+            </button>
+          </div>
+          
+          <div className="space-y-3 max-h-96 overflow-y-auto">
+            {batchResults.length === 0 ? (
+              <p className="text-sm text-slate-500 text-center py-4">No results yet</p>
+            ) : (
+              batchResults.map((item, idx) => {
+                const success = item.result?.success && item.result?.validation?.valid
+                const failed = item.error || (item.result && !success)
+              
+              return (
+                <div
+                  key={idx}
+                  className={`p-4 rounded-lg border ${
+                    success
+                      ? 'bg-green-50 border-green-200'
+                      : failed
+                      ? 'bg-red-50 border-red-200'
+                      : 'bg-yellow-50 border-yellow-200'
+                  }`}
+                >
+                  <div className="flex items-start gap-3">
+                    {success ? (
+                      <CheckCircle2 className="text-green-600 shrink-0 mt-0.5" size={20} />
+                    ) : failed ? (
+                      <AlertCircle className="text-red-600 shrink-0 mt-0.5" size={20} />
+                    ) : (
+                      <AlertCircle className="text-yellow-600 shrink-0 mt-0.5" size={20} />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium text-slate-500 mb-1">
+                        #{idx + 1} - {getExamplePrompts()[idx]?.description || 'Unknown'}
+                      </p>
+                      <p className="text-sm text-slate-700 mb-2 line-clamp-2">
+                        {item.prompt}
+                      </p>
+                      {item.error && (
+                        <p className="text-xs text-red-700 mt-1">Error: {item.error}</p>
+                      )}
+                      {item.result && !item.error && (
+                        <div className="mt-2 space-y-1">
+                          {item.result.generatedRule && (
+                            <p className="text-xs text-slate-600">
+                              <span className="font-medium">Rule:</span> {item.result.generatedRule.ruleName}
+                            </p>
+                          )}
+                          {item.result.validation && (
+                            <div className="flex items-center gap-2">
+                              <span className={`text-xs px-2 py-0.5 rounded ${
+                                item.result.validation.valid
+                                  ? 'bg-green-100 text-green-700'
+                                  : 'bg-red-100 text-red-700'
+                              }`}>
+                                {item.result.validation.valid ? 'Valid' : 'Invalid'}
+                              </span>
+                              {item.result.validation.errors.length > 0 && (
+                                <span className="text-xs text-red-600">
+                                  {item.result.validation.errors.length} error(s)
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    {item.result?.generatedRule && (
+                      <button
+                        onClick={() => {
+                          setNaturalInput(item.prompt)
+                          setResponse(item.result)
+                        }}
+                        className="text-xs px-3 py-1 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition-colors shrink-0"
+                      >
+                        View
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )
+            }))}
+          </div>
+          
+          <div className="mt-4 pt-4 border-t border-slate-200">
+            <div className="flex items-center justify-between text-sm">
+              <div className="flex items-center gap-4">
+                <span className="text-slate-600">
+                  <span className="font-medium text-green-600">
+                    {batchResults.filter(r => r.result?.success && r.result?.validation?.valid).length}
+                  </span> successful
+                </span>
+                <span className="text-slate-600">
+                  <span className="font-medium text-red-600">
+                    {batchResults.filter(r => r.error || (r.result && !(r.result.success && r.result.validation?.valid))).length}
+                  </span> failed
+                </span>
+              </div>
+              {batchSaving && (
+                <div className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg">
+                  <Loader2 className="animate-spin" size={16} />
+                  <span>Saving valid rules... ({batchProgress.current}/{batchProgress.total})</span>
+                </div>
+              )}
+              {!batchSaving && !batchGenerating && batchResults.filter(r => r.result?.success && r.result?.validation?.valid).length > 0 && (
+                <div className="flex items-center gap-2 px-4 py-2 bg-green-100 text-green-700 text-sm rounded-lg">
+                  <CheckCircle2 size={16} />
+                  <span>Valid rules have been saved automatically</span>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}

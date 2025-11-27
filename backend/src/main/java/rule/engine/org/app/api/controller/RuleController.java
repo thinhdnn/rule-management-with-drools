@@ -127,8 +127,14 @@ public class RuleController {
     @PostMapping(value = "/execute", consumes = org.springframework.http.MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<?> executeRules(
             @RequestBody Map<String, Object> declarationData,
-            @RequestParam(required = false) Long version) {
+            @RequestParam(required = false) Long version,
+            @RequestHeader(value = "X-Execution-Source", required = false, defaultValue = "API") String executionSource) {
         try {
+            // Validate execution source
+            if (!executionSource.equals("API") && !executionSource.equals("UI")) {
+                executionSource = "API"; // Default to API if invalid
+            }
+            
             // Convert map to Declaration entity
             rule.engine.org.app.domain.entity.execution.declaration.Declaration declaration = 
                 buildDeclarationFromMap(declarationData);
@@ -147,6 +153,9 @@ public class RuleController {
                 // Execute with current version
                 results = ruleEngineManager.fireRules(factType.getValue(), declaration);
             }
+            
+            // Save execution results with source tracking
+            saveExecutionResults(declaration.getDeclarationId(), factType, results, executionSource);
             
             // Build response using DTO factory method
             RuleExecuteResponse response = RuleExecuteResponse.from(results, declaration.getDeclarationId());
@@ -838,6 +847,209 @@ public class RuleController {
     }
     
     /**
+     * Save execution results for all active rules with source tracking
+     * Matches rules to hits by checking if rule name appears in hit result messages
+     */
+    @org.springframework.transaction.annotation.Transactional
+    private void saveExecutionResults(
+            String declarationId,
+            FactType factType,
+            rule.engine.org.app.domain.entity.execution.TotalRuleResults results,
+            String executionSource) {
+        try {
+            // Get all active and latest rules for this fact type
+            List<DecisionRule> activeRules = decisionRuleRepository
+                .findByFactTypeAndIsLatestTrueAndStatusOrderByPriorityAsc(factType, RuleStatus.ACTIVE);
+            
+            if (activeRules.isEmpty()) {
+                log.debug("No active rules found for fact type {}, skipping execution result saving", factType);
+                return;
+            }
+            
+            // Create a map of rule names to rules for quick lookup
+            Map<String, DecisionRule> ruleMap = activeRules.stream()
+                .collect(Collectors.toMap(DecisionRule::getRuleName, rule -> rule, (existing, replacement) -> existing));
+            
+            // Create a set of rule IDs that produced hits
+            // First try to match by rule ID in description (more reliable)
+            // Fallback to matching by rule name in result message (for backward compatibility)
+            java.util.Set<Long> matchedRuleIds = new java.util.HashSet<>();
+            java.util.Set<String> matchedRuleNames = new java.util.HashSet<>();
+            
+            if (results.getHits() != null) {
+                for (rule.engine.org.app.domain.entity.execution.RuleOutputHit hit : results.getHits()) {
+                    // First, try to match by rule ID in description (format: "RULE_ID:123")
+                    if (hit.getDescription() != null && hit.getDescription().contains("RULE_ID:")) {
+                        try {
+                            String desc = hit.getDescription();
+                            int startIdx = desc.indexOf("RULE_ID:") + 8;
+                            int endIdx = desc.indexOf(" ", startIdx);
+                            if (endIdx == -1) endIdx = desc.length();
+                            String ruleIdStr = desc.substring(startIdx, endIdx).trim();
+                            Long ruleId = Long.parseLong(ruleIdStr);
+                            matchedRuleIds.add(ruleId);
+                            continue; // Found by ID, skip name matching
+                        } catch (Exception e) {
+                            log.debug("Failed to parse rule ID from description: {}", hit.getDescription(), e);
+                        }
+                    }
+                    
+                    // Fallback: match by rule name in result message (for backward compatibility)
+                    if (hit.getResult() != null) {
+                        for (String ruleName : ruleMap.keySet()) {
+                            if (hit.getResult().contains(ruleName)) {
+                                matchedRuleNames.add(ruleName);
+                                break; // Found a match, no need to check other rules
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Save execution results ONLY for rules that hit (matched = true)
+            // This saves storage and focuses on actual rule matches
+            java.time.LocalDateTime executedAt = results.getRunAt() != null 
+                ? results.getRunAt() 
+                : java.time.LocalDateTime.now();
+            
+            int savedCount = 0;
+            
+            // Save results for rules matched by ID
+            for (Long ruleId : matchedRuleIds) {
+                DecisionRule rule = decisionRuleRepository.findById(ruleId).orElse(null);
+                if (rule == null || !rule.getFactType().equals(factType) || !rule.getIsLatest() || rule.getStatus() != RuleStatus.ACTIVE) {
+                    continue; // Skip if rule not found or not active
+                }
+                
+                // Find the corresponding hit for this rule by ID
+                rule.engine.org.app.domain.entity.execution.RuleOutputHit matchingHit = null;
+                if (results.getHits() != null) {
+                    for (rule.engine.org.app.domain.entity.execution.RuleOutputHit hit : results.getHits()) {
+                        if (hit.getDescription() != null && hit.getDescription().contains("RULE_ID:" + ruleId)) {
+                            matchingHit = hit;
+                            break;
+                        }
+                    }
+                }
+                
+                RuleExecutionResult executionResult = new RuleExecutionResult();
+                executionResult.setDeclarationId(declarationId);
+                executionResult.setDecisionRule(rule);
+                executionResult.setMatched(true);
+                executionResult.setExecutedAt(executedAt);
+                executionResult.setExecutionSource(executionSource);
+                
+                if (matchingHit != null) {
+                    executionResult.setRuleAction(matchingHit.getAction());
+                    executionResult.setRuleResult(matchingHit.getResult());
+                    executionResult.setRuleScore(matchingHit.getScore());
+                } else {
+                    executionResult.setRuleAction("FLAG");
+                    executionResult.setRuleResult("Rule '" + rule.getRuleName() + "' matched");
+                }
+                
+                executionResultRepository.save(executionResult);
+                savedCount++;
+            }
+            
+            // Save results for rules matched by name (backward compatibility)
+            for (String matchedRuleName : matchedRuleNames) {
+                DecisionRule rule = ruleMap.get(matchedRuleName);
+                if (rule == null) {
+                    continue; // Skip if rule not found
+                }
+                
+                // Skip if already saved by ID
+                if (matchedRuleIds.contains(rule.getId())) {
+                    continue;
+                }
+                
+                // Find the corresponding hit for this rule to get action, result, and score
+                rule.engine.org.app.domain.entity.execution.RuleOutputHit matchingHit = null;
+                if (results.getHits() != null) {
+                    for (rule.engine.org.app.domain.entity.execution.RuleOutputHit hit : results.getHits()) {
+                        if (hit.getResult() != null && hit.getResult().contains(rule.getRuleName())) {
+                            matchingHit = hit;
+                            break;
+                        }
+                    }
+                }
+                
+                RuleExecutionResult executionResult = new RuleExecutionResult();
+                executionResult.setDeclarationId(declarationId);
+                executionResult.setDecisionRule(rule);
+                executionResult.setMatched(true); // Only save matched rules
+                executionResult.setExecutedAt(executedAt);
+                executionResult.setExecutionSource(executionSource);
+                
+                if (matchingHit != null) {
+                    executionResult.setRuleAction(matchingHit.getAction());
+                    executionResult.setRuleResult(matchingHit.getResult());
+                    executionResult.setRuleScore(matchingHit.getScore());
+                } else {
+                    // Rule matched but no specific hit found, use defaults
+                    executionResult.setRuleAction("FLAG");
+                    executionResult.setRuleResult("Rule '" + rule.getRuleName() + "' matched");
+                }
+                
+                executionResultRepository.save(executionResult);
+                savedCount++;
+            }
+            
+            log.debug("Saved execution results for {} rules that hit (out of {} total active rules) with source {}", 
+                savedCount, activeRules.size(), executionSource);
+        } catch (Exception e) {
+            log.error("Error saving execution results for declaration {}", declarationId, e);
+            // Don't throw exception - execution results saving should not fail the request
+        }
+    }
+    
+    /**
+     * Get all execution history (for current user's rules)
+     * Supports filtering by execution source and pagination
+     */
+    @GetMapping("/executions")
+    public ResponseEntity<List<RuleExecutionResponse>> getAllExecutions(
+            @AuthenticationPrincipal UserPrincipal currentUser,
+            @RequestParam(required = false) String source,
+            @RequestParam(required = false, defaultValue = "100") Integer limit) {
+        // Debug logging - try to get user from SecurityContext as fallback
+        org.springframework.security.core.Authentication auth = 
+            org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        
+        log.debug("getAllExecutions called - currentUser: {}, auth: {}, source: {}, limit: {}", 
+            currentUser != null ? currentUser.getId() : "null",
+            auth != null ? auth.getName() : "null",
+            source, limit);
+        
+        // Try to get UserPrincipal from SecurityContext if @AuthenticationPrincipal is null
+        if (currentUser == null && auth != null && auth.getPrincipal() instanceof UserPrincipal) {
+            currentUser = (UserPrincipal) auth.getPrincipal();
+            log.debug("Retrieved UserPrincipal from SecurityContext: {}", currentUser.getId());
+        }
+        
+        if (currentUser == null) {
+            log.warn("getAllExecutions: currentUser is null - authentication may have failed. Auth object: {}", auth);
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Authentication is required to access this resource.");
+        }
+        
+        String userId = requireUserId(currentUser);
+        
+        // Query execution results for user's rules with optional source filter
+        List<RuleExecutionResult> results = executionResultRepository
+            .findByUserRulesAndSource(userId, source);
+        
+        // Apply limit and convert to response
+        List<RuleExecutionResponse> responses = results.stream()
+            .limit(limit != null ? limit : 100)
+            .map(this::toExecutionResponse)
+            .collect(Collectors.toList());
+        
+        log.debug("getAllExecutions returning {} results for user {}", responses.size(), userId);
+        return ResponseEntity.ok(responses);
+    }
+    
+    /**
      * Get execution history for a specific declaration
      */
     @GetMapping("/executions/declaration/{declarationId}")
@@ -965,7 +1177,8 @@ public class RuleController {
             result.getRuleAction(),
             result.getRuleResult(),
             result.getRuleScore(),
-            result.getExecutedAt()
+            result.getExecutedAt(),
+            result.getExecutionSource() != null ? result.getExecutionSource() : "API"  // Default to API if not set
         );
     }
 
@@ -1163,8 +1376,16 @@ public class RuleController {
         if (output.get("documentId") != null) {
             then.append("    output.setDocumentId(\"").append(escapeJavaString(output.get("documentId").toString())).append("\");\n");
         }
+        // Always add rule ID to description for tracking which rule fired
+        // Format: "RULE_ID:123" to allow matching in saveExecutionResults
+        String ruleIdMarker = "RULE_ID:" + rule.getId();
         if (output.get("description") != null) {
-            then.append("    output.setDescription(\"").append(escapeJavaString(output.get("description").toString())).append("\");\n");
+            // Append rule ID marker to existing description
+            String descriptionWithMarker = output.get("description").toString() + " | " + ruleIdMarker;
+            then.append("    output.setDescription(\"").append(escapeJavaString(descriptionWithMarker)).append("\");\n");
+        } else {
+            // Set description to rule ID marker only
+            then.append("    output.setDescription(\"").append(ruleIdMarker).append("\");\n");
         }
         
         // Add to totalResults

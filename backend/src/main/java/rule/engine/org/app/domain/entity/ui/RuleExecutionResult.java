@@ -79,5 +79,11 @@ public class RuleExecutionResult extends BaseAuditableEntity {
      */
     @Column(name = "executed_at", nullable = false)
     private LocalDateTime executedAt;
+
+    /**
+     * Source of rule execution: API (from system API calls) or UI (from UI test submissions)
+     */
+    @Column(name = "execution_source", length = 20, nullable = false)
+    private String executionSource = "API";
 }
 

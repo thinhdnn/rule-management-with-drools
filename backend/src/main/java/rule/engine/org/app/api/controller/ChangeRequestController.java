@@ -1,7 +1,9 @@
 package rule.engine.org.app.api.controller;
 
+import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -70,6 +72,32 @@ public class ChangeRequestController {
         private String title;
         private String description;
         // Note: changes field removed - auto-detected by backend
+    }
+    
+    /**
+     * DTO for validate change request request body
+     */
+    @Data
+    @NoArgsConstructor
+    private static class ValidateChangeRequestRequest {
+        private FactType factType = FactType.DECLARATION;
+    }
+    
+    /**
+     * DTO for validation response
+     */
+    @Data
+    @Builder
+    private static class ChangeRequestValidationResponse {
+        private boolean success;
+        private String message;
+        private String factType;
+        private int compiledRuleCount;
+        private int totalChanges;
+        private int rulesToInclude;
+        private int rulesToExclude;
+        private String releaseId;
+        private String error;
     }
 
     private static final Logger log = LoggerFactory.getLogger(ChangeRequestController.class);
@@ -227,34 +255,68 @@ public class ChangeRequestController {
         try {
             String userId = requireUserId(currentUser);
             FactType factType = request.getFactType() != null ? request.getFactType() : FactType.DECLARATION;
-            
-            // Auto-detect changes vs deployed version (only for user's own rules)
-            ChangeRequestChanges detectedChanges = detectChanges(factType, userId);
-            
-            // Build ChangeRequest entity
+
+            ValidationContext validationContext = performValidation(factType, userId);
+            if (!validationContext.response().isSuccess()) {
+                ErrorResponse errorResponse = ErrorResponse.builder()
+                        .success(false)
+                        .error(validationContext.response().getMessage())
+                        .errorType("ValidationException")
+                        .build();
+                return ResponseEntity.badRequest().body(errorResponse);
+            }
+
             ChangeRequest changeRequest = new ChangeRequest();
             changeRequest.setFactType(factType);
             changeRequest.setTitle(request.getTitle());
             changeRequest.setDescription(request.getDescription());
             changeRequest.setStatus(ChangeRequestStatus.PENDING);
-            
-            // Store auto-detected changes
-            String changesJson = objectMapper.writeValueAsString(detectedChanges);
+
+            String changesJson = objectMapper.writeValueAsString(validationContext.changes());
             changeRequest.setChangesJson(changesJson);
-            
+
+            applyValidationMetadata(changeRequest, validationContext);
+
             ChangeRequest saved = changeRequestRepository.save(changeRequest);
-            
+
             CreateChangeRequestResponse response = CreateChangeRequestResponse.builder()
                 .success(true)
                 .id(saved.getId())
                 .message("Change request created successfully with " + 
-                    (detectedChanges.getRulesToInclude().size() + detectedChanges.getRulesToExclude().size()) + 
-                    " detected changes")
+                    validationContext.response().getTotalChanges() + 
+                    " detected changes (validation passed)")
                 .build();
-            
+
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             log.error("Failed to create change request", e);
+            ErrorResponse errorResponse = ErrorResponse.builder()
+                .success(false)
+                .error(e.getMessage())
+                .errorType(e.getClass().getName())
+                .build();
+            return ResponseEntity.badRequest().body(errorResponse);
+        }
+    }
+    
+    /**
+     * Validate detected changes by compiling the would-be deployed rules without
+     * persisting a new package version.
+     */
+    @PostMapping("/validate")
+    public ResponseEntity<?> validateChangeRequest(
+            @RequestBody(required = false) ValidateChangeRequestRequest request,
+            @AuthenticationPrincipal UserPrincipal currentUser) {
+        try {
+            String userId = requireUserId(currentUser);
+            FactType factType = request != null && request.getFactType() != null
+                    ? request.getFactType()
+                    : FactType.DECLARATION;
+
+            ValidationContext validationContext = performValidation(factType, userId);
+            return ResponseEntity.ok(validationContext.response());
+        } catch (Exception e) {
+            log.error("Failed to validate change request", e);
             ErrorResponse errorResponse = ErrorResponse.builder()
                 .success(false)
                 .error(e.getMessage())
@@ -346,6 +408,351 @@ public class ChangeRequestController {
         changes.setRulesToExclude(rulesToExclude);
         
         return changes;
+    }
+    
+    /**
+     * Build a simulated ruleset representing the post-approval state without mutating DB entities.
+     * Rules to include are treated as ACTIVE for validation purposes (simulating post-approval state).
+     */
+    private List<DecisionRule> buildRulesetForValidation(FactType factType, ChangeRequestChanges changes) {
+        Map<Long, DecisionRule> simulatedRules = new LinkedHashMap<>();
+        
+        // Start with currently deployed (active + latest) rules
+        List<DecisionRule> activeRules = decisionRuleRepository
+            .findByFactTypeAndIsLatestTrueAndStatusOrderByPriorityAsc(factType, RuleStatus.ACTIVE);
+        activeRules.forEach(rule -> simulatedRules.put(rule.getId(), rule));
+        
+        // Remove rules that will be excluded
+        if (changes.getRulesToExclude() != null && !changes.getRulesToExclude().isEmpty()) {
+            changes.getRulesToExclude().forEach(simulatedRules::remove);
+        }
+        
+        // Add rules that will be included (typically drafts/new versions)
+        // IMPORTANT: These rules will be activated when change request is approved,
+        // so we simulate them as ACTIVE for validation
+        if (changes.getRulesToInclude() != null && !changes.getRulesToInclude().isEmpty()) {
+            Iterable<DecisionRule> includeRules = decisionRuleRepository.findAllById(changes.getRulesToInclude());
+            for (DecisionRule rule : includeRules) {
+                if (rule == null) {
+                    log.warn("Rule to include is null, skipping");
+                    continue;
+                }
+                
+                // For validation, we need to ensure rules to include are treated as ACTIVE
+                // Create a copy with ACTIVE status to simulate post-approval state
+                // Note: We only modify status, keeping all other fields from original rule
+                DecisionRule simulatedRule = new DecisionRule();
+                simulatedRule.setId(rule.getId());
+                simulatedRule.setRuleName(rule.getRuleName());
+                simulatedRule.setLabel(rule.getLabel());
+                simulatedRule.setFactType(rule.getFactType());
+                simulatedRule.setRuleContent(rule.getRuleContent()); // This is what matters for Drools execution
+                simulatedRule.setPriority(rule.getPriority());
+                simulatedRule.setStatus(RuleStatus.ACTIVE); // Simulate as ACTIVE for validation
+                simulatedRule.setIsLatest(rule.getIsLatest());
+                simulatedRule.setVersion(rule.getVersion());
+                simulatedRule.setParentRuleId(rule.getParentRuleId());
+                
+                log.info("➕ Adding rule to include: ID={}, Name={}, Status={}, HasContent={}", 
+                        rule.getId(), rule.getRuleName(), rule.getStatus(), 
+                        rule.getRuleContent() != null && !rule.getRuleContent().isEmpty());
+                
+                // IMPORTANT: Use put to override if rule already exists (rules to include take precedence)
+                simulatedRules.put(rule.getId(), simulatedRule);
+            }
+        }
+        
+        // Sort by priority to match deployment behavior
+        List<DecisionRule> result = new ArrayList<>(simulatedRules.values());
+        result.sort((r1, r2) -> {
+            int p1 = r1.getPriority() != null ? r1.getPriority() : 0;
+            int p2 = r2.getPriority() != null ? r2.getPriority() : 0;
+            return Integer.compare(p1, p2);
+        });
+        
+        log.info("✅ Final simulated ruleset: {} rules total", result.size());
+        for (DecisionRule r : result) {
+            log.info("  📌 Rule ID={}, Name={}, Status={}, Priority={}", 
+                    r.getId(), r.getRuleName(), r.getStatus(), r.getPriority());
+        }
+        
+        return result;
+    }
+
+    private ValidationContext performValidation(FactType factType, String userId) throws JsonProcessingException {
+        ChangeRequestChanges detectedChanges = detectChanges(factType, userId);
+        List<DecisionRule> simulatedRules = buildRulesetForValidation(factType, detectedChanges);
+
+        log.info("🔍 Building validation container with {} rules (factType: {})", 
+                simulatedRules.size(), factType.getValue());
+        log.info("📋 Rules to include: {}, Rules to exclude: {}", 
+                detectedChanges.getRulesToInclude().size(), 
+                detectedChanges.getRulesToExclude().size());
+
+        Map<String, Object> validationResult = ruleEngineManager
+                .validateRulesBuild(factType.getValue(), simulatedRules);
+
+        boolean success = Boolean.TRUE.equals(validationResult.get("success"));
+        String message = (String) validationResult.getOrDefault("message",
+                success ? "Validation completed successfully" : "Validation failed");
+        String releaseId = validationResult.containsKey("releaseId")
+                ? validationResult.get("releaseId").toString()
+                : null;
+        String error = validationResult.containsKey("error")
+                ? validationResult.get("error").toString()
+                : null;
+
+        // If build succeeded, try execution test with sample data
+        Map<String, Object> executionTestResult = null;
+        org.kie.api.runtime.KieContainer tempContainer = null;
+        try {
+            if (success && factType == FactType.DECLARATION) {
+                // Get container from validation result - this is the temporary container just built
+                Object containerObj = validationResult.get("container");
+                if (containerObj instanceof org.kie.api.runtime.KieContainer) {
+                    tempContainer = (org.kie.api.runtime.KieContainer) containerObj;
+                    log.info("🧪 Using temporary container for execution test (ReleaseId: {})", 
+                            validationResult.get("releaseId"));
+                    executionTestResult = performExecutionTest(tempContainer, factType.getValue());
+                } else {
+                    log.warn("⚠️ Container not found in validation result or wrong type: {}", 
+                            containerObj != null ? containerObj.getClass().getName() : "null");
+                    executionTestResult = Map.of(
+                            "status", "SKIPPED",
+                            "message", "Container not available for execution test"
+                    );
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Execution test failed during validation: {}", e.getMessage(), e);
+            executionTestResult = Map.of(
+                    "status", "FAILED",
+                    "message", "Execution test failed: " + e.getMessage()
+            );
+        } finally {
+            // Cleanup temporary container - this is the container from the temporary build
+            if (tempContainer != null) {
+                try {
+                    log.debug("Disposing temporary validation container");
+                    tempContainer.dispose();
+                } catch (Exception e) {
+                    log.warn("Error disposing temporary container: {}", e.getMessage());
+                }
+            }
+        }
+
+        ChangeRequestValidationResponse response = ChangeRequestValidationResponse.builder()
+                .success(success)
+                .message(message)
+                .factType(factType.getValue())
+                .compiledRuleCount(simulatedRules.size())
+                .totalChanges(detectedChanges.getRulesToInclude().size()
+                        + detectedChanges.getRulesToExclude().size())
+                .rulesToInclude(detectedChanges.getRulesToInclude().size())
+                .rulesToExclude(detectedChanges.getRulesToExclude().size())
+                .releaseId(releaseId)
+                .error(error)
+                .build();
+
+        String serializedResponse = objectMapper.writeValueAsString(response);
+
+        return new ValidationContext(detectedChanges, response, serializedResponse, Instant.now(), executionTestResult);
+    }
+
+    /**
+     * Perform execution test with sample declaration data
+     */
+    private Map<String, Object> performExecutionTest(org.kie.api.runtime.KieContainer container, String factType) {
+        try {
+            // Load sample declaration data
+            Map<String, Object> sampleData = loadSampleDeclarationData();
+            if (sampleData == null || sampleData.isEmpty()) {
+                return Map.of(
+                        "status", "SKIPPED",
+                        "message", "No sample data available for execution test"
+                );
+            }
+
+            // Convert to Declaration entity
+            rule.engine.org.app.domain.entity.execution.declaration.Declaration declaration = 
+                    buildDeclarationFromMap(sampleData);
+            
+            // Log declaration details
+            if (declaration != null) {
+                log.info("📋 Declaration built: ID={}, OfficeID={}, InvoiceAmount={}, PackageQuantity={}, TotalGrossMassMeasure={}", 
+                        declaration.getId(),
+                        declaration.getOfficeId(),
+                        declaration.getInvoiceAmount(),
+                        declaration.getPackageQuantity(),
+                        declaration.getTotalGrossMassMeasure());
+                if (declaration.getGovernmentAgencyGoodsItems() != null) {
+                    log.info("📦 Goods items count: {}", declaration.getGovernmentAgencyGoodsItems().size());
+                    declaration.getGovernmentAgencyGoodsItems().forEach(item -> {
+                        log.info("  - HSID={}, QuantityQuantity={}, UnitPriceAmount={}, OriginCountryID={}, DutyRate={}", 
+                                item.getHsId(), item.getQuantityQuantity(), item.getUnitPriceAmount(), 
+                                item.getOriginCountryId(), item.getDutyRate());
+                    });
+                } else {
+                    log.warn("⚠️ GovernmentAgencyGoodsItems is null!");
+                }
+            } else {
+                log.warn("⚠️ Declaration is null after building from sample data!");
+            }
+
+            // Execute with temporary container
+            log.info("🚀 Executing rules with temporary container (factType: {})", factType);
+            rule.engine.org.app.domain.entity.execution.TotalRuleResults results = 
+                    ruleEngineManager.executeWithTemporaryContainer(container, factType, declaration);
+
+            int hitsCount = results.getHits() != null ? results.getHits().size() : 0;
+            log.info("✅ Execution test completed: {} hits, totalScore: {}, finalAction: {}", 
+                    hitsCount, results.getTotalScore(), results.getFinalAction());
+            
+            if (hitsCount == 0) {
+                log.warn("⚠️ No rule hits detected in execution test! This may indicate rules are not matching the sample data.");
+            }
+
+            // Build execution test result
+            Map<String, Object> executionResult = new HashMap<>();
+            executionResult.put("status", "PASSED");
+            executionResult.put("message", "Execution test completed successfully");
+            executionResult.put("hitsCount", hitsCount);
+            executionResult.put("totalScore", results.getTotalScore());
+            executionResult.put("finalAction", results.getFinalAction());
+            executionResult.put("finalFlag", results.getFinalFlag());
+            executionResult.put("runAt", results.getRunAt());
+
+            // Serialize hits for storage
+            if (results.getHits() != null && !results.getHits().isEmpty()) {
+                List<Map<String, Object>> hitsData = results.getHits().stream()
+                        .map(hit -> {
+                            Map<String, Object> hitMap = new HashMap<>();
+                            hitMap.put("action", hit.getAction());
+                            hitMap.put("score", hit.getScore());
+                            hitMap.put("result", hit.getResult());
+                            hitMap.put("flag", hit.getFlag());
+                            hitMap.put("description", hit.getDescription());
+                            return hitMap;
+                        })
+                        .collect(Collectors.toList());
+                executionResult.put("hits", hitsData);
+            }
+
+            return executionResult;
+        } catch (Exception e) {
+            log.error("Error performing execution test", e);
+            return Map.of(
+                    "status", "FAILED",
+                    "message", "Execution test failed: " + e.getMessage(),
+                    "error", e.getClass().getName()
+            );
+        }
+    }
+
+    /**
+     * Load sample declaration data for execution testing from JSON file
+     */
+    private Map<String, Object> loadSampleDeclarationData() {
+        try {
+            // Read from resources/goods-declaration-sample.json
+            java.io.InputStream inputStream = getClass().getClassLoader()
+                    .getResourceAsStream("goods-declaration-sample.json");
+            
+            if (inputStream == null) {
+                log.error("Sample declaration data file not found: goods-declaration-sample.json");
+                return null;
+            }
+            
+            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            Map<String, Object> data = mapper.readValue(inputStream, 
+                    new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
+            
+            inputStream.close();
+            
+            log.info("✅ Loaded sample declaration data from goods-declaration-sample.json");
+            return data;
+        } catch (Exception e) {
+            log.error("Error loading sample declaration data from file", e);
+            return null;
+        }
+    }
+
+    /**
+     * Convert Map to Declaration entity (similar to RuleController.buildDeclarationFromMap)
+     */
+    private rule.engine.org.app.domain.entity.execution.declaration.Declaration buildDeclarationFromMap(
+            Map<String, Object> data) {
+        try {
+            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            mapper.configure(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+            
+            rule.engine.org.app.domain.entity.execution.declaration.Declaration declaration = 
+                mapper.convertValue(data, rule.engine.org.app.domain.entity.execution.declaration.Declaration.class);
+            
+            return declaration;
+        } catch (Exception e) {
+            log.error("Error converting Map to Declaration: {}", e.getMessage(), e);
+            throw new IllegalArgumentException("Invalid Declaration data: " + e.getMessage(), e);
+        }
+    }
+
+    private void applyValidationMetadata(ChangeRequest changeRequest, ValidationContext validationContext) {
+        ChangeRequestValidationResponse validationResponse = validationContext.response();
+        changeRequest.setValidationStatus(validationResponse.isSuccess() ? "SUCCESS" : "FAILED");
+        changeRequest.setValidationMessage(validationResponse.getMessage());
+        changeRequest.setValidationReleaseId(validationResponse.getReleaseId());
+        changeRequest.setValidationRuleCount(validationResponse.getCompiledRuleCount());
+        changeRequest.setValidationError(validationResponse.getError());
+        changeRequest.setValidationResultJson(validationContext.serializedResponse());
+        changeRequest.setValidationCheckedAt(validationContext.checkedAt());
+
+        // Apply execution test results if available
+        if (validationContext.executionTestResult() != null) {
+            Map<String, Object> execResult = validationContext.executionTestResult();
+            String status = (String) execResult.getOrDefault("status", "NOT_RUN");
+            changeRequest.setExecutionTestStatus(status);
+            changeRequest.setExecutionTestMessage((String) execResult.getOrDefault("message", ""));
+            
+            if (execResult.containsKey("hitsCount")) {
+                changeRequest.setExecutionTestHitsCount((Integer) execResult.get("hitsCount"));
+            }
+            if (execResult.containsKey("totalScore")) {
+                Object scoreObj = execResult.get("totalScore");
+                if (scoreObj instanceof java.math.BigDecimal) {
+                    changeRequest.setExecutionTestTotalScore((java.math.BigDecimal) scoreObj);
+                } else if (scoreObj instanceof Number) {
+                    changeRequest.setExecutionTestTotalScore(
+                            java.math.BigDecimal.valueOf(((Number) scoreObj).doubleValue()));
+                }
+            }
+            if (execResult.containsKey("finalAction")) {
+                changeRequest.setExecutionTestFinalAction((String) execResult.get("finalAction"));
+            }
+            
+            try {
+                String execResultJson = objectMapper.writeValueAsString(execResult);
+                changeRequest.setExecutionTestResultJson(execResultJson);
+            } catch (JsonProcessingException e) {
+                log.warn("Failed to serialize execution test result: {}", e.getMessage());
+            }
+        } else {
+            changeRequest.setExecutionTestStatus("NOT_RUN");
+        }
+    }
+
+    private record ValidationContext(
+            ChangeRequestChanges changes,
+            ChangeRequestValidationResponse response,
+            String serializedResponse,
+            Instant checkedAt,
+            Map<String, Object> executionTestResult) {
+        
+        ValidationContext(ChangeRequestChanges changes,
+                         ChangeRequestValidationResponse response,
+                         String serializedResponse,
+                         Instant checkedAt) {
+            this(changes, response, serializedResponse, checkedAt, null);
+        }
     }
 
     /**
@@ -767,7 +1174,7 @@ public class ChangeRequestController {
             .factType(request.getFactType() != null ? request.getFactType().getValue() : null)
             .title(request.getTitle())
             .description(request.getDescription())
-            .status(request.getStatus() != null ? request.getStatus().name() : null)
+            .status(request.getStatus() != null ? request.getStatus().getValue() : null)
             .changesJson(request.getChangesJson())
             .approvedBy(userDisplayNameService.getDisplayName(request.getApprovedBy()))
             .approvedDate(request.getApprovedDate())
@@ -776,6 +1183,19 @@ public class ChangeRequestController {
             .rejectionReason(request.getRejectionReason())
             .createdAt(request.getCreatedAt())
             .createdBy(userDisplayNameService.getDisplayName(request.getCreatedBy()))
+            .validationStatus(request.getValidationStatus())
+            .validationMessage(request.getValidationMessage())
+            .validationReleaseId(request.getValidationReleaseId())
+            .validationRuleCount(request.getValidationRuleCount())
+            .validationError(request.getValidationError())
+            .validationCheckedAt(request.getValidationCheckedAt())
+            .validationResultJson(request.getValidationResultJson())
+            .executionTestStatus(request.getExecutionTestStatus())
+            .executionTestMessage(request.getExecutionTestMessage())
+            .executionTestHitsCount(request.getExecutionTestHitsCount())
+            .executionTestTotalScore(request.getExecutionTestTotalScore())
+            .executionTestFinalAction(request.getExecutionTestFinalAction())
+            .executionTestResultJson(request.getExecutionTestResultJson())
             .build();
     }
 }

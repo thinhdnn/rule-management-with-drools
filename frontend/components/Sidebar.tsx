@@ -1,7 +1,7 @@
 "use client"
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, Puzzle, Brain, BarChart3, Settings, Package, FileCheck } from 'lucide-react'
+import { LayoutDashboard, Puzzle, Brain, BarChart3, Settings, Package, FileCheck, Play } from 'lucide-react'
 import { useState } from 'react'
 
 const navItems = [
@@ -9,6 +9,7 @@ const navItems = [
   { href: '/rules', label: 'Rules', icon: Puzzle, testId: 'sidebar-rules-item' },
   { href: '/package', label: 'Package', icon: Package, testId: 'sidebar-package-item' },
   { href: '/change-requests', label: 'Change Request', icon: FileCheck, testId: 'sidebar-change-request-item' },
+  { href: '/executions', label: 'Executions', icon: Play, testId: 'sidebar-executions-item' },
   { href: '/ai', label: 'AI Builder', icon: Brain, testId: 'sidebar-ai-item' },
   { href: '/reports', label: 'Reports', icon: BarChart3, testId: 'sidebar-reports-item' },
 ]
