@@ -95,6 +95,10 @@ jobs:
         HOST_IP: ${{ env.HOST_IP }}
         OPENAI_ENABLED: ${{ secrets.OPENAI_ENABLED }}
         OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        AI_API_KEY: ${{ secrets.AI_API_KEY }}
+        AI_PROVIDER: ${{ secrets.AI_PROVIDER }}
+        AI_BASE_URL: ${{ secrets.AI_BASE_URL }}
+        AI_MODEL: ${{ secrets.AI_MODEL }}
       run: |
         echo "🐳 Building and starting services with Docker Compose..."
         
@@ -119,12 +123,34 @@ jobs:
         else
           echo "ℹ️  OPENAI_API_KEY not provided"
         fi
+
+        # Set AI environment variables (optional, used by backend)
+        export AI_API_KEY_VALUE="${AI_API_KEY:-}"
+        export AI_PROVIDER_VALUE="${AI_PROVIDER:-openrouter}"
+        export AI_BASE_URL_VALUE="${AI_BASE_URL:-}"
+        export AI_MODEL_VALUE="${AI_MODEL:-openai/gpt-4o}"
+        if [ -n "$AI_API_KEY_VALUE" ]; then
+          echo "🔐 AI_API_KEY is set (hidden)"
+        else
+          echo "ℹ️  AI_API_KEY not provided"
+        fi
+        echo "🤖 AI_PROVIDER=$AI_PROVIDER_VALUE"
+        if [ -n "$AI_BASE_URL_VALUE" ]; then
+          echo "🌐 AI_BASE_URL provided"
+        else
+          echo "ℹ️  AI_BASE_URL not provided (will use provider default)"
+        fi
+        echo "🧩 AI_MODEL=$AI_MODEL_VALUE"
         
         # Build and start services in detached mode
         # Pass NEXT_PUBLIC_BACKEND_URL to docker-compose via environment
         NEXT_PUBLIC_BACKEND_URL="$NEXT_PUBLIC_BACKEND_URL" \
         OPENAI_ENABLED="$OPENAI_ENABLED_VALUE" \
         OPENAI_API_KEY="$OPENAI_API_KEY_VALUE" \
+        AI_API_KEY="$AI_API_KEY_VALUE" \
+        AI_PROVIDER="$AI_PROVIDER_VALUE" \
+        AI_BASE_URL="$AI_BASE_URL_VALUE" \
+        AI_MODEL="$AI_MODEL_VALUE" \
         $COMPOSE_CMD up -d --build 2>&1 | tee docker-compose.log
         
         echo "⏳ Waiting for services to be healthy..."
