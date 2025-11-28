@@ -23,11 +23,11 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Service for generating rules from natural language input using OpenAI GPT.
+ * Service for generating rules from natural language input using AI (OpenRouter or OpenAI).
  * This service:
  * 1. Loads metadata constraints (available fields, operators, outputs)
  * 2. Builds a structured prompt with metadata
- * 3. Calls OpenAI API to generate rule JSON
+ * 3. Calls AI API (OpenRouter/OpenAI) to generate rule JSON
  * 4. Validates the generated rule against metadata
  * 5. Returns validated rule or error messages with suggestions
  */
@@ -63,10 +63,11 @@ public class AIRuleGeneratorService {
         if (openAIClient == null || !openAIConfig.getEnabled()) {
             return responseBuilder
                 .success(false)
-                .errorMessage("AI features are disabled. Set OPENAI_ENABLED=true and provide OPENAI_API_KEY to use this feature.")
+                .errorMessage("AI features are disabled. Set AI_ENABLED=true and provide AI_API_KEY to use this feature.")
                 .suggestions(List.of(
-                    "Set environment variable: OPENAI_ENABLED=true",
-                    "Set environment variable: OPENAI_API_KEY=your-api-key",
+                    "Set environment variable: AI_ENABLED=true",
+                    "Set environment variable: AI_API_KEY=your-api-key",
+                    "Optional: Set AI_PROVIDER=openrouter (default) or openai",
                     "Restart the application after setting environment variables"
                 ))
                 .build();
@@ -82,7 +83,7 @@ public class AIRuleGeneratorService {
             // Step 2: Build prompt with metadata constraints
             String prompt = buildPrompt(request, metadata, factType);
             
-            // Step 3: Call OpenAI API
+            // Step 3: Call AI API (OpenRouter or OpenAI)
             String aiResponse = callOpenAI(prompt);
             
             // Step 4: Parse AI response to CreateRuleRequest
@@ -278,11 +279,12 @@ public class AIRuleGeneratorService {
     }
     
     /**
-     * Call OpenAI API to generate rule
+     * Call AI API (OpenRouter or OpenAI) to generate rule
      */
     private String callOpenAI(String prompt) {
         try {
-            log.debug("Calling OpenAI API with model: {}", openAIConfig.getModel());
+            log.debug("Calling AI API (provider: {}) with model: {}", 
+                openAIConfig.getProvider(), openAIConfig.getModel());
             
             ChatCompletionCreateParams params = ChatCompletionCreateParams.builder()
                 .model(openAIConfig.getModel())
@@ -293,13 +295,13 @@ public class AIRuleGeneratorService {
             ChatCompletion completion = openAIClient.chat().completions().create(params);
             
             String response = completion.choices().get(0).message().content().orElse("");
-            log.debug("OpenAI response received: {} characters", response.length());
+            log.debug("AI API response received: {} characters", response.length());
             
             return response;
             
         } catch (Exception e) {
-            log.error("Error calling OpenAI API", e);
-            throw new RuntimeException("Failed to call OpenAI API: " + e.getMessage(), e);
+            log.error("Error calling AI API (provider: {})", openAIConfig.getProvider(), e);
+            throw new RuntimeException("Failed to call AI API: " + e.getMessage(), e);
         }
     }
     
@@ -422,7 +424,7 @@ public class AIRuleGeneratorService {
             // Build review prompt
             String reviewPrompt = buildDrlReviewPrompt(rule, factType);
             
-            // Call OpenAI for review
+            // Call AI API for review
             String reviewResponse = callOpenAIForReview(reviewPrompt);
             
             // Parse review response
@@ -498,11 +500,11 @@ public class AIRuleGeneratorService {
     }
     
     /**
-     * Call OpenAI API for DRL review (with lower temperature for more consistent results)
+     * Call AI API for DRL review (with lower temperature for more consistent results)
      */
     private String callOpenAIForReview(String prompt) {
         try {
-            log.debug("Calling OpenAI API for DRL review");
+            log.debug("Calling AI API for DRL review (provider: {})", openAIConfig.getProvider());
             
             ChatCompletionCreateParams params = ChatCompletionCreateParams.builder()
                 .model(openAIConfig.getModel())
@@ -518,8 +520,9 @@ public class AIRuleGeneratorService {
             return response;
             
         } catch (Exception e) {
-            log.error("Error calling OpenAI API for DRL review", e);
-            throw new RuntimeException("Failed to call OpenAI API for review: " + e.getMessage(), e);
+            log.error("Error calling AI API for DRL review (provider: {})", 
+                openAIConfig.getProvider(), e);
+            throw new RuntimeException("Failed to call AI API for review: " + e.getMessage(), e);
         }
     }
     

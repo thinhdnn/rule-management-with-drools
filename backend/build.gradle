@@ -40,7 +40,7 @@ dependencies {
 	// MapStruct for DTO <-> entity mappings
 	implementation 'org.mapstruct:mapstruct:1.6.2'
 
-	// OpenAI Java client (official SDK)
+	// OpenAI Java client (official SDK) - compatible with OpenRouter
 	implementation 'com.openai:openai-java:4.7.1'
 
 	// JWT auth

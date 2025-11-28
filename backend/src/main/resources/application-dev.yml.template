@@ -2,9 +2,13 @@
 # Copy this file to application-dev.yml and fill in your API keys
 # File application-dev.yml is in .gitignore and will NOT be committed
 
-# OpenAI Configuration for Development
-openai:
-  api-key: YOUR_OPENAI_API_KEY_HERE
+# AI Configuration for Development (OpenRouter or OpenAI)
+# OpenRouter: Get API key from https://openrouter.ai
+# OpenAI: Get API key from https://platform.openai.com
+ai:
+  api-key: YOUR_AI_API_KEY_HERE
+  provider: openrouter  # "openrouter" (default) or "openai"
+  model: openai/gpt-4o  # OpenRouter format: "provider/model-name" or OpenAI format: "gpt-4o"
   enabled: true
 
 # Optional: Override other settings for development

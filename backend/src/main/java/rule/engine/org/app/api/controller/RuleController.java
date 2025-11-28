@@ -25,6 +25,7 @@ import rule.engine.org.app.api.response.RuleFieldMetadata.FieldDefinition;
 import rule.engine.org.app.domain.entity.ui.DecisionRule;
 import rule.engine.org.app.domain.entity.ui.FactType;
 import rule.engine.org.app.domain.entity.ui.RuleStatus;
+import rule.engine.org.app.domain.entity.security.UserRole;
 import rule.engine.org.app.domain.entity.ui.RuleExecutionResult;
 import rule.engine.org.app.domain.entity.ui.RuleConditionGroup;
 import rule.engine.org.app.domain.entity.ui.RuleCondition;
@@ -175,7 +176,7 @@ public class RuleController {
 
     /**
      * AI-powered rule generation endpoint.
-     * Accepts natural language input and generates a structured rule using OpenAI GPT.
+     * Accepts natural language input and generates a structured rule using AI (OpenRouter or OpenAI).
      * Returns the generated rule for preview or saves it directly based on previewOnly flag.
      * IMPORTANT: This endpoint must be placed BEFORE endpoints with path variables like /{id}
      */
@@ -260,7 +261,7 @@ public class RuleController {
                 .errorMessage("Failed to generate rule: " + e.getMessage())
                 .suggestions(List.of(
                     "Please try rephrasing your request",
-                    "Ensure OpenAI API is properly configured",
+                    "Ensure AI API (OpenRouter/OpenAI) is properly configured",
                     "Check system logs for detailed error information"
                 ))
                 .build();
@@ -274,7 +275,9 @@ public class RuleController {
             @PathVariable Long id,
             @AuthenticationPrincipal UserPrincipal currentUser) {
         String userId = requireUserId(currentUser);
-        Optional<DecisionRule> ruleOpt = decisionRuleRepository.findByIdAndCreatedBy(id, userId);
+        Optional<DecisionRule> ruleOpt = isAdministrator(currentUser)
+            ? decisionRuleRepository.findById(id)
+            : decisionRuleRepository.findByIdAndCreatedBy(id, userId);
         
         if (ruleOpt.isEmpty()) {
             return ResponseEntity.notFound().build();
@@ -1189,7 +1192,17 @@ public class RuleController {
         return currentUser.getId().toString();
     }
 
+    private boolean isAdministrator(UserPrincipal currentUser) {
+        if (currentUser == null || currentUser.getRoles() == null) {
+            return false;
+        }
+        return currentUser.getRoles().contains(UserRole.RULE_ADMINISTRATOR);
+    }
+
     private void enforceRuleOwnership(Long ruleId, UserPrincipal currentUser) {
+        if (isAdministrator(currentUser)) {
+            return;
+        }
         String userId = requireUserId(currentUser);
         if (decisionRuleRepository.findByIdAndCreatedBy(ruleId, userId).isEmpty()) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Rule not found");

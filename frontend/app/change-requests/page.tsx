@@ -137,14 +137,20 @@ export default function ChangeRequestsPage() {
         ]
         
         if (allRuleIds.length > 0) {
-          const rulesData = await fetchApi<any[]>(api.rules.list())
-          const rulesMap = new Map()
-          rulesData.forEach((rule: any) => {
-            if (allRuleIds.includes(rule.id)) {
-              rulesMap.set(rule.id, rule)
-            }
-          })
+          const rulesMap = new Map<number, any>()
+          await Promise.all(
+            allRuleIds.map(async (ruleId: number) => {
+              try {
+                const rule = await fetchApi(api.rules.get(ruleId.toString()))
+                rulesMap.set(ruleId, rule)
+              } catch (err) {
+                console.error(`Failed to load rule ${ruleId}:`, err)
+              }
+            })
+          )
           setPreviewRules(rulesMap)
+        } else {
+          setPreviewRules(new Map())
         }
       }
     } catch (err) {
@@ -337,25 +343,30 @@ export default function ChangeRequestsPage() {
     if (changeRequest.changesJson) {
       try {
         const changes = JSON.parse(changeRequest.changesJson)
-        const allRuleIds = [
-          ...(changes.rulesToAdd || []),
-          ...(changes.rulesToUpdate || []),
-          ...(changes.rulesToDelete || []),
-        ]
+        const allRuleIds = new Set<number>()
 
-        // Load rule details for all rule IDs
-        const rulesMap = new Map<number, any>()
-        await Promise.all(
-          allRuleIds.map(async (ruleId: number) => {
-            try {
-              const rule = await fetchApi(api.rules.get(ruleId.toString()))
-              rulesMap.set(ruleId, rule)
-            } catch (err) {
-              console.error(`Failed to load rule ${ruleId}:`, err)
-            }
-          })
-        )
-        setChangeRequestRules(rulesMap)
+        ;(changes.rulesToAdd || []).forEach((id: number) => allRuleIds.add(id))
+        ;(changes.rulesToUpdate || []).forEach((id: number) => allRuleIds.add(id))
+        ;(changes.rulesToDelete || []).forEach((id: number) => allRuleIds.add(id))
+        ;(changes.rulesToInclude || []).forEach((id: number) => allRuleIds.add(id))
+        ;(changes.rulesToExclude || []).forEach((id: number) => allRuleIds.add(id))
+
+        if (allRuleIds.size > 0) {
+          const rulesMap = new Map<number, any>()
+          await Promise.all(
+            Array.from(allRuleIds).map(async (ruleId: number) => {
+              try {
+                const rule = await fetchApi(api.rules.get(ruleId.toString()))
+                rulesMap.set(ruleId, rule)
+              } catch (err) {
+                console.error(`Failed to load rule ${ruleId}:`, err)
+              }
+            })
+          )
+          setChangeRequestRules(rulesMap)
+        } else {
+          setChangeRequestRules(new Map())
+        }
       } catch (err) {
         console.error('Failed to parse changes JSON:', err)
       }
@@ -775,126 +786,226 @@ export default function ChangeRequestsPage() {
                 <label className="block text-sm font-medium text-slate-700 mb-2">
                   Detected Changes (vs Last Deployed Version)
                 </label>
-                
+
                 {previewLoading ? (
                   <div className="border border-outlineVariant rounded-md p-8 text-center">
                     <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
                     <p className="text-sm text-slate-600 mt-2">Detecting changes...</p>
                   </div>
                 ) : previewChanges ? (
-                  <>
-                    {/* Summary */}
-                    <div className="bg-slate-50 border border-outlineVariant rounded-md p-3 mb-2">
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="text-slate-700 font-medium">Total Changes:</span>
-                        <span className="text-slate-900 font-semibold">{previewChanges.totalChanges || 0}</span>
-                      </div>
-                      {previewChanges.totalChanges > 0 && (
-                        <div className="mt-2 flex gap-4 text-xs">
-                          {previewChanges.changes?.rulesToInclude?.length > 0 && (
-                            <span className="text-green-700">
-                              ✓ {previewChanges.changes.rulesToInclude.length} Added/Modified
-                            </span>
-                          )}
-                          {previewChanges.changes?.rulesToExclude?.length > 0 && (
-                            <span className="text-red-700">
-                              ✗ {previewChanges.changes.rulesToExclude.length} Removed
-                            </span>
-                          )}
-                        </div>
-                      )}
-                    </div>
+                  (() => {
+                    const includeIds: number[] = previewChanges.changes?.rulesToInclude || []
+                    const excludeIds: number[] = previewChanges.changes?.rulesToExclude || []
 
-                    {/* Changes Table */}
-                    {previewChanges.totalChanges > 0 ? (
-                      <div className="border border-outlineVariant rounded-md overflow-hidden">
-                        <div className="overflow-x-auto max-h-64 overflow-y-auto">
-                          <table className="w-full text-sm">
-                            <thead className="bg-slate-50 border-b border-outlineVariant sticky top-0">
-                              <tr>
-                                <th className="px-3 py-2 text-left text-xs font-medium text-slate-700 uppercase">Change</th>
-                                <th className="px-3 py-2 text-left text-xs font-medium text-slate-700 uppercase">Rule ID</th>
-                                <th className="px-3 py-2 text-left text-xs font-medium text-slate-700 uppercase">Rule Name</th>
-                                <th className="px-3 py-2 text-left text-xs font-medium text-slate-700 uppercase">Status</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-outlineVariant">
-                              {previewChanges.changes?.rulesToInclude?.map((ruleId: number) => {
-                                const rule = previewRules.get(ruleId)
-                                return (
-                                  <tr key={`include-${ruleId}`} className="hover:bg-slate-50">
-                                    <td className="px-3 py-2">
-                                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                        Added/Modified
-                                      </span>
-                                    </td>
-                                    <td className="px-3 py-2 text-slate-900">#{ruleId}</td>
-                                    <td className="px-3 py-2 text-slate-900">
-                                      {rule?.ruleName || rule?.name || `Rule #${ruleId}`}
-                                    </td>
-                                    <td className="px-3 py-2">
-                                      {rule?.status === 'ACTIVE' ? (
-                                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                          Active
-                                        </span>
-                                      ) : rule?.status === 'DRAFT' ? (
-                                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-                                          Draft
-                                        </span>
-                                      ) : (
-                                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-700">
-                                          Inactive
-                                        </span>
-                                      )}
-                                    </td>
-                                  </tr>
-                                )
-                              })}
-                              {previewChanges.changes?.rulesToExclude?.map((ruleId: number) => {
-                                const rule = previewRules.get(ruleId)
-                                return (
-                                  <tr key={`exclude-${ruleId}`} className="hover:bg-slate-50">
-                                    <td className="px-3 py-2">
-                                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                                        Removed
-                                      </span>
-                                    </td>
-                                    <td className="px-3 py-2 text-slate-900">#{ruleId}</td>
-                                    <td className="px-3 py-2 text-slate-900">
-                                      {rule?.ruleName || rule?.name || `Rule #${ruleId}`}
-                                    </td>
-                                    <td className="px-3 py-2">
-                                      {rule?.status === 'ACTIVE' ? (
-                                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                          Active
-                                        </span>
-                                      ) : rule?.status === 'DRAFT' ? (
-                                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-                                          Draft
-                                        </span>
-                                      ) : (
-                                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-700">
-                                          Inactive
-                                        </span>
-                                      )}
-                                    </td>
-                                  </tr>
-                                )
-                              })}
-                            </tbody>
-                          </table>
+                    const getFamilyId = (ruleId: number) => {
+                      const rule = previewRules.get(ruleId)
+                      if (rule && typeof rule.parentRuleId === 'number' && rule.parentRuleId > 0) {
+                        return rule.parentRuleId
+                      }
+                      return ruleId
+                    }
+
+                    const matchedExcludes = new Set<number>()
+                    const addedRuleIds: number[] = []
+                    const updatedPairs: Array<{ newRuleId: number; oldRuleId: number | null }> = []
+
+                    includeIds.forEach((ruleId) => {
+                      const familyId = getFamilyId(ruleId)
+                      const matchedExcludeId = excludeIds.find((excludeId) => {
+                        if (matchedExcludes.has(excludeId)) return false
+                        return getFamilyId(excludeId) === familyId
+                      })
+
+                      if (typeof matchedExcludeId === 'number') {
+                        matchedExcludes.add(matchedExcludeId)
+                        updatedPairs.push({ newRuleId: ruleId, oldRuleId: matchedExcludeId })
+                      } else {
+                        addedRuleIds.push(ruleId)
+                      }
+                    })
+
+                    const removedRuleIds = excludeIds.filter((ruleId) => !matchedExcludes.has(ruleId))
+
+                    const displayTotalChanges =
+                      addedRuleIds.length + updatedPairs.length + removedRuleIds.length
+
+                    return (
+                      <>
+                        {/* Summary */}
+                        <div className="bg-slate-50 border border-outlineVariant rounded-md p-3 mb-2">
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="text-slate-700 font-medium">Total Changes:</span>
+                            <span className="text-slate-900 font-semibold">
+                              {displayTotalChanges}
+                            </span>
+                          </div>
+                          {displayTotalChanges > 0 && (
+                            <div className="mt-2 flex gap-4 text-xs">
+                              {(addedRuleIds.length > 0 || updatedPairs.length > 0) && (
+                                <span className="text-green-700">
+                                  ✓ {addedRuleIds.length + updatedPairs.length} Added/Updated
+                                </span>
+                              )}
+                              {removedRuleIds.length > 0 && (
+                                <span className="text-red-700">
+                                  ✗ {removedRuleIds.length} Removed
+                                </span>
+                              )}
+                            </div>
+                          )}
                         </div>
-                      </div>
-                    ) : (
-                      <div className="border border-outlineVariant rounded-md p-6 text-center">
-                        <svg className="w-12 h-12 mx-auto text-slate-300 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        <p className="text-sm text-slate-600">No changes detected</p>
-                        <p className="text-xs text-slate-500 mt-1">All rules are same as deployed version</p>
-                      </div>
-                    )}
-                  </>
+
+                        {/* Changes Table */}
+                        {displayTotalChanges > 0 ? (
+                          <div className="border border-outlineVariant rounded-md overflow-hidden">
+                            <div className="overflow-x-auto max-h-64 overflow-y-auto">
+                              <table className="w-full text-sm">
+                                <thead className="bg-slate-50 border-b border-outlineVariant sticky top-0">
+                                  <tr>
+                                    <th className="px-3 py-2 text-left text-xs font-medium text-slate-700 uppercase">
+                                      Change
+                                    </th>
+                                    <th className="px-3 py-2 text-left text-xs font-medium text-slate-700 uppercase">
+                                      Rule ID
+                                    </th>
+                                    <th className="px-3 py-2 text-left text-xs font-medium text-slate-700 uppercase">
+                                      Rule Name
+                                    </th>
+                                    <th className="px-3 py-2 text-left text-xs font-medium text-slate-700 uppercase">
+                                      Status
+                                    </th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-outlineVariant">
+                                  {/* Added rules */}
+                                  {addedRuleIds.map((ruleId) => {
+                                    const rule = previewRules.get(ruleId)
+                                    return (
+                                      <tr key={`added-${ruleId}`} className="hover:bg-slate-50">
+                                        <td className="px-3 py-2">
+                                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                            Added
+                                          </span>
+                                        </td>
+                                        <td className="px-3 py-2 text-slate-900">#{ruleId}</td>
+                                        <td className="px-3 py-2 text-slate-900">
+                                          {rule?.ruleName || rule?.name || `Rule #${ruleId}`}
+                                        </td>
+                                        <td className="px-3 py-2">
+                                          {rule?.status === 'ACTIVE' ? (
+                                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                              Active
+                                            </span>
+                                          ) : rule?.status === 'DRAFT' ? (
+                                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                                              Draft
+                                            </span>
+                                          ) : (
+                                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-700">
+                                              Inactive
+                                            </span>
+                                          )}
+                                        </td>
+                                      </tr>
+                                    )
+                                  })}
+
+                                  {/* Updated rules (new version replaces old one) */}
+                                  {updatedPairs.map(({ newRuleId, oldRuleId }) => {
+                                    const rule = previewRules.get(newRuleId)
+                                    return (
+                                      <tr
+                                        key={`updated-${newRuleId}-${oldRuleId}`}
+                                        className="hover:bg-slate-50"
+                                      >
+                                        <td className="px-3 py-2">
+                                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                            Updated
+                                          </span>
+                                        </td>
+                                        <td className="px-3 py-2 text-slate-900">#{newRuleId}</td>
+                                        <td className="px-3 py-2 text-slate-900">
+                                          {rule?.ruleName || rule?.name || `Rule #${newRuleId}`}
+                                        </td>
+                                        <td className="px-3 py-2">
+                                          {rule?.status === 'ACTIVE' ? (
+                                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                              Active
+                                            </span>
+                                          ) : rule?.status === 'DRAFT' ? (
+                                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                                              Draft
+                                            </span>
+                                          ) : (
+                                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-700">
+                                              Inactive
+                                            </span>
+                                          )}
+                                        </td>
+                                      </tr>
+                                    )
+                                  })}
+
+                                  {/* Removed rules (no replacement version) */}
+                                  {removedRuleIds.map((ruleId) => {
+                                    const rule = previewRules.get(ruleId)
+                                    return (
+                                      <tr key={`removed-${ruleId}`} className="hover:bg-slate-50">
+                                        <td className="px-3 py-2">
+                                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                                            Removed
+                                          </span>
+                                        </td>
+                                        <td className="px-3 py-2 text-slate-900">#{ruleId}</td>
+                                        <td className="px-3 py-2 text-slate-900">
+                                          {rule?.ruleName || rule?.name || `Rule #${ruleId}`}
+                                        </td>
+                                        <td className="px-3 py-2">
+                                          {rule?.status === 'ACTIVE' ? (
+                                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                              Active
+                                            </span>
+                                          ) : rule?.status === 'DRAFT' ? (
+                                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                                              Draft
+                                            </span>
+                                          ) : (
+                                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-700">
+                                              Inactive
+                                            </span>
+                                          )}
+                                        </td>
+                                      </tr>
+                                    )
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="border border-outlineVariant rounded-md p-6 text-center">
+                            <svg
+                              className="w-12 h-12 mx-auto text-slate-300 mb-2"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                              />
+                            </svg>
+                            <p className="text-sm text-slate-600">No changes detected</p>
+                            <p className="text-xs text-slate-500 mt-1">
+                              All rules are same as deployed version
+                            </p>
+                          </div>
+                        )}
+                      </>
+                    )
+                  })()
                 ) : (
                   <div className="border border-outlineVariant rounded-md p-6 text-center text-sm text-slate-500">
                     Select a fact type to preview changes
@@ -1140,23 +1251,52 @@ export default function ChangeRequestsPage() {
                           {(() => {
                             try {
                               const changes = JSON.parse(selectedChangeRequest.changesJson)
-                              const rows: Array<{ action: string; ruleId: number; color: string }> = []
+                              const rows: Array<{
+                                action: string
+                                ruleId: number
+                                color: string
+                                replacedRuleId?: number
+                              }> = []
+
+                              const getFamilyId = (ruleId: number) => {
+                                const rule = changeRequestRules.get(ruleId)
+                                if (rule && typeof rule.parentRuleId === 'number' && rule.parentRuleId > 0) {
+                                  return rule.parentRuleId
+                                }
+                                return ruleId
+                              }
 
                               // New format: Include/Exclude
                               if (changes.rulesToInclude || changes.rulesToExclude) {
-                                // Rules to Include (New or Modified rules)
-                                if (changes.rulesToInclude && Array.isArray(changes.rulesToInclude)) {
-                                  changes.rulesToInclude.forEach((ruleId: number) => {
-                                    rows.push({ action: 'Added/Modified', ruleId, color: 'green' })
-                                  })
-                                }
+                                const includeIds: number[] = changes.rulesToInclude || []
+                                const excludeIds: number[] = changes.rulesToExclude || []
+                                const matchedExcludes = new Set<number>()
 
-                                // Rules to Exclude (Removed/Deactivated rules)
-                                if (changes.rulesToExclude && Array.isArray(changes.rulesToExclude)) {
-                                  changes.rulesToExclude.forEach((ruleId: number) => {
-                                    rows.push({ action: 'Removed', ruleId, color: 'red' })
+                                includeIds.forEach((ruleId: number) => {
+                                  const familyId = getFamilyId(ruleId)
+                                  const matchedExcludeId = excludeIds.find((excludeId: number) => {
+                                    if (matchedExcludes.has(excludeId)) return false
+                                    return getFamilyId(excludeId) === familyId
                                   })
-                                }
+
+                                  if (typeof matchedExcludeId === 'number') {
+                                    matchedExcludes.add(matchedExcludeId)
+                                    rows.push({
+                                      action: 'Updated',
+                                      ruleId,
+                                      color: 'blue',
+                                      replacedRuleId: matchedExcludeId,
+                                    })
+                                  } else {
+                                    rows.push({ action: 'Added', ruleId, color: 'green' })
+                                  }
+                                })
+
+                                excludeIds.forEach((ruleId: number) => {
+                                  if (!matchedExcludes.has(ruleId)) {
+                                    rows.push({ action: 'Removed', ruleId, color: 'red' })
+                                  }
+                                })
                               } else {
                                 // Old format: Add/Update/Delete (backward compatibility)
                                 if (changes.rulesToAdd && Array.isArray(changes.rulesToAdd)) {
