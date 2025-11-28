@@ -926,7 +926,7 @@ export default function AIBuilderPage() {
             <button
               onClick={() => {
                 setBatchResults([])
-                setBatchProgress({ current: 0, total: 0 })
+                setBatchProgress({ current: 0, total: 0, phase: 'generating' })
               }}
               className="text-slate-500 hover:text-slate-700 transition-colors"
             >
