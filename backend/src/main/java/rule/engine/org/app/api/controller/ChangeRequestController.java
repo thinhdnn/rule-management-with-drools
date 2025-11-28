@@ -99,6 +99,9 @@ public class ChangeRequestController {
         private int rulesToExclude;
         private String releaseId;
         private String error;
+        private String errorDetails;
+        private String errorType;
+        private String drlPreview;
     }
 
     private static final Logger log = LoggerFactory.getLogger(ChangeRequestController.class);
@@ -502,6 +505,15 @@ public class ChangeRequestController {
         String error = validationResult.containsKey("error")
                 ? validationResult.get("error").toString()
                 : null;
+        String errorDetails = validationResult.containsKey("errorDetails")
+                ? validationResult.get("errorDetails").toString()
+                : null;
+        String errorType = validationResult.containsKey("errorType")
+                ? validationResult.get("errorType").toString()
+                : null;
+        String drlPreview = validationResult.containsKey("drlPreview")
+                ? validationResult.get("drlPreview").toString()
+                : null;
 
         // If build succeeded, try execution test with sample data
         Map<String, Object> executionTestResult = null;
@@ -553,6 +565,9 @@ public class ChangeRequestController {
                 .rulesToExclude(detectedChanges.getRulesToExclude().size())
                 .releaseId(releaseId)
                 .error(error)
+                .errorDetails(errorDetails)
+                .errorType(errorType)
+                .drlPreview(drlPreview)
                 .build();
 
         String serializedResponse = objectMapper.writeValueAsString(response);
@@ -703,7 +718,11 @@ public class ChangeRequestController {
         changeRequest.setValidationMessage(validationResponse.getMessage());
         changeRequest.setValidationReleaseId(validationResponse.getReleaseId());
         changeRequest.setValidationRuleCount(validationResponse.getCompiledRuleCount());
-        changeRequest.setValidationError(validationResponse.getError());
+        String validationErrorPayload = validationResponse.getErrorDetails();
+        if (validationErrorPayload == null || validationErrorPayload.isBlank()) {
+            validationErrorPayload = validationResponse.getError();
+        }
+        changeRequest.setValidationError(validationErrorPayload);
         changeRequest.setValidationResultJson(validationContext.serializedResponse());
         changeRequest.setValidationCheckedAt(validationContext.checkedAt());
 
@@ -747,13 +766,6 @@ public class ChangeRequestController {
             String serializedResponse,
             Instant checkedAt,
             Map<String, Object> executionTestResult) {
-        
-        ValidationContext(ChangeRequestChanges changes,
-                         ChangeRequestValidationResponse response,
-                         String serializedResponse,
-                         Instant checkedAt) {
-            this(changes, response, serializedResponse, checkedAt, null);
-        }
     }
 
     /**

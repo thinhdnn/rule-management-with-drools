@@ -5,6 +5,7 @@ import org.kie.api.KieServices;
 import org.kie.api.builder.KieBuilder;
 import org.kie.api.builder.KieFileSystem;
 import org.kie.api.builder.KieModule;
+import org.kie.api.builder.Message;
 import org.kie.api.runtime.KieContainer;
 import org.kie.api.runtime.StatelessKieSession;
 import org.springframework.context.annotation.DependsOn;
@@ -18,6 +19,7 @@ import rule.engine.org.app.domain.entity.execution.TotalRuleResults;
 import rule.engine.org.app.domain.repository.DecisionRuleRepository;
 import rule.engine.org.app.domain.repository.KieContainerVersionRepository;
 import rule.engine.org.app.domain.entity.ui.KieContainerVersion;
+import rule.engine.org.app.domain.service.exception.RuleCompilationException;
 import rule.engine.org.app.util.DrlConstants;
 
 import java.math.BigDecimal;
@@ -670,10 +672,29 @@ public class RuleEngineManager {
             result.put("kieModule", buildResult.kieModule);
             // Store buildResult to ensure container is not garbage collected
             result.put("_buildResult", buildResult);
-        } catch (Exception e) {
+        } catch (RuleCompilationException e) {
+            log.error("Rule compilation failed during validation (factType={}, rules={}): {}",
+                    factType, rules != null ? rules.size() : 0, e.getMessage(), e);
             result.put("success", false);
             result.put("message", "Rule compilation failed");
             result.put("error", e.getMessage());
+            result.put("errorDetails", e.getErrorDetails());
+            result.put("drlPreview", e.getDrlPreview());
+            result.put("errorType", e.getClass().getSimpleName());
+            if (buildResult != null && buildResult.container != null) {
+                try {
+                    buildResult.container.dispose();
+                } catch (Exception disposeEx) {
+                    log.warn("Error disposing container after build failure: {}", disposeEx.getMessage());
+                }
+            }
+        } catch (Exception e) {
+            log.error("Unexpected error while validating rules (factType={}, rules={}): {}",
+                    factType, rules != null ? rules.size() : 0, e.getMessage(), e);
+            result.put("success", false);
+            result.put("message", "Rule compilation failed");
+            result.put("error", e.getMessage());
+            result.put("errorType", e.getClass().getName());
             // Cleanup on error
             if (buildResult != null && buildResult.container != null) {
                 try {
@@ -1055,8 +1076,13 @@ public class RuleEngineManager {
         KieBuilder kieBuilder = kieServices.newKieBuilder(kfs).buildAll();
         
         // Check for build errors
-        if (kieBuilder.getResults().hasMessages(org.kie.api.builder.Message.Level.ERROR)) {
-            throw new RuntimeException("Error building KieModule for fact type " + factType + ": " + kieBuilder.getResults().getMessages());
+        if (kieBuilder.getResults().hasMessages(Message.Level.ERROR)) {
+            List<Message> errorMessages = kieBuilder.getResults().getMessages(Message.Level.ERROR);
+            String errorDetails = formatDroolsErrors(errorMessages);
+            String drlPreview = buildDrlPreview(drlContent);
+            log.error("Drools reported {} compilation errors for factType={}, version={}, rules={}\n{}",
+                    errorMessages.size(), factType, version, rules.size(), errorDetails);
+            throw new RuleCompilationException(factType, versionNumber, rules.size(), errorDetails, drlPreview);
         }
         
         KieModule kieModule = kieBuilder.getKieModule();
@@ -1105,6 +1131,32 @@ public class RuleEngineManager {
         }
         
         return rulePart;
+    }
+
+    private String formatDroolsErrors(List<Message> errorMessages) {
+        return errorMessages.stream()
+                .map(message -> {
+                    String path = message.getPath() != null ? message.getPath() : "unknown-path";
+                    Integer line = message.getLine();
+                    Integer column = message.getColumn();
+                    return String.format("[%s] %s (line %s:%s) %s",
+                            message.getLevel(),
+                            path,
+                            line != null ? line : "?",
+                            column != null ? column : "?",
+                            message.getText());
+                })
+                .collect(Collectors.joining("\n"));
+    }
+
+    private String buildDrlPreview(String drlContent) {
+        if (drlContent == null) {
+            return null;
+        }
+        int maxLength = 4000;
+        return drlContent.length() <= maxLength
+                ? drlContent
+                : drlContent.substring(0, maxLength);
     }
     
     /**
