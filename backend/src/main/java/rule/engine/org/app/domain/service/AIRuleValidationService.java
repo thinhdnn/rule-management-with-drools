@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import rule.engine.org.app.api.request.CreateRuleRequest;
+import rule.engine.org.app.api.request.ConditionsGroup;
 import rule.engine.org.app.api.response.RuleFieldMetadata.FieldDefinition;
 import rule.engine.org.app.api.response.RuleFieldMetadata.OperatorDefinition;
 import rule.engine.org.app.util.RuleFieldExtractor;
@@ -85,7 +86,7 @@ public class AIRuleValidationService {
             if (rule.getConditions() == null || rule.getConditions().isEmpty()) {
                 result.addError("At least one condition is required");
             } else {
-                validateConditions(rule.getConditions(), inputFields, operatorsByType, result);
+                validateConditionsGroup(rule.getConditions(), inputFields, operatorsByType, result);
             }
             
             // Validate outputs (THEN section)
@@ -104,6 +105,65 @@ public class AIRuleValidationService {
         }
         
         return result;
+    }
+    
+    /**
+     * Validate condition fields and operators from ConditionsGroup
+     * Handles nested structure where items in AND/OR arrays are nested groups
+     */
+    private void validateConditionsGroup(
+        ConditionsGroup conditionsGroup,
+        List<FieldDefinition> availableFields,
+        Map<String, List<OperatorDefinition>> operatorsByType,
+        ValidationResult result
+    ) {
+        // Collect all conditions from AND and OR groups, handling nested structure
+        List<Map<String, Object>> allConditions = new ArrayList<>();
+        
+        if (conditionsGroup.getAndConditions() != null) {
+            extractConditionsFromItems(conditionsGroup.getAndConditions(), allConditions);
+        }
+        
+        if (conditionsGroup.getOrConditions() != null) {
+            extractConditionsFromItems(conditionsGroup.getOrConditions(), allConditions);
+        }
+        
+        // Validate all conditions
+        validateConditions(allConditions, availableFields, operatorsByType, result);
+    }
+    
+    /**
+     * Extract conditions from items (handles both nested groups and direct conditions)
+     */
+    @SuppressWarnings("unchecked")
+    private void extractConditionsFromItems(List<Map<String, Object>> items, List<Map<String, Object>> allConditions) {
+        for (Object item : items) {
+            if (item instanceof Map) {
+                Map<String, Object> itemMap = (Map<String, Object>) item;
+                // Check if this is a nested group (has "AND" or "OR" key)
+                if (itemMap.containsKey("AND") || itemMap.containsKey("OR")) {
+                    // Extract conditions from nested group
+                    List<Map<String, Object>> nestedConditions = null;
+                    if (itemMap.containsKey("AND")) {
+                        Object andObj = itemMap.get("AND");
+                        if (andObj instanceof List) {
+                            nestedConditions = (List<Map<String, Object>>) andObj;
+                        }
+                    } else if (itemMap.containsKey("OR")) {
+                        Object orObj = itemMap.get("OR");
+                        if (orObj instanceof List) {
+                            nestedConditions = (List<Map<String, Object>>) orObj;
+                        }
+                    }
+                    if (nestedConditions != null) {
+                        allConditions.addAll(nestedConditions);
+                    }
+                } else if (itemMap.containsKey("field") && itemMap.containsKey("operator") && itemMap.containsKey("value")) {
+                    // Direct condition (backward compatibility)
+                    allConditions.add(itemMap);
+                }
+            }
+        }
     }
     
     /**

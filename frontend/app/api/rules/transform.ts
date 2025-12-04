@@ -4,14 +4,50 @@ const toNumber = (value: unknown) => {
   return Number.isNaN(num) ? null : num
 }
 
-export const transformRule = (rule: any) => {
-  const ruleCondition = typeof rule?.ruleCondition === 'string'
-    ? rule.ruleCondition
-    : typeof rule?.whenExpr === 'string'
-    ? rule.whenExpr
-    : ''
+// Helper to flatten nested ConditionsGroup to flat array for UI
+const flattenConditionsGroup = (conditionsGroup: any, logicalOp: 'AND' | 'OR' = 'AND'): any[] => {
+  const result: any[] = []
+  
+  if (Array.isArray(conditionsGroup)) {
+    // Array of conditions or nested groups
+    for (const item of conditionsGroup) {
+      if (item && typeof item === 'object') {
+        if (item.field && item.operator && item.value !== undefined) {
+          // Regular condition
+          result.push({ ...item, logicalOp })
+        } else if (item.AND || item.OR) {
+          // Nested group
+          const nestedOp = item.OR ? 'OR' : 'AND'
+          const nestedConditions = item.AND || item.OR || []
+          result.push(...flattenConditionsGroup(nestedConditions, nestedOp))
+        }
+      }
+    }
+  } else if (conditionsGroup && typeof conditionsGroup === 'object') {
+    // ConditionsGroup object { AND: [...], OR: [...] }
+    if (conditionsGroup.AND) {
+      result.push(...flattenConditionsGroup(conditionsGroup.AND, 'AND'))
+    }
+    if (conditionsGroup.OR) {
+      result.push(...flattenConditionsGroup(conditionsGroup.OR, 'OR'))
+    }
+  }
+  
+  return result
+}
 
-  const conditions = Array.isArray(rule?.conditions) ? rule.conditions : []
+export const transformRule = (rule: any) => {
+  // Convert ConditionsGroup (new format with nested support) to flat array (UI format)
+  let conditions: any[] = []
+  if (rule?.conditions) {
+    if (Array.isArray(rule.conditions)) {
+      // Old format: array with logicalOp
+      conditions = rule.conditions
+    } else if (typeof rule.conditions === 'object') {
+      // New format: { AND: [...], OR: [...] } with possible nested structure
+      conditions = flattenConditionsGroup(rule.conditions)
+    }
+  }
 
   const rawOutput = (rule?.output && typeof rule.output === 'object') ? rule.output : {}
 
@@ -33,7 +69,6 @@ export const transformRule = (rule: any) => {
     priority: rule?.priority ?? 0,
     status: rule?.status ?? 'DRAFT',
     conditions,
-    ruleCondition,
     description: rule?.description ?? '',
     output,
     ruleAction: rule?.ruleAction ?? null,

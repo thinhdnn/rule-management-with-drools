@@ -25,7 +25,7 @@ public class CreateRuleRequest {
     private String status; // DRAFT, ACTIVE, INACTIVE (defaults to DRAFT for new rules)
     private FactType factType;
     private String description; // Optional description (not a field of DecisionRule entity)
-    private List<Map<String, Object>> conditions; // Structured conditions array
+    private ConditionsGroup conditions; // Grouped conditions with AND/OR
     private Map<String, Object> output; // Output object
     private Boolean createNewVersion; // Frontend flag (not a field of DecisionRule entity)
     private String versionNotes; // Optional version notes

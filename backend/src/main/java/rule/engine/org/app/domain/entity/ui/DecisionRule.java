@@ -62,33 +62,6 @@ public class DecisionRule extends BaseAuditableEntity {
     @OneToMany(mappedBy = "decisionRule", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     @com.fasterxml.jackson.annotation.JsonIgnore // Don't serialize outputs in list view to avoid N+1 queries
     private java.util.List<RuleOutput> outputs = new java.util.ArrayList<>();
-    
-    /**
-     * Action to take when this rule matches (DEPRECATED - use outputs instead)
-     * Examples: "FLAG", "APPROVE", "REJECT", "REVIEW", "HOLD"
-     * @deprecated Use RuleOutput entities instead
-     */
-    @Deprecated
-    @Column(name = "rule_action")
-    private String ruleAction;
-
-    /**
-     * Result message/description to store when this rule matches (DEPRECATED - use outputs instead)
-     * Example: "High value import from China detected"
-     * @deprecated Use RuleOutput entities instead
-     */
-    @Deprecated
-    @Column(name = "rule_result", columnDefinition = "text")
-    private String ruleResult;
-
-    /**
-     * Risk score to assign when this rule matches (0-100) (DEPRECATED - use outputs instead)
-     * Example: 75 for high risk, 25 for low risk
-     * @deprecated Use RuleOutput entities instead
-     */
-    @Deprecated
-    @Column(name = "rule_score")
-    private java.math.BigDecimal ruleScore;
 
     // ========== VERSION TRACKING ==========
     // Support for maintaining multiple versions of the same rule

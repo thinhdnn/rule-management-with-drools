@@ -6,8 +6,9 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import rule.engine.org.app.api.request.ConditionsGroup;
+
 import java.time.Instant;
-import java.util.List;
 import java.util.Map;
 
 /**
@@ -28,7 +29,7 @@ public class RuleResponse {
     private String status; // DRAFT, ACTIVE, INACTIVE
     private Boolean generatedByAi;
     private String description;
-    private List<Map<String, Object>> conditions;
+    private ConditionsGroup conditions; // Grouped conditions with AND/OR
     private Map<String, Object> output;
     
     // Versioning fields

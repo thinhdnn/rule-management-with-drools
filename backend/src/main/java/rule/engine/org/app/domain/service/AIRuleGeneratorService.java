@@ -191,13 +191,49 @@ public class AIRuleGeneratorService {
                 "factType": "%s",
                 "priority": 100,
                 "active": false,
-                "conditions": [
-                  {
-                    "field": "MUST be from inputFields list",
-                    "operator": "MUST be valid for field type",
-                    "value": "Value to compare against"
-                  }
-                ],
+                "conditions": null or {
+                  "AND": [
+                    {
+                      "AND": [
+                        {
+                          "field": "declaration.field1",
+                          "operator": "==",
+                          "value": "value1"
+                        },
+                        {
+                          "field": "declaration.field2",
+                          "operator": ">",
+                          "value": 100
+                        }
+                      ]
+                    },
+                    {
+                      "AND": [
+                        {
+                          "field": "declaration.governmentAgencyGoodsItems.field3",
+                          "operator": "==",
+                          "value": "value3"
+                        }
+                      ]
+                    }
+                  ],
+                  "OR": [
+                    {
+                      "OR": [
+                        {
+                          "field": "declaration.field1",
+                          "operator": "==",
+                          "value": "value1"
+                        },
+                        {
+                          "field": "declaration.field2",
+                          "operator": ">",
+                          "value": 100
+                        }
+                      ]
+                    }
+                  ]
+                },
                 "output": {
                   "action": "REQUIRED - one of: FLAG, REVIEW, APPROVE, REJECT, HOLD",
                   "result": "REQUIRED - result message/description",
@@ -208,9 +244,22 @@ public class AIRuleGeneratorService {
               }
             }
             
+            CRITICAL CONDITIONS STRUCTURE RULES - GROUP BY OBJECT PATH:
+            - Conditions MUST be grouped by object path (the part before the last dot in field path)
+            - Object path examples: "declaration" for "declaration.invoiceAmount", "declaration.governmentAgencyGoodsItems" for "declaration.governmentAgencyGoodsItems.hsId"
+            - Conditions with the SAME object path go in the SAME nested group
+            - Conditions with DIFFERENT object paths go in DIFFERENT nested groups
+            - Top-level AND/OR array contains nested group objects, each nested group has "AND" or "OR" key
+            - Each nested group contains condition objects: {"field": "...", "operator": "...", "value": "..."}
+            - If user specifies ONLY 1 condition: wrap in nested AND group: {"AND": [{"AND": [condition]}]}
+            - If user specifies 2+ conditions with same object path: {"AND": [{"AND": [condition1, condition2, ...]}]}
+            - If user specifies 2+ conditions with different object paths: {"AND": [{"AND": [condition1]}, {"AND": [condition2]}]}
+            - NEVER put conditions directly in top-level AND/OR arrays - always wrap them in nested groups by object path
+            
             EXAMPLES:
             
             Example 1 - User says: "If HS code is 610910 then score is 80 and action is REVIEW"
+            (Single condition - wrap in nested AND group)
             {
               "explanation": "User wants to review items with HS code 610910 and assign a score of 80",
               "rule": {
@@ -219,13 +268,19 @@ public class AIRuleGeneratorService {
                 "factType": "Declaration",
                 "priority": 100,
                 "active": false,
-                "conditions": [
-                  {
-                    "field": "declaration.governmentAgencyGoodsItems.hsId",
-                    "operator": "==",
-                    "value": "610910"
-                  }
-                ],
+                "conditions": {
+                  "AND": [
+                    {
+                      "AND": [
+                        {
+                          "field": "declaration.governmentAgencyGoodsItems.hsId",
+                          "operator": "==",
+                          "value": "610910"
+                        }
+                      ]
+                    }
+                  ]
+                },
                 "output": {
                   "action": "REVIEW",
                   "result": "Flagged for review - HS code 610910 detected",
@@ -236,6 +291,7 @@ public class AIRuleGeneratorService {
             }
             
             Example 2 - User says: "If total gross mass > 1000kg then require inspection"
+            (Single condition - wrap in nested AND group)
             {
               "explanation": "User wants to require inspection for heavy cargo over 1000kg",
               "rule": {
@@ -244,18 +300,145 @@ public class AIRuleGeneratorService {
                 "factType": "Declaration",
                 "priority": 100,
                 "active": false,
-                "conditions": [
-                  {
-                    "field": "declaration.totalGrossMassMeasure",
-                    "operator": ">",
-                    "value": 1000
-                  }
-                ],
+                "conditions": {
+                  "AND": [
+                    {
+                      "AND": [
+                        {
+                          "field": "declaration.totalGrossMassMeasure",
+                          "operator": ">",
+                          "value": 1000
+                        }
+                      ]
+                    }
+                  ]
+                },
                 "output": {
                   "action": "FLAG",
                   "result": "Inspection required - cargo weight exceeds 1000kg",
                   "score": 70,
                   "flag": "HEAVY_CARGO"
+                }
+              }
+            }
+            
+            Example 3 - User says: "If originCountryId equals CN or dutyRate is greater than 15, then set score to 85"
+            (Two OR conditions with same object path - wrap in nested OR group)
+            {
+              "explanation": "User wants to flag items with origin country CN OR duty rate > 15",
+              "rule": {
+                "ruleName": "High Risk Origin or Duty Rate",
+                "description": "Flag items from China or with high duty rate",
+                "factType": "Declaration",
+                "priority": 100,
+                "active": false,
+                "conditions": {
+                  "OR": [
+                    {
+                      "OR": [
+                        {
+                          "field": "declaration.governmentAgencyGoodsItems.originCountryId",
+                          "operator": "==",
+                          "value": "CN"
+                        },
+                        {
+                          "field": "declaration.governmentAgencyGoodsItems.dutyRate",
+                          "operator": ">",
+                          "value": 15
+                        }
+                      ]
+                    }
+                  ]
+                },
+                "output": {
+                  "action": "REVIEW",
+                  "result": "High risk item detected - origin country CN or duty rate > 15",
+                  "score": 85
+                }
+              }
+            }
+            
+            Example 4 - User says: "If invoiceAmount > 150000 and countryOfExportId equals CN, then set score to 90"
+            (Two AND conditions with same object path - wrap in nested AND group)
+            {
+              "explanation": "User wants to flag high-value imports from China",
+              "rule": {
+                "ruleName": "High Value Import from China",
+                "description": "Flag declarations with invoice amount > 150000 and country of export CN",
+                "factType": "Declaration",
+                "priority": 100,
+                "active": false,
+                "conditions": {
+                  "AND": [
+                    {
+                      "AND": [
+                        {
+                          "field": "declaration.invoiceAmount",
+                          "operator": ">",
+                          "value": 150000
+                        },
+                        {
+                          "field": "declaration.countryOfExportId",
+                          "operator": "==",
+                          "value": "CN"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                "output": {
+                  "action": "REVIEW",
+                  "result": "High value import from China detected",
+                  "score": 90,
+                  "flag": "HIGH_RISK"
+                }
+              }
+            }
+            
+            Example 5 - User says: "If totalFreightAmount is greater than 10000 and totalInsuranceAmount is greater than 2000 and goods item has hsId equals 610910, then set score to 80 and flag as HIGH_FREIGHT_COST"
+            (Three AND conditions with DIFFERENT object paths - group by object path)
+            Note: totalFreightAmount and totalInsuranceAmount have object path "declaration"
+            Note: governmentAgencyGoodsItems.hsId has object path "declaration.governmentAgencyGoodsItems"
+            {
+              "explanation": "User wants to flag declarations with high freight and insurance costs for specific HS code",
+              "rule": {
+                "ruleName": "High Freight Cost for HS Code 610910",
+                "description": "Flag declarations with totalFreightAmount > 10000, totalInsuranceAmount > 2000, and HS code 610910",
+                "factType": "Declaration",
+                "priority": 100,
+                "active": false,
+                "conditions": {
+                  "AND": [
+                    {
+                      "AND": [
+                        {
+                          "field": "declaration.totalFreightAmount",
+                          "operator": ">",
+                          "value": 10000
+                        },
+                        {
+                          "field": "declaration.totalInsuranceAmount",
+                          "operator": ">",
+                          "value": 2000
+                        }
+                      ]
+                    },
+                    {
+                      "AND": [
+                        {
+                          "field": "declaration.governmentAgencyGoodsItems.hsId",
+                          "operator": "==",
+                          "value": "610910"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                "output": {
+                  "action": "REVIEW",
+                  "result": "High freight cost detected for HS code 610910",
+                  "score": 80,
+                  "flag": "HIGH_FREIGHT_COST"
                 }
               }
             }
@@ -267,6 +450,11 @@ public class AIRuleGeneratorService {
             - Score should typically be between 0-100
             - At least one condition and one output are required
             - Preserve the user's language (Vietnamese/English) in description and result fields
+            - REMEMBER: ALWAYS group conditions by object path - conditions with same object path go in same nested group
+            - NEVER put conditions directly in top-level AND/OR arrays - always wrap them in nested groups by object path
+            - To determine object path: take all parts of field path except the last part (the actual field name)
+            - Example: "declaration.invoiceAmount" -> object path "declaration"
+            - Example: "declaration.governmentAgencyGoodsItems.hsId" -> object path "declaration.governmentAgencyGoodsItems"
             
             IMPORTANT: Return ONLY the JSON structure above. Do not include any markdown, code blocks, or additional text.
             """,

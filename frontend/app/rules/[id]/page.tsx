@@ -28,7 +28,6 @@ type Rule = {
   label: string | null
   priority: number
   status: string
-  ruleCondition: string
   description: string
   ruleAction: string | null
   ruleResult: string | null
@@ -92,39 +91,6 @@ export default function RuleDetailPage({ params }: Props) {
   const [compareLoading, setCompareLoading] = useState(false)
 
   // Parse ruleCondition to conditions
-  // Note: This is a simple parser that works for basic conditions
-  // Complex conditions with nested parentheses are shown as raw text
-  const parseRuleCondition = (expr: string): Condition[] => {
-    if (!expr || expr.trim() === '') return []
-    
-    // If condition has parentheses, it's too complex for simple parsing
-    // Return empty array to show raw text instead
-    if (expr.includes('(') || expr.includes(')')) {
-      return []
-    }
-    
-    const parts = expr.split(/\s+(&&|\|\|)\s+/)
-    const conditions: Condition[] = []
-    
-    for (let i = 0; i < parts.length; i += 2) {
-      const condition = parts[i]
-      const logicalOp = parts[i + 1] === '||' ? 'OR' : 'AND'
-      
-      // Match pattern: field operator value
-      const match = condition.match(/(\w+)\s*(==|!=|>|<|>=|<=|contains|startsWith|endsWith|matches)\s*(.+)/)
-      if (match) {
-        conditions.push({
-          id: crypto.randomUUID(),
-          field: match[1],
-          operator: match[2],
-          value: match[3].replace(/^["']|["']$/g, ''), // Remove quotes
-          logicalOp,
-        })
-      }
-    }
-    
-    return conditions
-  }
 
   useEffect(() => {
     const fetchData = async () => {
@@ -166,7 +132,7 @@ export default function RuleDetailPage({ params }: Props) {
               value: condition.value,
               logicalOp: condition.logicalOp as 'AND' | 'OR' ?? 'AND',
             }))
-          : parseRuleCondition(ruleData.ruleCondition)
+          : []
         setConditions(parsedConditions)
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Unknown error')
@@ -489,26 +455,10 @@ export default function RuleDetailPage({ params }: Props) {
                   })}
                 </div>
               ) : (
-                /* Show raw condition for complex expressions */
+                /* Show message if no conditions */
                 <div className="bg-slate-50 rounded-md p-4 border border-slate-200">
-                  <div className="text-xs text-slate-500 mb-2 font-medium">Complex Rule Condition:</div>
-                  <div className="font-mono text-sm text-slate-800 break-all whitespace-pre-wrap">
-                    {rule.ruleCondition}
-                  </div>
-                  <div className="text-xs text-slate-500 mt-3 italic">
-                    This rule uses complex nested logic with parentheses. Edit in rule editor for structured view.
-                  </div>
+                  <div className="text-sm text-slate-600">No conditions configured</div>
                 </div>
-              )}
-
-              {/* Technical expression toggle (always show for reference) */}
-              {conditions.length > 0 && (
-                <details className="text-xs text-slate-600 mt-4">
-                  <summary className="cursor-pointer hover:text-slate-900">Show technical expression</summary>
-                  <div className="mt-2 bg-slate-50 rounded-md p-3 font-mono text-xs text-slate-700 border border-slate-200 break-all whitespace-pre-wrap">
-                    {rule.ruleCondition}
-                  </div>
-                </details>
               )}
             </div>
 

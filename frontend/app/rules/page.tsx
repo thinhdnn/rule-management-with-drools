@@ -79,7 +79,7 @@ export default function RulesPage() {
           name: rule.ruleName || 'Unnamed Rule',
           factType,
           documentType: documentType as 'Import Declaration' | 'Valuation' | 'Container' | 'Cargo Report',
-          ruleType: inferRuleTypeFromExpression(rule.whenExpr || rule.ruleCondition),
+          ruleType: inferRuleTypeFromExpression(rule.whenExpr || ''),
           outputType: inferOutputTypeFromExpression(rule.ruleResult || rule.description),
           status: rule.status === 'ACTIVE' ? 'Active' as const : 
                   rule.status === 'INACTIVE' ? 'Inactive' as const : 

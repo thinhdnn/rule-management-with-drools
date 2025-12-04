@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
       name: rule.ruleName || 'Unnamed Rule',
       factType, // Map factType from backend
       documentType,
-      ruleType: inferRuleTypeFromExpression(rule.whenExpr || rule.ruleCondition), // Support both formats
+      ruleType: inferRuleTypeFromExpression(rule.whenExpr || ''),
       outputType: inferOutputTypeFromExpression(rule.ruleResult || rule.description), // Use ruleResult or description
       status: rule.status === 'ACTIVE' ? 'Active' as const : 
               rule.status === 'INACTIVE' ? 'Inactive' as const : 

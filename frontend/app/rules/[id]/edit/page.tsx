@@ -23,7 +23,6 @@ type Rule = {
   label: string | null
   priority: number
   status: string
-  ruleCondition: string
   description: string
   ruleAction: string | null
   ruleResult: string | null
@@ -140,7 +139,7 @@ export default function EditRulePage({ params }: Props) {
               value: condition.value,
               logicalOp: (condition.logicalOp as 'AND' | 'OR') || 'AND',
             }))
-          : parseRuleCondition(rule.ruleCondition)
+          : []
         
         // Initialize output from rule.output or fallback to deprecated fields
         const output: Record<string, string> = {}
@@ -183,40 +182,6 @@ export default function EditRulePage({ params }: Props) {
     fetchRule()
   }, [id, fetchMetadataForFactType])
 
-  // Basic parser for ruleCondition (handles simple cases)
-  const parseRuleCondition = (expr: string): Condition[] => {
-    if (!expr || expr.trim() === '') return []
-    
-    // If condition has parentheses, it's too complex for simple parsing
-    // Return empty array to require manual editing
-    if (expr.includes('(') || expr.includes(')')) {
-      return []
-    }
-    
-    // Very basic parsing - handles simple cases like "field > value && field2 == value2"
-    // This is a simplified version; for complex expressions, you'd need a proper parser
-    const parts = expr.split(/\s+(&&|\|\|)\s+/)
-    const conditions: Condition[] = []
-    
-    for (let i = 0; i < parts.length; i += 2) {
-      const condition = parts[i]
-      const logicalOp = parts[i + 1] === '||' ? 'OR' : 'AND'
-      
-      // Match pattern: field operator value
-      const match = condition.match(/(\w+)\s*(==|!=|>|<|>=|<=|contains|startsWith|endsWith|matches)\s*(.+)/)
-      if (match) {
-        conditions.push({
-          id: crypto.randomUUID(),
-          field: match[1],
-          operator: match[2],
-          value: match[3].replace(/^["']|["']$/g, ''), // Remove quotes
-          logicalOp,
-        })
-      }
-    }
-    
-    return conditions
-  }
 
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -233,15 +198,115 @@ export default function EditRulePage({ params }: Props) {
     }
 
     try {
-      // Convert conditions to structured format matching DB schema
-      const conditions = formData.conditions
-        .filter(c => c.field && c.operator && c.value)
-        .map(c => ({
-          field: c.field,
-          operator: c.operator,
-          value: c.value,
-          logicalOp: c.logicalOp || 'AND'
-        }))
+      // Convert conditions to new ConditionsGroup format with nested structure
+      // Group conditions by object path and logical operator, preserving order
+      const validConditions = formData.conditions.filter(c => c.field && c.operator && c.value)
+      
+      // If only 1 condition: null (no AND/OR groups needed)
+      let conditions: any = null
+      if (validConditions.length === 1) {
+        conditions = null
+      } else if (validConditions.length > 1) {
+        const andConditions: any[] = []
+        const orConditions: any[] = []
+        
+        // Group conditions sequentially by object path (preserve order)
+        let currentGroup: any[] = []
+        let currentObjectPath: string | null = null
+        let currentGroupLogicalOp: LogicalOperator | null = null
+        let isFirstGroup = true
+        
+        for (let i = 0; i < validConditions.length; i++) {
+          const cond = validConditions[i]
+          const objectPath = getObjectPath(cond.field)
+          const logicalOp = cond.logicalOp || 'AND'
+          
+          // If object path changed, finalize current group and start new group
+          if (currentObjectPath !== null && objectPath !== currentObjectPath) {
+            // Add current group as nested ConditionsGroup if it has 2+ conditions
+            if (currentGroup.length > 0) {
+              if (currentGroup.length === 1) {
+                // Single condition: add directly to parent
+                if (isFirstGroup) {
+                  andConditions.push(currentGroup[0])
+                } else {
+                  // Create nested group for this single condition (will be added to parent AND)
+                  const nestedGroup: any = {}
+                  nestedGroup.AND = currentGroup
+                  andConditions.push(nestedGroup)
+                }
+              } else {
+                // Multiple conditions: create nested ConditionsGroup
+                const nestedGroup: any = {}
+                if (currentGroupLogicalOp === 'OR') {
+                  nestedGroup.OR = currentGroup
+                  orConditions.push(nestedGroup)
+                } else {
+                  nestedGroup.AND = currentGroup
+                  andConditions.push(nestedGroup)
+                }
+              }
+            }
+            // Start new group
+            currentGroup = []
+            currentGroupLogicalOp = null
+            isFirstGroup = false
+          }
+          
+          // Add condition to current group
+          currentGroup.push({
+            field: cond.field,
+            operator: cond.operator,
+            value: cond.value
+          })
+          
+          // Set logical operator for this group (use the logicalOp of the second condition in the group)
+          if (currentGroup.length === 2 && currentGroupLogicalOp === null) {
+            currentGroupLogicalOp = logicalOp
+          }
+          
+          currentObjectPath = objectPath
+        }
+        
+        // Add final group
+        if (currentGroup.length > 0) {
+          if (currentGroup.length === 1) {
+            // Single condition: add directly to parent
+            if (isFirstGroup) {
+              andConditions.push(currentGroup[0])
+            } else {
+              // Create nested group for this single condition
+              const nestedGroup: any = {}
+              nestedGroup.AND = currentGroup
+              andConditions.push(nestedGroup)
+            }
+          } else {
+            // Multiple conditions: create nested ConditionsGroup
+            const nestedGroup: any = {}
+            if (currentGroupLogicalOp === 'OR') {
+              nestedGroup.OR = currentGroup
+              orConditions.push(nestedGroup)
+            } else {
+              nestedGroup.AND = currentGroup
+              andConditions.push(nestedGroup)
+            }
+          }
+        }
+        
+        // Build ConditionsGroup (top level)
+        conditions = {}
+        if (andConditions.length > 0) {
+          conditions.AND = andConditions
+        }
+        if (orConditions.length > 0) {
+          conditions.OR = orConditions
+        }
+        
+        // If both are empty, set to null
+        if (andConditions.length === 0 && orConditions.length === 0) {
+          conditions = null
+        }
+      }
 
       const payload = {
         ruleName: formData.ruleName,
@@ -308,6 +373,23 @@ export default function EditRulePage({ params }: Props) {
       ...prev,
       conditions: prev.conditions.map(c => c.id === id ? { ...c, ...updates } : c),
     }))
+  }
+
+  // Extract object path from field path
+  // Example: "declaration.invoiceAmount" -> "declaration"
+  // Example: "declaration.governmentAgencyGoodsItems.netWeightMeasure" -> "declaration.governmentAgencyGoodsItems"
+  const getObjectPath = (fieldPath: string): string => {
+    if (!fieldPath) return ''
+    const parts = fieldPath.split('.')
+    if (parts.length <= 1) return fieldPath
+    // Return all parts except the last one (the actual field name)
+    return parts.slice(0, -1).join('.')
+  }
+
+  // Check if two conditions have the same object path
+  const hasSameObjectPath = (field1: string, field2: string): boolean => {
+    if (!field1 || !field2) return false
+    return getObjectPath(field1) === getObjectPath(field2)
   }
 
   if (loadingData || loadingMetadata) {
@@ -413,13 +495,18 @@ export default function EditRulePage({ params }: Props) {
                 ? (metadata.operatorsByType[selectedField.type] || [])
                 : (metadata.operatorsByType['string'] || [])
 
+              // Check if we should show logical operator for this condition
+              const prevCondition = idx > 0 ? formData.conditions[idx - 1] : null
+              const showLogicalOp = prevCondition?.field && condition?.field && 
+                                   hasSameObjectPath(prevCondition.field, condition.field)
+
               return (
                 <div key={condition.id} className="flex items-start gap-2 bg-slate-50 p-3 rounded-md">
                   <div className="flex-1 grid grid-cols-12 gap-2">
-                    {idx > 0 && (
+                    {idx > 0 && showLogicalOp && (
                       <select
-                        value={formData.conditions[idx - 1]?.logicalOp || 'AND'}
-                        onChange={(e) => updateCondition(formData.conditions[idx - 1].id, { logicalOp: e.target.value as LogicalOperator })}
+                        value={prevCondition?.logicalOp || 'AND'}
+                        onChange={(e) => updateCondition(prevCondition.id, { logicalOp: e.target.value as LogicalOperator })}
                         className="col-span-2 h-9 px-2 text-sm rounded-md border border-outlineVariant focus-ring"
                       >
                         <option value="AND">AND</option>
@@ -436,11 +523,22 @@ export default function EditRulePage({ params }: Props) {
                           ? (metadata.operatorsByType[selectedField.type] || [])
                           : (metadata.operatorsByType['string'] || [])
                         const defaultOperator = defaultOperators.length > 0 ? defaultOperators[0].operator : ''
-                        updateCondition(condition.id, { field: value, operator: defaultOperator })
+                        
+                        // Check if this field has a different object path than the previous condition
+                        const prevCondition = idx > 0 ? formData.conditions[idx - 1] : null
+                        const hasDifferentObjectPath = prevCondition && prevCondition.field && !hasSameObjectPath(value, prevCondition.field)
+                        
+                        // If different object path, remove logicalOp (start new group)
+                        const updates: Partial<Condition> = { field: value, operator: defaultOperator }
+                        if (hasDifferentObjectPath) {
+                          updates.logicalOp = undefined
+                        }
+                        
+                        updateCondition(condition.id, updates)
                       }}
                       options={metadata.inputFields}
                       placeholder="Select field..."
-                      className={`${idx > 0 ? 'col-span-4' : 'col-span-6'}`}
+                      className={idx > 0 && showLogicalOp ? 'col-span-4' : 'col-span-6'}
                     />
 
                     <select

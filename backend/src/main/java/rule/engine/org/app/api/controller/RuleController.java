@@ -11,8 +11,7 @@ import rule.engine.org.app.api.request.RuleOutputRequest;
 import rule.engine.org.app.api.request.CreateRuleRequest;
 import rule.engine.org.app.api.request.UpdateRuleRequest;
 import rule.engine.org.app.api.request.RestoreVersionRequest;
-import rule.engine.org.app.api.request.ActivateVersionRequest;
-import rule.engine.org.app.api.response.ConditionResponse;
+import rule.engine.org.app.api.request.ConditionsGroup;
 import rule.engine.org.app.api.response.RuleExecutionResponse;
 import rule.engine.org.app.api.response.RuleExecuteResponse;
 import rule.engine.org.app.api.response.ErrorResponse;
@@ -343,8 +342,10 @@ public class RuleController {
                 saveRuleConditions(saved, request.getConditions());
                 conditionGroupRepository.flush(); // Ensure conditions are persisted
                 conditionRepository.flush(); // Ensure conditions are persisted
+                int totalConditions = (request.getConditions().getAndConditions() != null ? request.getConditions().getAndConditions().size() : 0) +
+                                     (request.getConditions().getOrConditions() != null ? request.getConditions().getOrConditions().size() : 0);
                 log.info("Successfully saved {} conditions for rule {}", 
-                    request.getConditions().size(), saved.getId());
+                    totalConditions, saved.getId());
             } catch (Exception ex) {
                 log.error("Failed to persist structured conditions for rule {}: {}", saved.getRuleName(), ex.getMessage(), ex);
                 throw ex; // Re-throw to fail the request
@@ -465,8 +466,10 @@ public class RuleController {
                 saveRuleConditions(saved, request.getConditions());
                 conditionGroupRepository.flush(); // Ensure conditions are persisted
                 conditionRepository.flush(); // Ensure conditions are persisted
+                int totalConditions = (request.getConditions().getAndConditions() != null ? request.getConditions().getAndConditions().size() : 0) +
+                                     (request.getConditions().getOrConditions() != null ? request.getConditions().getOrConditions().size() : 0);
                 log.info("Successfully saved {} conditions for rule {}", 
-                    request.getConditions().size(), saved.getId());
+                    totalConditions, saved.getId());
             } catch (Exception ex) {
                 log.error("Failed to persist structured conditions for rule {}: {}", saved.getRuleName(), ex.getMessage(), ex);
                 throw ex; // Re-throw to fail the request
@@ -1292,18 +1295,18 @@ public class RuleController {
         // Build WHEN clause from conditions
         FactType factType = rule.getFactType() != null ? rule.getFactType() : FactType.DECLARATION;
         
-        List<Map<String, Object>> conditions = null;
+        ConditionsGroup conditionsGroup = null;
         Map<String, Object> output = null;
         
         if (request instanceof CreateRuleRequest) {
-            conditions = ((CreateRuleRequest) request).getConditions();
+            conditionsGroup = ((CreateRuleRequest) request).getConditions();
             output = ((CreateRuleRequest) request).getOutput();
         } else if (request instanceof UpdateRuleRequest) {
-            conditions = ((UpdateRuleRequest) request).getConditions();
+            conditionsGroup = ((UpdateRuleRequest) request).getConditions();
             output = ((UpdateRuleRequest) request).getOutput();
         }
         
-        String whenClause = buildWhenClauseFromConditions(conditions, factType.getValue());
+        String whenClause = buildWhenClauseFromConditionsGroup(conditionsGroup, factType.getValue());
         if (whenClause == null || whenClause.isBlank()) {
             return null;
         }
@@ -1338,13 +1341,13 @@ public class RuleController {
     }
     
     /**
-     * Build WHEN clause from conditions array
+     * Build WHEN clause from conditions group
      */
-    private String buildWhenClauseFromConditions(List<Map<String, Object>> conditions, String factType) {
-        if (conditions == null || conditions.isEmpty()) {
+    private String buildWhenClauseFromConditionsGroup(ConditionsGroup conditionsGroup, String factType) {
+        if (conditionsGroup == null || conditionsGroup.isEmpty()) {
             return null;
         }
-        return generateWhenExprFromConditions(conditions, factType);
+        return generateWhenExprFromConditionsGroup(conditionsGroup, factType);
     }
     
     /**
@@ -1416,6 +1419,21 @@ public class RuleController {
                   .replace("\t", "\\t");
     }
     
+    /**
+     * Generate WHEN expression from conditions group
+     * Handles AND and OR groups separately
+     */
+    private String generateWhenExprFromConditionsGroup(ConditionsGroup conditionsGroup, String factType) {
+        // Convert to flat list for processing
+        List<Map<String, Object>> conditions = conditionsGroup.toFlatList();
+        return generateWhenExprFromConditions(conditions, factType);
+    }
+    
+    /**
+     * Generate WHEN expression from flat conditions list
+     * @deprecated Use generateWhenExprFromConditionsGroup instead
+     */
+    @Deprecated
     private String generateWhenExprFromConditions(List<Map<String, Object>> conditions, String factType) {
         if (conditions == null || conditions.isEmpty()) {
             return null;
@@ -1440,8 +1458,9 @@ public class RuleController {
         }
 
         // Separate regular conditions from collection conditions
-        List<String> regularConditions = new ArrayList<>();
-        List<String> collectionConditions = new ArrayList<>();
+        // Group collection conditions by collection path to handle multiple fields in same collection
+        List<ConditionWithOperator> regularConditions = new ArrayList<>();
+        Map<String, List<CollectionConditionInfo>> collectionConditionsByPath = new java.util.HashMap<>();
         
         for (int i = 0; i < conditions.size(); i++) {
             Map<String, Object> condition = conditions.get(i);
@@ -1454,6 +1473,10 @@ public class RuleController {
             String field = fieldObj.toString();
             String operator = operatorObj.toString();
             Object valueObj = condition.get("value");
+            
+            // Get logical operator (AND/OR) - default to AND for first condition
+            String logicalOp = i > 0 ? (String) condition.getOrDefault("logicalOp", "AND") : "AND";
+            boolean isOr = "OR".equalsIgnoreCase(logicalOp);
 
             String fieldType = fieldTypeByName.getOrDefault(field, "string");
             String valueExpression = buildValueExpression(valueObj, fieldType);
@@ -1462,22 +1485,24 @@ public class RuleController {
                 continue;
             }
 
-            // Check if field path contains a collection (e.g., cargoReport.consignments.grossMassMeasure)
-            String droolsCondition = buildDroolsConditionForField(field, operator, valueExpression, factTypeEnum);
-            if (droolsCondition != null) {
-                // Collection condition - goes outside fact pattern
-                collectionConditions.add(droolsCondition);
+            // Check if field path contains a collection
+            CollectionFieldInfo collectionInfo = extractCollectionInfo(field, factTypeEnum);
+            if (collectionInfo != null) {
+                // Collection condition - group by collection path
+                String collectionKey = collectionInfo.getCollectionPath();
+                collectionConditionsByPath.computeIfAbsent(collectionKey, k -> new ArrayList<>())
+                    .add(new CollectionConditionInfo(collectionInfo, operator, valueExpression, isOr));
             } else {
                 // Regular condition - goes inside fact pattern
-                String droolsFieldPath = field;
-                if (field.startsWith("declaration.")) {
-                    droolsFieldPath = "$d." + field.substring("declaration.".length());
-                } else if (field.startsWith("cargoReport.")) {
-                    droolsFieldPath = "$c." + field.substring("cargoReport.".length());
-                }
-                regularConditions.add(droolsFieldPath + " " + operator + " " + valueExpression);
+                String droolsFieldPath = normalizeFieldPath(field, factVariable);
+                String conditionStr = droolsFieldPath + " " + operator + " " + valueExpression;
+                regularConditions.add(new ConditionWithOperator(conditionStr, isOr));
             }
         }
+        
+        // Build collection conditions - group multiple fields in same collection
+        List<ConditionWithOperator> collectionConditions = buildGroupedCollectionConditions(
+            collectionConditionsByPath, factTypeEnum);
 
         // Build WHEN clause
         StringBuilder whenClause = new StringBuilder();
@@ -1490,153 +1515,378 @@ public class RuleController {
         if (regularConditions.isEmpty()) {
             whenClause.append(factVariable).append(" : ").append(factClassName).append("()");
         } else {
-            String regularConditionStr = String.join(" && ", regularConditions);
+            // Join regular conditions - use comma for AND, || for OR
+            String regularConditionStr = joinPatternConditions(regularConditions);
             whenClause.append(factVariable).append(" : ").append(factClassName).append("(").append(regularConditionStr).append(")");
         }
         
         // Add collection conditions after fact pattern
         if (!collectionConditions.isEmpty()) {
-            whenClause.append("\n    ").append(String.join("\n    ", collectionConditions));
+            whenClause.append("\n    ");
+            whenClause.append(joinConditionsWithOperators(collectionConditions));
         }
         
         return whenClause.toString();
     }
     
     /**
-     * Build Drools condition for a field, handling collection fields with 'from' clause.
-     * Supports:
-     * - Single level collections: entity.collection.field (e.g., cargoReport.consignments.grossMassMeasure)
-     * - Nested collections: entity.collection1.collection2.field (e.g., cargoReport.consignments.consignmentItems.hsId)
-     * Returns null if field is not a collection field (use simple field access instead).
+     * Helper class to store condition with its logical operator
      */
-    private String buildDroolsConditionForField(String fieldPath, String operator, String valueExpression, FactType factType) {
+    private static class ConditionWithOperator
+    {
+        final String condition;
+        final boolean isOr;
+        
+        ConditionWithOperator(String condition, boolean isOr)
+        {
+            this.condition = condition;
+            this.isOr = isOr;
+        }
+    }
+    
+    /**
+     * Normalize field path to use proper fact variable prefix
+     * Handles fields that start with "declaration." or "cargoReport." or have no prefix
+     */
+    private String normalizeFieldPath(String field, String factVariable)
+    {
+        if (field.startsWith("declaration."))
+        {
+            return "$d." + field.substring("declaration.".length());
+        }
+        else if (field.startsWith("cargoReport."))
+        {
+            return "$c." + field.substring("cargoReport.".length());
+        }
+        else if (field.contains("."))
+        {
+            // Field path with dots but no prefix - assume it's a nested field
+            // Add fact variable prefix
+            return factVariable + "." + field;
+        }
+        else
+        {
+            // Simple field name - add fact variable prefix
+            return factVariable + "." + field;
+        }
+    }
+    
+    /**
+     * Join conditions for pattern matching - use comma for AND, || for OR
+     * In Drools pattern matching, comma (,) is preferred over && for AND
+     */
+    private String joinPatternConditions(List<ConditionWithOperator> conditions)
+    {
+        if (conditions.isEmpty())
+        {
+            return "";
+        }
+        
+        StringBuilder result = new StringBuilder();
+        result.append(conditions.get(0).condition);
+        
+        for (int i = 1; i < conditions.size(); i++)
+        {
+            ConditionWithOperator cond = conditions.get(i);
+            // Use comma for AND (standard Drools pattern syntax), || for OR
+            String operator = cond.isOr ? " || " : ", ";
+            result.append(operator).append(cond.condition);
+        }
+        
+        return result.toString();
+    }
+    
+    /**
+     * Join conditions with explicit logical operators (&&/||) - used for collection conditions outside pattern
+     */
+    private String joinConditionsWithOperators(List<ConditionWithOperator> conditions)
+    {
+        if (conditions.isEmpty())
+        {
+            return "";
+        }
+        
+        StringBuilder result = new StringBuilder();
+        result.append(conditions.get(0).condition);
+        
+        for (int i = 1; i < conditions.size(); i++)
+        {
+            ConditionWithOperator cond = conditions.get(i);
+            String operator = cond.isOr ? " || " : " && ";
+            result.append(operator).append(cond.condition);
+        }
+        
+        return result.toString();
+        }
+        
+    
+    /**
+     * Helper class to store collection field information
+     */
+    private static class CollectionFieldInfo
+    {
+        final String collectionPath; // e.g., "declaration.governmentAgencyGoodsItems"
+        final String collectionFieldName; // e.g., "governmentAgencyGoodsItems"
+        final String relatedFieldName; // e.g., "quantityUnitCode"
+        final Class<?> relatedEntityClass;
+        final String factVariable;
+        final boolean isNested;
+        final String firstCollectionName; // for nested
+        final String secondCollectionName; // for nested
+        
+        CollectionFieldInfo(String collectionPath, String collectionFieldName, String relatedFieldName,
+                           Class<?> relatedEntityClass, String factVariable)
+        {
+            this.collectionPath = collectionPath;
+            this.collectionFieldName = collectionFieldName;
+            this.relatedFieldName = relatedFieldName;
+            this.relatedEntityClass = relatedEntityClass;
+            this.factVariable = factVariable;
+            this.isNested = false;
+            this.firstCollectionName = null;
+            this.secondCollectionName = null;
+        }
+        
+        CollectionFieldInfo(String collectionPath, String firstCollectionName, String secondCollectionName,
+                           String relatedFieldName, Class<?> relatedEntityClass, String factVariable)
+        {
+            this.collectionPath = collectionPath;
+            this.collectionFieldName = secondCollectionName;
+            this.relatedFieldName = relatedFieldName;
+            this.relatedEntityClass = relatedEntityClass;
+            this.factVariable = factVariable;
+            this.isNested = true;
+            this.firstCollectionName = firstCollectionName;
+            this.secondCollectionName = secondCollectionName;
+        }
+        
+        String getCollectionPath()
+        {
+            return collectionPath;
+        }
+        
+        String getEntityClassName()
+        {
+            return relatedEntityClass.getSimpleName();
+        }
+    }
+    
+    /**
+     * Helper class to store collection condition information
+     */
+    private static class CollectionConditionInfo
+    {
+        final CollectionFieldInfo fieldInfo;
+        final String operator;
+        final String valueExpression;
+        final boolean isOr;
+        
+        CollectionConditionInfo(CollectionFieldInfo fieldInfo, String operator, String valueExpression, boolean isOr)
+        {
+            this.fieldInfo = fieldInfo;
+            this.operator = operator;
+            this.valueExpression = valueExpression;
+            this.isOr = isOr;
+        }
+    }
+    
+    /**
+     * Extract collection information from field path
+     * Returns null if not a collection field
+     */
+    private CollectionFieldInfo extractCollectionInfo(String fieldPath, FactType factType)
+    {
         String[] parts = fieldPath.split("\\.");
-        
-        // Get fact variable
         String factVariable = (factType == FactType.CARGO_REPORT) ? "$c" : "$d";
-        
-        // Get entity class
         Class<?> entityClass = entityScannerService.getMainEntityClass(factType);
-        if (entityClass == null) {
+        
+        if (entityClass == null)
+        {
             return null;
         }
         
         // Case 1: Single level collection (entity.collection.field) - 3 parts
-        if (parts.length == 3) {
-            String collectionFieldName = parts[1]; // consignments, governmentAgencyGoodsItems, etc.
-            String relatedFieldName = parts[2]; // grossMassMeasure, hsId, etc.
+        if (parts.length == 3)
+        {
+            String collectionFieldName = parts[1];
+            String relatedFieldName = parts[2];
             
-            return buildSingleLevelCollectionCondition(entityClass, collectionFieldName, relatedFieldName, 
-                    operator, valueExpression, factVariable);
-        }
-        
-        // Case 2: Nested collection (entity.collection1.collection2.field) - 4 parts
-        if (parts.length == 4) {
-            String firstCollectionName = parts[1]; // consignments
-            String secondCollectionName = parts[2]; // consignmentItems
-            String finalFieldName = parts[3]; // hsId, grossWeightMeasure, etc.
-            
-            return buildNestedCollectionCondition(entityClass, firstCollectionName, secondCollectionName, 
-                    finalFieldName, operator, valueExpression, factVariable);
-        }
-        
-        // Not a collection field path
-        return null;
-    }
-    
-    /**
-     * Build condition for single level collection: exists Entity(field op value) from $var.collection
-     */
-    private String buildSingleLevelCollectionCondition(Class<?> entityClass, String collectionFieldName, 
-            String relatedFieldName, String operator, String valueExpression, String factVariable) {
-        try {
+            try
+            {
             Field collectionField = entityClass.getDeclaredField(collectionFieldName);
             jakarta.persistence.OneToMany oneToMany = collectionField.getAnnotation(jakarta.persistence.OneToMany.class);
-            if (oneToMany == null) {
-                return null; // Not a collection field
+                if (oneToMany == null)
+                {
+                    return null;
             }
             
-            // Get the related entity class from List<RelatedEntity>
             Type genericType = collectionField.getGenericType();
-            if (genericType instanceof ParameterizedType) {
+                if (genericType instanceof ParameterizedType)
+                {
                 ParameterizedType paramType = (ParameterizedType) genericType;
                 Type[] actualTypes = paramType.getActualTypeArguments();
-                if (actualTypes.length > 0 && actualTypes[0] instanceof Class) {
+                    if (actualTypes.length > 0 && actualTypes[0] instanceof Class)
+                    {
                     Class<?> relatedEntityClass = (Class<?>) actualTypes[0];
-                    String relatedEntityClassName = relatedEntityClass.getSimpleName();
-                    
-                    // Generate Drools syntax: exists EntityClass(fieldName operator value) from $variable.collectionName
-                    return "exists " + relatedEntityClassName + "(" + relatedFieldName + " " + operator + " " + valueExpression + ") from " + factVariable + "." + collectionFieldName;
+                        String collectionPath = factVariable + "." + collectionFieldName;
+                        return new CollectionFieldInfo(collectionPath, collectionFieldName, relatedFieldName,
+                            relatedEntityClass, factVariable);
                 }
             }
-        } catch (NoSuchFieldException e) {
+            }
+            catch (NoSuchFieldException e)
+            {
             log.debug("Field {} not found in entity class {}", collectionFieldName, entityClass.getSimpleName());
             return null;
         }
-        
-        return null;
     }
     
-    /**
-     * Build condition for nested collection: exists Entity1(exists Entity2(field op value) from collection2) from $var.collection1
-     */
-    private String buildNestedCollectionCondition(Class<?> entityClass, String firstCollectionName, 
-            String secondCollectionName, String finalFieldName, String operator, String valueExpression, String factVariable) {
-        try {
-            // Get first collection field
+        // Case 2: Nested collection (entity.collection1.collection2.field) - 4 parts
+        if (parts.length == 4)
+        {
+            String firstCollectionName = parts[1];
+            String secondCollectionName = parts[2];
+            String finalFieldName = parts[3];
+            
+            try
+            {
             Field firstCollectionField = entityClass.getDeclaredField(firstCollectionName);
             jakarta.persistence.OneToMany firstOneToMany = firstCollectionField.getAnnotation(jakarta.persistence.OneToMany.class);
-            if (firstOneToMany == null) {
+                if (firstOneToMany == null)
+                {
                 return null;
             }
             
-            // Get the first related entity class
             Type firstGenericType = firstCollectionField.getGenericType();
-            if (!(firstGenericType instanceof ParameterizedType)) {
+                if (!(firstGenericType instanceof ParameterizedType))
+                {
                 return null;
             }
             
             ParameterizedType firstParamType = (ParameterizedType) firstGenericType;
             Type[] firstActualTypes = firstParamType.getActualTypeArguments();
-            if (firstActualTypes.length == 0 || !(firstActualTypes[0] instanceof Class)) {
+                if (firstActualTypes.length == 0 || !(firstActualTypes[0] instanceof Class))
+                {
                 return null;
             }
             
             Class<?> firstRelatedEntityClass = (Class<?>) firstActualTypes[0];
-            
-            // Get second collection field from first related entity
             Field secondCollectionField = firstRelatedEntityClass.getDeclaredField(secondCollectionName);
             jakarta.persistence.OneToMany secondOneToMany = secondCollectionField.getAnnotation(jakarta.persistence.OneToMany.class);
-            if (secondOneToMany == null) {
+                if (secondOneToMany == null)
+                {
                 return null;
             }
             
-            // Get the second related entity class
             Type secondGenericType = secondCollectionField.getGenericType();
-            if (!(secondGenericType instanceof ParameterizedType)) {
+                if (!(secondGenericType instanceof ParameterizedType))
+                {
                 return null;
             }
             
             ParameterizedType secondParamType = (ParameterizedType) secondGenericType;
             Type[] secondActualTypes = secondParamType.getActualTypeArguments();
-            if (secondActualTypes.length == 0 || !(secondActualTypes[0] instanceof Class)) {
+                if (secondActualTypes.length == 0 || !(secondActualTypes[0] instanceof Class))
+                {
                 return null;
             }
             
             Class<?> secondRelatedEntityClass = (Class<?>) secondActualTypes[0];
-            String firstEntityClassName = firstRelatedEntityClass.getSimpleName();
-            String secondEntityClassName = secondRelatedEntityClass.getSimpleName();
-            
-            // Generate nested Drools syntax:
-            // exists FirstEntity(exists SecondEntity(field op value) from secondCollection) from $var.firstCollection
-            String innerCondition = "exists " + secondEntityClassName + "(" + finalFieldName + " " + operator + " " + valueExpression + ") from " + secondCollectionName;
-            return "exists " + firstEntityClassName + "(" + innerCondition + ") from " + factVariable + "." + firstCollectionName;
-            
-        } catch (NoSuchFieldException e) {
+                String collectionPath = factVariable + "." + firstCollectionName + "." + secondCollectionName;
+                return new CollectionFieldInfo(collectionPath, firstCollectionName, secondCollectionName,
+                    finalFieldName, secondRelatedEntityClass, factVariable);
+            }
+            catch (NoSuchFieldException e)
+            {
             log.debug("Nested collection field not found: {} -> {}", firstCollectionName, secondCollectionName);
             return null;
         }
     }
+        
+        return null;
+    }
+    
+    /**
+     * Build grouped collection conditions
+     * Groups multiple fields in same collection into one pattern (for AND)
+     * Or creates separate patterns (for OR)
+     */
+    private List<ConditionWithOperator> buildGroupedCollectionConditions(
+        Map<String, List<CollectionConditionInfo>> collectionConditionsByPath, FactType factType)
+    {
+        List<ConditionWithOperator> result = new ArrayList<>();
+        
+        for (Map.Entry<String, List<CollectionConditionInfo>> entry : collectionConditionsByPath.entrySet())
+        {
+            String collectionPath = entry.getKey();
+            List<CollectionConditionInfo> conditions = entry.getValue();
+            
+            if (conditions.isEmpty())
+            {
+                continue;
+            }
+            
+            // Get first condition to determine structure
+            CollectionConditionInfo firstCondition = conditions.get(0);
+            CollectionFieldInfo fieldInfo = firstCondition.fieldInfo;
+            String entityClassName = fieldInfo.getEntityClassName();
+            
+            // In the same collection pattern, all conditions must have the same logicalOp
+            // The logicalOp of the second condition (or later) indicates the operator between conditions
+            // If there's only one condition, default to AND
+            final boolean useOr;
+            if (conditions.size() > 1)
+            {
+                // Use logicalOp from the second condition (which indicates operator between first and second)
+                boolean secondIsOr = conditions.get(1).isOr;
+                
+                // Verify all non-first conditions have the same logicalOp
+                boolean allSameOp = conditions.stream()
+                    .skip(1) // Skip first condition
+                    .allMatch(c -> c.isOr == secondIsOr);
+                if (!allSameOp)
+                {
+                    log.warn("Mixed AND/OR in same collection pattern - using logicalOp from second condition");
+                }
+                
+                useOr = secondIsOr;
+            }
+            else
+            {
+                useOr = false; // Default to AND for single condition
+            }
+            
+            // Build pattern with all conditions for this collection
+            // Use comma (,) for AND, || for OR within the pattern
+            StringBuilder pattern = new StringBuilder();
+            pattern.append("(");
+            pattern.append("item : ").append(entityClassName).append("(");
+            
+            // Add all conditions with the same separator (all AND or all OR)
+            String separator = useOr ? " || " : ", ";
+            
+            for (int i = 0; i < conditions.size(); i++)
+            {
+                CollectionConditionInfo condInfo = conditions.get(i);
+                String conditionStr = condInfo.fieldInfo.relatedFieldName + " " + 
+                    condInfo.operator + " " + condInfo.valueExpression;
+                
+                if (i > 0)
+                {
+                    pattern.append(separator);
+                }
+                pattern.append(conditionStr);
+            }
+            
+            pattern.append(") from ").append(collectionPath);
+            pattern.append(")");
+            
+            result.add(new ConditionWithOperator(pattern.toString(), useOr));
+        }
+        
+        return result;
+    }
+    
     
     private String buildValueExpression(Object valueObj, String fieldType) {
         if (valueObj == null) {
@@ -1658,11 +1908,11 @@ public class RuleController {
     }
     
     /**
-     * Parse and save rule conditions from request body
-     * Supports structured format (conditions array)
+     * Parse and save rule conditions from ConditionsGroup
+     * Handles single condition (null) and multiple conditions (AND/OR groups)
      */
     @org.springframework.transaction.annotation.Transactional
-    private void saveRuleConditions(DecisionRule rule, List<Map<String, Object>> conditions) {
+    private void saveRuleConditions(DecisionRule rule, ConditionsGroup conditionsGroup) {
         // Delete existing conditions first
         List<RuleConditionGroup> existingGroups = conditionGroupRepository.findByDecisionRuleIdOrderByOrderIndexAsc(rule.getId());
         for (RuleConditionGroup group : existingGroups) {
@@ -1670,38 +1920,186 @@ public class RuleController {
         }
         conditionGroupRepository.deleteAll(existingGroups);
         
-        // Parse conditions from structured format
-        if (conditions != null && !conditions.isEmpty()) {
-                // Group conditions by logical operator (AND/OR)
-                // Create groups based on logicalOp transitions
-                RuleConditionGroup currentGroup = null;
-                RuleGroupType currentGroupType = RuleGroupType.AND;
+        if (conditionsGroup == null || conditionsGroup.isEmpty()) {
+            return;
+        }
+        
+        // Count total conditions
+        int andCount = (conditionsGroup.getAndConditions() != null) ? conditionsGroup.getAndConditions().size() : 0;
+        int orCount = (conditionsGroup.getOrConditions() != null) ? conditionsGroup.getOrConditions().size() : 0;
+        int totalCount = andCount + orCount;
+        
+        // If only 1 condition total, handle nested structure
+        // With nested structure, the item is a nested group object, not a direct condition
+        if (totalCount == 1) {
+            Object singleItem = null;
+            RuleGroupType groupType = RuleGroupType.AND;
+            if (andCount == 1) {
+                singleItem = conditionsGroup.getAndConditions().get(0);
+                groupType = RuleGroupType.AND;
+            } else if (orCount == 1) {
+                singleItem = conditionsGroup.getOrConditions().get(0);
+                groupType = RuleGroupType.OR;
+            }
+            
+            if (singleItem instanceof Map) {
+                Map<String, Object> itemMap = (Map<String, Object>) singleItem;
+                // Check if this is a nested group (has "AND" or "OR" key)
+                if (itemMap.containsKey("AND") || itemMap.containsKey("OR")) {
+                    List<Map<String, Object>> nestedConditions = null;
+                    RuleGroupType nestedType = groupType;
+                    if (itemMap.containsKey("AND")) {
+                        nestedConditions = (List<Map<String, Object>>) itemMap.get("AND");
+                        nestedType = RuleGroupType.AND;
+                    } else if (itemMap.containsKey("OR")) {
+                        nestedConditions = (List<Map<String, Object>>) itemMap.get("OR");
+                        nestedType = RuleGroupType.OR;
+                    }
+                    
+                    if (nestedConditions != null && !nestedConditions.isEmpty()) {
+                        // Create a group for the nested conditions
+                        RuleConditionGroup group = new RuleConditionGroup();
+                        group.setDecisionRule(rule);
+                        group.setType(nestedType);
+                        group.setOrderIndex(0);
+                        group = conditionGroupRepository.save(group);
+                        
+                        int conditionOrderIndex = 0;
+                        for (Object nestedItem : nestedConditions) {
+                            if (nestedItem instanceof Map) {
+                                Map<String, Object> nestedCond = (Map<String, Object>) nestedItem;
+                                if (nestedCond.containsKey("field") && nestedCond.containsKey("operator") && nestedCond.containsKey("value")) {
+                                    RuleCondition condition = parseConditionFromMap(nestedCond, group, conditionOrderIndex++);
+                                    conditionRepository.save(condition);
+                                }
+                            }
+                        }
+                    }
+                } else if (itemMap.containsKey("field") && itemMap.containsKey("operator") && itemMap.containsKey("value")) {
+                    // Direct condition (backward compatibility)
+                    RuleConditionGroup group = new RuleConditionGroup();
+                    group.setDecisionRule(rule);
+                    group.setType(groupType);
+                    group.setOrderIndex(0);
+                    group = conditionGroupRepository.save(group);
+                    
+                    RuleCondition condition = parseConditionFromMap(itemMap, group, 0);
+                    conditionRepository.save(condition);
+                }
+            }
+            return;
+        }
+        
+        // Multiple conditions: save with proper AND/OR groups
                 int groupOrderIndex = 0;
-                int conditionOrderIndex = 0;
+        
+        // Save AND conditions (only if 2+ conditions)
+        if (conditionsGroup.getAndConditions() != null && conditionsGroup.getAndConditions().size() > 1) {
+            RuleConditionGroup andGroup = new RuleConditionGroup();
+            andGroup.setDecisionRule(rule);
+            andGroup.setType(RuleGroupType.AND);
+            andGroup.setOrderIndex(groupOrderIndex++);
+            andGroup = conditionGroupRepository.save(andGroup);
                 
-                for (Map<String, Object> cond : conditions) {
-                    if (!cond.containsKey("field") || !cond.containsKey("operator") || !cond.containsKey("value")) {
+                int conditionOrderIndex = 0;
+            for (Object item : conditionsGroup.getAndConditions()) {
+                if (item instanceof Map) {
+                    Map<String, Object> mapItem = (Map<String, Object>) item;
+                    // Check if this is a nested ConditionsGroup (has "AND" or "OR" key)
+                    if (mapItem.containsKey("AND") || mapItem.containsKey("OR")) {
+                        // Save nested group as a separate group (will be reconstructed as nested)
+                        List<Map<String, Object>> nestedConditions = null;
+                        RuleGroupType nestedType = null;
+                        if (mapItem.containsKey("AND")) {
+                            nestedConditions = (List<Map<String, Object>>) mapItem.get("AND");
+                            nestedType = RuleGroupType.AND;
+                        } else if (mapItem.containsKey("OR")) {
+                            nestedConditions = (List<Map<String, Object>>) mapItem.get("OR");
+                            nestedType = RuleGroupType.OR;
+                        }
+                        if (nestedConditions != null && nestedConditions.size() > 0) {
+                            // Create a nested group (will be reconstructed as nested structure)
+                            RuleConditionGroup nestedGroup = new RuleConditionGroup();
+                            nestedGroup.setDecisionRule(rule);
+                            nestedGroup.setType(nestedType);
+                            nestedGroup.setOrderIndex(groupOrderIndex++);
+                            nestedGroup = conditionGroupRepository.save(nestedGroup);
+                            
+                            int nestedConditionOrderIndex = 0;
+                            for (Object nestedItem : nestedConditions) {
+                                if (nestedItem instanceof Map) {
+                                    Map<String, Object> nestedCond = (Map<String, Object>) nestedItem;
+                                    if (nestedCond.containsKey("field") && nestedCond.containsKey("operator") && nestedCond.containsKey("value")) {
+                                        RuleCondition condition = parseConditionFromMap(nestedCond, nestedGroup, nestedConditionOrderIndex++);
+                                        conditionRepository.save(condition);
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        // Regular condition
+                        if (!mapItem.containsKey("field") || !mapItem.containsKey("operator") || !mapItem.containsKey("value")) {
                         continue;
                     }
-                    
-                    // Get logical operator for this condition (default to AND)
-                    String logicalOp = (String) cond.getOrDefault("logicalOp", "AND");
-                    RuleGroupType groupType = "OR".equals(logicalOp) ? RuleGroupType.OR : RuleGroupType.AND;
-                    
-                    // Create new group if operator changed or first condition
-                    if (currentGroup == null || !currentGroupType.equals(groupType)) {
-                        currentGroup = new RuleConditionGroup();
-                        currentGroup.setDecisionRule(rule);
-                        currentGroup.setType(groupType);
-                        currentGroup.setOrderIndex(groupOrderIndex++);
-                        currentGroup = conditionGroupRepository.save(currentGroup);
-                        currentGroupType = groupType;
-                        conditionOrderIndex = 0; // Reset condition order within group
+                        RuleCondition condition = parseConditionFromMap(mapItem, andGroup, conditionOrderIndex++);
+                        conditionRepository.save(condition);
                     }
-                    
-                    // Parse and save condition
-                    RuleCondition condition = parseConditionFromMap(cond, currentGroup, conditionOrderIndex++);
+                }
+            }
+        }
+        
+        // Save OR conditions (only if 2+ conditions)
+        if (conditionsGroup.getOrConditions() != null && conditionsGroup.getOrConditions().size() > 1) {
+            RuleConditionGroup orGroup = new RuleConditionGroup();
+            orGroup.setDecisionRule(rule);
+            orGroup.setType(RuleGroupType.OR);
+            orGroup.setOrderIndex(groupOrderIndex++);
+            orGroup = conditionGroupRepository.save(orGroup);
+            
+            int conditionOrderIndex = 0;
+            for (Object item : conditionsGroup.getOrConditions()) {
+                if (item instanceof Map) {
+                    Map<String, Object> mapItem = (Map<String, Object>) item;
+                    // Check if this is a nested ConditionsGroup (has "AND" or "OR" key)
+                    if (mapItem.containsKey("AND") || mapItem.containsKey("OR")) {
+                        // Save nested group as a separate group (will be reconstructed as nested)
+                        List<Map<String, Object>> nestedConditions = null;
+                        RuleGroupType nestedType = null;
+                        if (mapItem.containsKey("AND")) {
+                            nestedConditions = (List<Map<String, Object>>) mapItem.get("AND");
+                            nestedType = RuleGroupType.AND;
+                        } else if (mapItem.containsKey("OR")) {
+                            nestedConditions = (List<Map<String, Object>>) mapItem.get("OR");
+                            nestedType = RuleGroupType.OR;
+                        }
+                        if (nestedConditions != null && nestedConditions.size() > 0) {
+                            // Create a nested group (will be reconstructed as nested structure)
+                            RuleConditionGroup nestedGroup = new RuleConditionGroup();
+                            nestedGroup.setDecisionRule(rule);
+                            nestedGroup.setType(nestedType);
+                            nestedGroup.setOrderIndex(groupOrderIndex++);
+                            nestedGroup = conditionGroupRepository.save(nestedGroup);
+                            
+                            int nestedConditionOrderIndex = 0;
+                            for (Object nestedItem : nestedConditions) {
+                                if (nestedItem instanceof Map) {
+                                    Map<String, Object> nestedCond = (Map<String, Object>) nestedItem;
+                                    if (nestedCond.containsKey("field") && nestedCond.containsKey("operator") && nestedCond.containsKey("value")) {
+                                        RuleCondition condition = parseConditionFromMap(nestedCond, nestedGroup, nestedConditionOrderIndex++);
                     conditionRepository.save(condition);
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        // Regular condition
+                        if (!mapItem.containsKey("field") || !mapItem.containsKey("operator") || !mapItem.containsKey("value")) {
+                            continue;
+                        }
+                        RuleCondition condition = parseConditionFromMap(mapItem, orGroup, conditionOrderIndex++);
+                        conditionRepository.save(condition);
+                    }
+                }
                 }
             }
         }
@@ -1843,18 +2241,18 @@ public class RuleController {
         
         // Extract fields from request DTO if provided
         String description = null;
-        List<Map<String, Object>> conditions = null;
+        ConditionsGroup conditionsGroup = null;
         Map<String, Object> output = null;
         
         if (request instanceof CreateRuleRequest) {
             CreateRuleRequest createRequest = (CreateRuleRequest) request;
             description = createRequest.getDescription();
-            conditions = createRequest.getConditions();
+            conditionsGroup = createRequest.getConditions();
             output = createRequest.getOutput();
         } else if (request instanceof UpdateRuleRequest) {
             UpdateRuleRequest updateRequest = (UpdateRuleRequest) request;
             description = updateRequest.getDescription();
-            conditions = updateRequest.getConditions();
+            conditionsGroup = updateRequest.getConditions();
             output = updateRequest.getOutput();
         }
         
@@ -1878,11 +2276,11 @@ public class RuleController {
         }
         
         // Include conditions from request (or reconstruct from saved conditions)
-        if (conditions != null) {
-            responseBuilder.conditions(conditions);
+        if (conditionsGroup != null) {
+            responseBuilder.conditions(conditionsGroup);
         } else {
             // Reconstruct conditions from saved RuleCondition entities
-            List<Map<String, Object>> reconstructedConditions = reconstructConditionsFromRule(rule);
+            ConditionsGroup reconstructedConditions = reconstructConditionsFromRule(rule);
             responseBuilder.conditions(reconstructedConditions);
         }
         
@@ -1899,41 +2297,139 @@ public class RuleController {
     }
     
     /**
-     * Reconstruct conditions array from saved RuleCondition entities
+     * Extract object path from field path
+     * Example: "declaration.invoiceAmount" -> "declaration"
+     * Example: "declaration.governmentAgencyGoodsItems.netWeightMeasure" -> "declaration.governmentAgencyGoodsItems"
      */
-    private List<Map<String, Object>> reconstructConditionsFromRule(DecisionRule rule) {
-        List<Map<String, Object>> conditions = new java.util.ArrayList<>();
+    private String getObjectPath(String fieldPath) {
+        if (fieldPath == null || fieldPath.isEmpty()) {
+            return "";
+        }
+        String[] parts = fieldPath.split("\\.");
+        if (parts.length <= 1) {
+            return fieldPath;
+        }
+        // Return all parts except the last one (the actual field name)
+        return String.join(".", java.util.Arrays.copyOf(parts, parts.length - 1));
+    }
+    
+    /**
+     * Reconstruct ConditionsGroup from saved RuleCondition entities
+     * Groups conditions by object path to create nested structure
+     * Returns null if only 1 condition (no AND/OR groups needed)
+     */
+    private ConditionsGroup reconstructConditionsFromRule(DecisionRule rule) {
+        List<Map<String, Object>> topLevelAndConditions = new java.util.ArrayList<>();
+        List<Map<String, Object>> topLevelOrConditions = new java.util.ArrayList<>();
         
         try {
             // Use decisionRuleId instead of DecisionRule object to avoid object reference issues
             List<RuleConditionGroup> groups = conditionGroupRepository.findByDecisionRuleIdOrderByOrderIndexAsc(rule.getId());
             log.debug("Found {} condition groups for rule {}", groups.size(), rule.getId());
             
+            // Group conditions by object path within each group
+            // Each group represents a nested structure
             for (RuleConditionGroup group : groups) {
                 List<RuleCondition> groupConditions = conditionRepository.findByGroupOrderByOrderIndexAsc(group);
                 log.debug("Found {} conditions in group {} for rule {}", groupConditions.size(), group.getId(), rule.getId());
                 
+                if (groupConditions.isEmpty()) {
+                    continue;
+                }
+                
+                // Group conditions by object path within this group
+                Map<String, List<Map<String, Object>>> conditionsByObjectPath = new java.util.HashMap<>();
+                
                 for (RuleCondition cond : groupConditions) {
-                    // Build ConditionResponse DTO
-                    ConditionResponse conditionResponse = ConditionResponse.builder()
-                        .field(cond.getFieldPath())
-                        .operator(mapOperatorToString(cond.getOperator()))
-                        .value(extractValueFromCondition(cond))
-                        .logicalOp(group.getType() == RuleGroupType.OR ? "OR" : "AND")
-                        .build();
+                    String objectPath = getObjectPath(cond.getFieldPath());
+                    conditionsByObjectPath.computeIfAbsent(objectPath, k -> new java.util.ArrayList<>());
                     
-                    // Convert DTO to Map for response (response expects List<Map<String, Object>>)
-                    com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-                    @SuppressWarnings("unchecked")
-                    Map<String, Object> conditionMap = mapper.convertValue(conditionResponse, Map.class);
-                    conditions.add(conditionMap);
+                    // Build condition map
+                    Map<String, Object> conditionMap = new java.util.HashMap<>();
+                    conditionMap.put("field", cond.getFieldPath());
+                    conditionMap.put("operator", mapOperatorToString(cond.getOperator()));
+                    conditionMap.put("value", extractValueFromCondition(cond));
+                    conditionsByObjectPath.get(objectPath).add(conditionMap);
+                }
+                
+                // Build nested structure for this group
+                if (conditionsByObjectPath.size() > 1) {
+                    // Multiple object paths: create nested groups
+                    for (Map.Entry<String, List<Map<String, Object>>> entry : conditionsByObjectPath.entrySet()) {
+                        List<Map<String, Object>> conditions = entry.getValue();
+                        
+                        if (conditions.size() > 1) {
+                            // Create nested group
+                            Map<String, Object> nestedGroup = new java.util.HashMap<>();
+                            nestedGroup.put("AND", conditions);
+                            
+                            List<Map<String, Object>> targetList = (group.getType() == RuleGroupType.OR) ? topLevelOrConditions : topLevelAndConditions;
+                            targetList.add(nestedGroup);
+                        } else if (conditions.size() == 1) {
+                            // Single condition: wrap in nested group
+                            Map<String, Object> nestedGroup = new java.util.HashMap<>();
+                            nestedGroup.put("AND", conditions);
+                            
+                            List<Map<String, Object>> targetList = (group.getType() == RuleGroupType.OR) ? topLevelOrConditions : topLevelAndConditions;
+                            targetList.add(nestedGroup);
+                        }
+                    }
+                } else if (conditionsByObjectPath.size() == 1) {
+                    // Single object path: flat structure or nested if group type matches
+                    Map.Entry<String, List<Map<String, Object>>> entry = conditionsByObjectPath.entrySet().iterator().next();
+                    List<Map<String, Object>> conditions = entry.getValue();
+                    
+                    if (conditions.size() > 1) {
+                        // Multiple conditions: create nested group
+                        Map<String, Object> nestedGroup = new java.util.HashMap<>();
+                        nestedGroup.put(group.getType() == RuleGroupType.OR ? "OR" : "AND", conditions);
+                        
+                        List<Map<String, Object>> targetList = (group.getType() == RuleGroupType.OR) ? topLevelOrConditions : topLevelAndConditions;
+                        targetList.add(nestedGroup);
+                    } else if (conditions.size() == 1) {
+                        // Single condition: wrap in nested group to match AI-generated structure
+                        Map<String, Object> nestedGroup = new java.util.HashMap<>();
+                        nestedGroup.put(group.getType() == RuleGroupType.OR ? "OR" : "AND", conditions);
+                        
+                        List<Map<String, Object>> targetList = (group.getType() == RuleGroupType.OR) ? topLevelOrConditions : topLevelAndConditions;
+                        targetList.add(nestedGroup);
+                    }
                 }
             }
         } catch (Exception ex) {
             log.error("Error reconstructing conditions for rule {}: {}", rule.getId(), ex.getMessage(), ex);
         }
         
-        return conditions;
+        int totalCount = topLevelAndConditions.size() + topLevelOrConditions.size();
+        
+        // If only 1 condition total, return ConditionsGroup with AND array containing 1 item
+        // This matches the structure that AI generates (single condition in AND array)
+        if (totalCount == 1) {
+            if (topLevelAndConditions.size() == 1) {
+                // Single AND condition: wrap in AND array
+                List<Map<String, Object>> singleAndList = new java.util.ArrayList<>();
+                singleAndList.add(topLevelAndConditions.get(0));
+                return ConditionsGroup.builder()
+                    .andConditions(singleAndList)
+                    .orConditions(null)
+                    .build();
+            } else if (topLevelOrConditions.size() == 1) {
+                // Single OR condition: wrap in OR array
+                List<Map<String, Object>> singleOrList = new java.util.ArrayList<>();
+                singleOrList.add(topLevelOrConditions.get(0));
+                return ConditionsGroup.builder()
+                    .andConditions(null)
+                    .orConditions(singleOrList)
+                    .build();
+            }
+            return null;
+        }
+        
+        // Multiple conditions: return with AND/OR groups (only include if 2+ conditions)
+        return ConditionsGroup.builder()
+            .andConditions((topLevelAndConditions.size() > 1) ? topLevelAndConditions : null)
+            .orConditions((topLevelOrConditions.size() > 1) ? topLevelOrConditions : null)
+            .build();
     }
     
     /**

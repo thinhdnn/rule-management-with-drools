@@ -16,6 +16,12 @@ type Condition = {
   field: string
   operator: string
   value: string
+  logicalOp?: 'AND' | 'OR'
+}
+
+type ConditionsGroup = {
+  AND?: Array<Condition | { AND?: Condition[] } | { OR?: Condition[] }>
+  OR?: Array<Condition | { AND?: Condition[] } | { OR?: Condition[] }>
 }
 
 type Output = {
@@ -32,7 +38,7 @@ type GeneratedRule = {
   factType: string
   priority?: number
   enabled?: boolean
-  conditions: Condition[]
+  conditions: Condition[] | ConditionsGroup | null
   output: Output
 }
 
@@ -174,8 +180,28 @@ export default function AIBuilderPage() {
       description: 'Low unit price validation'
     },
     {
-      prompt: 'If totalFreightAmount is greater than 10000 and totalInsuranceAmount is greater than 2000, then set score to 80 and flag as HIGH_FREIGHT_COST',
+      prompt: 'If totalFreightAmount is greater than 10000, totalInsuranceAmount is greater than 2000 and goods item has hsId equals 610910, then set score to 80 and flag as HIGH_FREIGHT_COST',
       description: 'High freight and insurance cost check'
+    }
+  ]
+
+  // Example prompts for CargoReport
+  const cargoReportExamplePrompts = [
+    {
+      prompt: 'If container total weight exceeds 30000kg then flag as OVERWEIGHT with score 85',
+      description: 'Container weight check'
+    },
+    {
+      prompt: 'If number of packages in container is greater than 500 then REVIEW with score 75',
+      description: 'Package count validation'
+    },
+    {
+      prompt: 'If transport equipment seal ID contains "DAMAGED" then reject with score 100',
+      description: 'Seal integrity check'
+    },
+    {
+      prompt: 'If consignment total cargo gross weight is over 25000kg and origin country is high-risk, then flag as SUSPICIOUS_CARGO',
+      description: 'Combined risk assessment'
     }
   ]
 
@@ -183,6 +209,9 @@ export default function AIBuilderPage() {
   const getExamplePrompts = () => {
     if (selectedFactType === 'Declaration') {
       return declarationExamplePrompts
+    }
+    if (selectedFactType === 'CargoReport') {
+      return cargoReportExamplePrompts
     }
     return []
   }
@@ -308,7 +337,7 @@ export default function AIBuilderPage() {
                 factType: ruleToSave.factType,
                 priority: ruleToSave.priority || 0,
                 active: ruleToSave.enabled !== false,
-                conditions: ruleToSave.conditions || [],
+                conditions: ruleToSave.conditions || null,
                 output: ruleToSave.output || {},
                 generatedByAi: true,
               }),
@@ -622,18 +651,115 @@ export default function AIBuilderPage() {
                     Conditions (WHEN)
                   </label>
                   <div className="space-y-2">
-                    {response.generatedRule.conditions.map((cond, idx) => (
-                      <div key={idx} className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg border border-slate-200">
-                        <span className="text-xs font-medium text-slate-500">#{idx + 1}</span>
-                        <code className="text-sm text-indigo-600 font-mono">
-                          {cond.field}
-                        </code>
-                        <span className="text-sm font-medium text-slate-700">{cond.operator}</span>
-                        <code className="text-sm text-green-600 font-mono">
-                          {cond.value}
-                        </code>
-                      </div>
-                    ))}
+                    {(() => {
+                      // Convert ConditionsGroup to array for display, handling nested structure
+                      type ConditionWithOp = Condition & { logicalOp: 'AND' | 'OR' }
+                      let conditionsArray: ConditionWithOp[] = []
+                      const conditions = response.generatedRule.conditions
+                      
+                      if (Array.isArray(conditions)) {
+                        // Old format: array with logicalOp
+                        conditionsArray = conditions.map(c => ({
+                          ...c,
+                          logicalOp: (c as any).logicalOp || 'AND' as 'AND' | 'OR'
+                        }))
+                      } else if (conditions && typeof conditions === 'object') {
+                        const conditionsGroup = conditions as ConditionsGroup
+                        
+                        // Helper to extract conditions from nested groups with logical operator
+                        const extractConditions = (
+                          items: Array<Condition | { AND?: Condition[] } | { OR?: Condition[] }>,
+                          logicalOp: 'AND' | 'OR'
+                        ): ConditionWithOp[] => {
+                          const result: ConditionWithOp[] = []
+                          for (const item of items) {
+                            if (item && typeof item === 'object') {
+                              // Check if it's a nested group
+                              if ('AND' in item && Array.isArray(item.AND)) {
+                                // Nested AND group - all conditions inside are AND
+                                result.push(...item.AND.map(c => ({ ...c, logicalOp: 'AND' as const })))
+                              } else if ('OR' in item && Array.isArray(item.OR)) {
+                                // Nested OR group - all conditions inside are OR
+                                result.push(...item.OR.map(c => ({ ...c, logicalOp: 'OR' as const })))
+                              } else if ('field' in item && 'operator' in item && 'value' in item) {
+                                // Direct condition (backward compatibility)
+                                result.push({ ...(item as Condition), logicalOp })
+                              }
+                            }
+                          }
+                          return result
+                        }
+                        
+                        if (conditionsGroup.AND) {
+                          conditionsArray.push(...extractConditions(conditionsGroup.AND, 'AND'))
+                        }
+                        if (conditionsGroup.OR) {
+                          conditionsArray.push(...extractConditions(conditionsGroup.OR, 'OR'))
+                        }
+                      }
+                      
+                      if (conditionsArray.length === 0) {
+                        return (
+                          <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 text-sm text-slate-500">
+                            No conditions specified
+                          </div>
+                        )
+                      }
+                      
+                      // Group conditions by logical operator for better display
+                      const groupedConditions: { op: 'AND' | 'OR', conditions: ConditionWithOp[] }[] = []
+                      let currentGroup: { op: 'AND' | 'OR', conditions: ConditionWithOp[] } | null = null
+                      
+                      for (const cond of conditionsArray) {
+                        if (!currentGroup || currentGroup.op !== cond.logicalOp) {
+                          // Start new group
+                          currentGroup = { op: cond.logicalOp, conditions: [] }
+                          groupedConditions.push(currentGroup)
+                        }
+                        currentGroup.conditions.push(cond)
+                      }
+                      
+                      return (
+                        <div className="space-y-3">
+                          {groupedConditions.map((group, groupIdx) => (
+                            <div key={groupIdx} className="space-y-2">
+                              {groupIdx > 0 && (
+                                <div className="flex items-center justify-center py-1">
+                                  <span className={`text-xs font-semibold px-3 py-1 rounded-full ${
+                                    group.op === 'AND' 
+                                      ? 'bg-blue-100 text-blue-700 border border-blue-200' 
+                                      : 'bg-purple-100 text-purple-700 border border-purple-200'
+                                  }`}>
+                                    {group.op}
+                                  </span>
+                                </div>
+                              )}
+                              <div className="space-y-2">
+                                {group.conditions.map((cond, idx) => (
+                                  <div key={idx} className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg border border-slate-200">
+                                    <span className="text-xs font-medium text-slate-500">#{conditionsArray.indexOf(cond) + 1}</span>
+                                    <span className={`text-xs font-semibold px-2 py-0.5 rounded ${
+                                      cond.logicalOp === 'AND' 
+                                        ? 'bg-blue-100 text-blue-700' 
+                                        : 'bg-purple-100 text-purple-700'
+                                    }`}>
+                                      {cond.logicalOp}
+                                    </span>
+                                    <code className="text-sm text-indigo-600 font-mono">
+                                      {cond.field}
+                                    </code>
+                                    <span className="text-sm font-medium text-slate-700">{cond.operator}</span>
+                                    <code className="text-sm text-green-600 font-mono">
+                                      {String(cond.value)}
+                                    </code>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )
+                    })()}
                   </div>
                 </div>
 
@@ -736,171 +862,29 @@ export default function AIBuilderPage() {
             )}
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {selectedFactType === 'Declaration' ? (
-              <>
+            {getExamplePrompts().map((example, idx) => {
+              const isDeclaration = selectedFactType === 'Declaration'
+              return (
                 <button
-                  onClick={() => setNaturalInput('If totalGrossMassMeasure is greater than 5000kg then set score to 75 and flag as HIGH_WEIGHT')}
-                  className="text-left p-4 border border-slate-200 rounded-lg hover:border-indigo-300 hover:bg-indigo-50 transition-colors group"
+                  key={idx}
+                  onClick={() => setNaturalInput(example.prompt)}
+                  className={`text-left p-4 border border-slate-200 rounded-lg transition-colors group ${
+                    isDeclaration
+                      ? 'hover:border-indigo-300 hover:bg-indigo-50'
+                      : 'hover:border-purple-300 hover:bg-purple-50'
+                  }`}
                 >
-                  <p className="text-sm text-slate-700 group-hover:text-indigo-700">
-                    If totalGrossMassMeasure is greater than 5000kg then set score to 75 and flag as HIGH_WEIGHT
+                  <p className={`text-sm text-slate-700 line-clamp-2 ${
+                    isDeclaration
+                      ? 'group-hover:text-indigo-700'
+                      : 'group-hover:text-purple-700'
+                  }`}>
+                    {example.prompt}
                   </p>
-                  <p className="text-xs text-slate-500 mt-1">Total gross mass validation</p>
+                  <p className="text-xs text-slate-500 mt-1">{example.description}</p>
                 </button>
-                
-                <button
-                  onClick={() => setNaturalInput('If invoiceAmount is greater than 150000 USD and countryOfExportId equals CN, then set score to 90 and flag as HIGH_RISK')}
-                  className="text-left p-4 border border-slate-200 rounded-lg hover:border-indigo-300 hover:bg-indigo-50 transition-colors group"
-                >
-                  <p className="text-sm text-slate-700 group-hover:text-indigo-700">
-                    If invoiceAmount &gt; 150000 USD and countryOfExportId equals CN, then score 90 and flag HIGH_RISK
-                  </p>
-                  <p className="text-xs text-slate-500 mt-1">High-value import from China</p>
-                </button>
-                
-                <button
-                  onClick={() => setNaturalInput('If any goods item has hsId equals 610910 then set score to 80 and action is REVIEW')}
-                  className="text-left p-4 border border-slate-200 rounded-lg hover:border-indigo-300 hover:bg-indigo-50 transition-colors group"
-                >
-                  <p className="text-sm text-slate-700 group-hover:text-indigo-700">
-                    If any goods item has hsId equals 610910 then set score to 80 and action is REVIEW
-                  </p>
-                  <p className="text-xs text-slate-500 mt-1">HS code specific validation</p>
-                </button>
-                
-                <button
-                  onClick={() => setNaturalInput('If transportMeansModeCode equals 1 and packageQuantity is greater than 100, then set score to 70 and flag as SUSPICIOUS_QUANTITY')}
-                  className="text-left p-4 border border-slate-200 rounded-lg hover:border-indigo-300 hover:bg-indigo-50 transition-colors group"
-                >
-                  <p className="text-sm text-slate-700 group-hover:text-indigo-700">
-                    If transportMeansModeCode equals 1 and packageQuantity &gt; 100, then score 70 and flag SUSPICIOUS_QUANTITY
-                  </p>
-                  <p className="text-xs text-slate-500 mt-1">Sea transport package validation</p>
-                </button>
-                
-                <button
-                  onClick={() => setNaturalInput('If any goods item has originCountryId equals CN and dutyRate is greater than 15, then set score to 85 and action is REVIEW')}
-                  className="text-left p-4 border border-slate-200 rounded-lg hover:border-indigo-300 hover:bg-indigo-50 transition-colors group"
-                >
-                  <p className="text-sm text-slate-700 group-hover:text-indigo-700">
-                    If any goods item has originCountryId equals CN and dutyRate &gt; 15, then score 85 and REVIEW
-                  </p>
-                  <p className="text-xs text-slate-500 mt-1">High duty rate from China</p>
-                </button>
-                
-                <button
-                  onClick={() => setNaturalInput('If incotermCode equals CIF and totalInsuranceAmount is less than 1000, then set score to 65 and flag as INSUFFICIENT_INSURANCE')}
-                  className="text-left p-4 border border-slate-200 rounded-lg hover:border-indigo-300 hover:bg-indigo-50 transition-colors group"
-                >
-                  <p className="text-sm text-slate-700 group-hover:text-indigo-700">
-                    If incotermCode equals CIF and totalInsuranceAmount &lt; 1000, then score 65 and flag INSUFFICIENT_INSURANCE
-                  </p>
-                  <p className="text-xs text-slate-500 mt-1">CIF insurance validation</p>
-                </button>
-                
-                <button
-                  onClick={() => setNaturalInput('If packageQuantity is greater than 50 and totalGrossMassMeasure is less than 500, then set score to 80 and flag as WEIGHT_MISMATCH')}
-                  className="text-left p-4 border border-slate-200 rounded-lg hover:border-indigo-300 hover:bg-indigo-50 transition-colors group"
-                >
-                  <p className="text-sm text-slate-700 group-hover:text-indigo-700">
-                    If packageQuantity &gt; 50 and totalGrossMassMeasure &lt; 500, then score 80 and flag WEIGHT_MISMATCH
-                  </p>
-                  <p className="text-xs text-slate-500 mt-1">Package weight validation</p>
-                </button>
-                
-                <button
-                  onClick={() => setNaturalInput('If consignorCountryId equals CN and consigneeCountryId equals VN and countryOfExportId not equals CN, then set score to 90 and flag as COUNTRY_MISMATCH')}
-                  className="text-left p-4 border border-slate-200 rounded-lg hover:border-indigo-300 hover:bg-indigo-50 transition-colors group"
-                >
-                  <p className="text-sm text-slate-700 group-hover:text-indigo-700">
-                    If consignorCountryId equals CN and consigneeCountryId equals VN and countryOfExportId not equals CN, then score 90
-                  </p>
-                  <p className="text-xs text-slate-500 mt-1">Country of export mismatch</p>
-                </button>
-                
-                <button
-                  onClick={() => setNaturalInput('If officeId equals VNHPH and invoiceAmount is greater than 200000, then set score to 75 and action is REVIEW')}
-                  className="text-left p-4 border border-slate-200 rounded-lg hover:border-indigo-300 hover:bg-indigo-50 transition-colors group"
-                >
-                  <p className="text-sm text-slate-700 group-hover:text-indigo-700">
-                    If officeId equals VNHPH and invoiceAmount &gt; 200000, then score 75 and action REVIEW
-                  </p>
-                  <p className="text-xs text-slate-500 mt-1">Office-specific high-value check</p>
-                </button>
-                
-                <button
-                  onClick={() => setNaturalInput('If invoiceCurrencyCode not equals USD and invoiceAmount is greater than 100000, then set score to 70 and flag as NON_STANDARD_CURRENCY')}
-                  className="text-left p-4 border border-slate-200 rounded-lg hover:border-indigo-300 hover:bg-indigo-50 transition-colors group"
-                >
-                  <p className="text-sm text-slate-700 group-hover:text-indigo-700">
-                    If invoiceCurrencyCode not equals USD and invoiceAmount &gt; 100000, then score 70 and flag NON_STANDARD_CURRENCY
-                  </p>
-                  <p className="text-xs text-slate-500 mt-1">Currency validation</p>
-                </button>
-                
-                <button
-                  onClick={() => setNaturalInput('If any goods item has quantityQuantity is greater than 1000 and unitPriceAmount is less than 5, then set score to 85 and flag as SUSPICIOUS_PRICE')}
-                  className="text-left p-4 border border-slate-200 rounded-lg hover:border-indigo-300 hover:bg-indigo-50 transition-colors group"
-                >
-                  <p className="text-sm text-slate-700 group-hover:text-indigo-700">
-                    If any goods item has quantityQuantity &gt; 1000 and unitPriceAmount &lt; 5, then score 85 and flag SUSPICIOUS_PRICE
-                  </p>
-                  <p className="text-xs text-slate-500 mt-1">Low unit price validation</p>
-                </button>
-                
-                <button
-                  onClick={() => setNaturalInput('If totalFreightAmount is greater than 10000 and totalInsuranceAmount is greater than 2000, then set score to 80 and flag as HIGH_FREIGHT_COST')}
-                  className="text-left p-4 border border-slate-200 rounded-lg hover:border-indigo-300 hover:bg-indigo-50 transition-colors group"
-                >
-                  <p className="text-sm text-slate-700 group-hover:text-indigo-700">
-                    If totalFreightAmount &gt; 10000 and totalInsuranceAmount &gt; 2000, then score 80 and flag HIGH_FREIGHT_COST
-                  </p>
-                  <p className="text-xs text-slate-500 mt-1">High freight and insurance cost check</p>
-                </button>
-              </>
-            ) : (
-              <>
-                <button
-                  onClick={() => setNaturalInput('If container total weight exceeds 30000kg then flag as OVERWEIGHT with score 85')}
-                  className="text-left p-4 border border-slate-200 rounded-lg hover:border-purple-300 hover:bg-purple-50 transition-colors group"
-                >
-                  <p className="text-sm text-slate-700 group-hover:text-purple-700">
-                    If container total weight exceeds 30000kg then flag as OVERWEIGHT with score 85
-                  </p>
-                  <p className="text-xs text-slate-500 mt-1">Container weight check</p>
-                </button>
-                
-                <button
-                  onClick={() => setNaturalInput('If number of packages in container is greater than 500 then REVIEW with score 75')}
-                  className="text-left p-4 border border-slate-200 rounded-lg hover:border-purple-300 hover:bg-purple-50 transition-colors group"
-                >
-                  <p className="text-sm text-slate-700 group-hover:text-purple-700">
-                    If number of packages in container is greater than 500 then REVIEW with score 75
-                  </p>
-                  <p className="text-xs text-slate-500 mt-1">Package count validation</p>
-                </button>
-                
-                <button
-                  onClick={() => setNaturalInput('If transport equipment seal ID contains "DAMAGED" then reject with score 100')}
-                  className="text-left p-4 border border-slate-200 rounded-lg hover:border-purple-300 hover:bg-purple-50 transition-colors group"
-                >
-                  <p className="text-sm text-slate-700 group-hover:text-purple-700">
-                    If transport equipment seal ID contains "DAMAGED" then reject with score 100
-                  </p>
-                  <p className="text-xs text-slate-500 mt-1">Seal integrity check</p>
-                </button>
-                
-                <button
-                  onClick={() => setNaturalInput('If consignment total cargo gross weight is over 25000kg and origin country is high-risk, then flag as SUSPICIOUS_CARGO')}
-                  className="text-left p-4 border border-slate-200 rounded-lg hover:border-purple-300 hover:bg-purple-50 transition-colors group"
-                >
-                  <p className="text-sm text-slate-700 group-hover:text-purple-700">
-                    If consignment cargo weight &gt; 25000kg and origin is high-risk, flag as SUSPICIOUS_CARGO
-                  </p>
-                  <p className="text-xs text-slate-500 mt-1">Combined risk assessment</p>
-                </button>
-              </>
-            )}
+              )
+            })}
           </div>
         </div>
       )}
