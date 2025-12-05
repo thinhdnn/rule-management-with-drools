@@ -42,3 +42,4 @@ next-env.d.ts
 /backend/build
 /frontend/.next
 /frontend/node_modules
+/frontend/.shared
