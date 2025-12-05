@@ -1120,7 +1120,7 @@ public class RuleController {
      * Get version history for a specific rule
      */
     @GetMapping("/{id}/versions")
-    public ResponseEntity<List<DecisionRule>> getRuleVersions(
+    public ResponseEntity<List<RuleResponse>> getRuleVersions(
             @PathVariable Long id,
             @AuthenticationPrincipal UserPrincipal currentUser) {
         String userId = requireUserId(currentUser);
@@ -1128,13 +1128,38 @@ public class RuleController {
             return ResponseEntity.notFound().build();
         }
         try {
-            List<DecisionRule> versions = ruleVersionService.getVersionHistory(id).stream()
+            List<RuleResponse> versions = ruleVersionService.getVersionHistory(id).stream()
                     .filter(rule -> userId.equals(rule.getCreatedBy()))
+                    .map(rule -> buildVersionResponse(rule))
                     .collect(Collectors.toList());
             return ResponseEntity.ok(versions);
         } catch (RuntimeException e) {
             return ResponseEntity.notFound().build();
         }
+    }
+    
+    /**
+     * Build a simplified RuleResponse for version history (without loading full conditions/output)
+     */
+    private RuleResponse buildVersionResponse(DecisionRule rule) {
+        return RuleResponse.builder()
+            .id(rule.getId())
+            .ruleName(rule.getRuleName())
+            .label(rule.getLabel())
+            .factType(rule.getFactType() != null ? rule.getFactType().getValue() : null)
+            .ruleContent(rule.getRuleContent())
+            .priority(rule.getPriority())
+            .status(rule.getStatus() != null ? rule.getStatus().name() : RuleStatus.DRAFT.name())
+            .generatedByAi(rule.getGeneratedByAi())
+            .version(rule.getVersion())
+            .parentRuleId(rule.getParentRuleId())
+            .isLatest(rule.getIsLatest())
+            .versionNotes(rule.getVersionNotes())
+            .createdAt(rule.getCreatedAt())
+            .updatedAt(rule.getUpdatedAt())
+            .createdBy(userDisplayNameService.getDisplayName(rule.getCreatedBy()))
+            .updatedBy(userDisplayNameService.getDisplayName(rule.getUpdatedBy()))
+            .build();
     }
     
     /**

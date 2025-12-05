@@ -1,10 +1,11 @@
 "use client"
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, Save, Loader2, Plus, Trash2, FileText, Package, FilePlus } from 'lucide-react'
 import { SearchableSelect } from '@/components/SearchableSelect'
 import { api, fetchApi } from '@/lib/api'
 import { transformRule } from '@/app/api/rules/transform'
+import { useKeyboardShortcuts } from '@/lib/useKeyboardShortcuts'
 
 type LogicalOperator = 'AND' | 'OR'
 
@@ -133,10 +134,17 @@ export default function NewRulePage() {
       // Group conditions by object path and logical operator, preserving order
       const validConditions = formData.conditions.filter(c => c.field && c.operator && c.value)
       
-      // If only 1 condition: null (no AND/OR groups needed)
+      // Build conditions structure
       let conditions: any = null
       if (validConditions.length === 1) {
-        conditions = null
+        // Single condition: wrap in AND array
+        conditions = {
+          AND: [{
+            field: validConditions[0].field,
+            operator: validConditions[0].operator,
+            value: validConditions[0].value
+          }]
+        }
       } else if (validConditions.length > 1) {
         const andConditions: any[] = []
         const orConditions: any[] = []
@@ -282,6 +290,35 @@ export default function NewRulePage() {
     }
   }
 
+  const formRef = useRef<HTMLFormElement>(null)
+  const handleSubmitRef = useRef<((e?: React.FormEvent) => Promise<void>) | null>(null)
+
+  // Update ref when handleSubmit changes
+  useEffect(() => {
+    handleSubmitRef.current = handleSubmit
+  }, [handleSubmit])
+
+  // Keyboard shortcuts
+  useKeyboardShortcuts({
+    onEnter: (e) => {
+      const target = e.target as HTMLElement
+      if (target.tagName !== 'TEXTAREA' && !loading && formRef.current && handleSubmitRef.current) {
+        const form = formRef.current
+        if (form.checkValidity()) {
+          handleSubmitRef.current()
+        } else {
+          form.reportValidity()
+        }
+      }
+    },
+    onEscape: () => {
+      if (!loading && !loadingMetadata) {
+        router.back()
+      }
+    },
+    enabled: !loadingMetadata,
+  })
+
   const addCondition = () => {
     setFormData(prev => ({
       ...prev,
@@ -380,7 +417,7 @@ export default function NewRulePage() {
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="space-y-6">
+      <form ref={formRef} onSubmit={handleSubmit} className="space-y-6">
         {/* Basic Information */}
         <div className="bg-white rounded-md border border-outlineVariant p-6 space-y-4">
           <div>

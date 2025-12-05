@@ -1,11 +1,12 @@
 'use client'
 
-import { use, useEffect, useState, useCallback } from 'react'
+import { use, useEffect, useState, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, Save, Loader2, Plus, Trash2, Edit } from 'lucide-react'
 import { SearchableSelect } from '@/components/SearchableSelect'
 import { api, fetchApi } from '@/lib/api'
 import { transformRule } from '@/app/api/rules/transform'
+import { useKeyboardShortcuts } from '@/lib/useKeyboardShortcuts'
 
 type RuleOutput = {
   action: string | null
@@ -184,8 +185,12 @@ export default function EditRulePage({ params }: Props) {
 
 
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const formRef = useRef<HTMLFormElement>(null)
+  const handleSubmitRef = useRef<((e?: React.FormEvent) => Promise<void>) | null>(null)
+
+  const handleSubmit = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault()
+    if (loading) return
     setLoading(true)
     setError(null)
 
@@ -202,10 +207,17 @@ export default function EditRulePage({ params }: Props) {
       // Group conditions by object path and logical operator, preserving order
       const validConditions = formData.conditions.filter(c => c.field && c.operator && c.value)
       
-      // If only 1 condition: null (no AND/OR groups needed)
+      // Build conditions structure
       let conditions: any = null
       if (validConditions.length === 1) {
-        conditions = null
+        // Single condition: wrap in AND array
+        conditions = {
+          AND: [{
+            field: validConditions[0].field,
+            operator: validConditions[0].operator,
+            value: validConditions[0].value
+          }]
+        }
       } else if (validConditions.length > 1) {
         const andConditions: any[] = []
         const orConditions: any[] = []
@@ -354,6 +366,33 @@ export default function EditRulePage({ params }: Props) {
     }
   }
 
+  // Update ref when handleSubmit changes
+  useEffect(() => {
+    handleSubmitRef.current = handleSubmit
+  }, [handleSubmit])
+
+  // Keyboard shortcuts
+  useKeyboardShortcuts({
+    onEnter: (e) => {
+      // Only submit if not in textarea and form is valid
+      const target = e.target as HTMLElement
+      if (target.tagName !== 'TEXTAREA' && !loading && formRef.current && handleSubmitRef.current) {
+        const form = formRef.current
+        if (form.checkValidity()) {
+          handleSubmitRef.current()
+        } else {
+          form.reportValidity()
+        }
+      }
+    },
+    onEscape: () => {
+      if (!loading && !loadingData && !loadingMetadata) {
+        router.back()
+      }
+    },
+    enabled: !loadingData && !loadingMetadata,
+  })
+
   const addCondition = () => {
     setFormData(prev => ({
       ...prev,
@@ -446,7 +485,7 @@ export default function EditRulePage({ params }: Props) {
           <ArrowLeft className="w-4 h-4" />
           Back to Rules
         </button>
-        <h1 className="text-2xl font-semibold">Edit Rule</h1>
+        <h1 className="page-title">Edit Rule</h1>
       </div>
 
       {error && (

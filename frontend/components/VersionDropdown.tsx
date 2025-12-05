@@ -55,7 +55,7 @@ export function VersionDropdown({ currentVersion, versions, onVersionChange }: P
     <div className="relative" ref={dropdownRef}>
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 text-blue-700 rounded-md hover:bg-blue-100 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
+        className="flex items-center gap-2 px-3 py-1.5 bg-accent-bg text-accent rounded-lg hover:bg-accent-bg/80 transition-smooth focus:outline-none focus:ring-2 focus:ring-accent/20 cursor-pointer"
       >
         <Clock className="w-4 h-4" />
         <span className="text-sm font-medium">Version {currentVersion.version}</span>
@@ -63,9 +63,9 @@ export function VersionDropdown({ currentVersion, versions, onVersionChange }: P
       </button>
 
       {isOpen && (
-        <div className="absolute top-full left-0 mt-1 bg-white border border-slate-200 rounded-md shadow-lg w-96 z-50 max-h-96 overflow-hidden flex flex-col">
-          <div className="px-3 py-2 border-b bg-slate-50">
-            <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide">
+        <div className="absolute top-full left-0 mt-1 bg-surface border border-border rounded-lg shadow-card-hover w-96 z-50 max-h-96 overflow-hidden flex flex-col">
+          <div className="px-3 py-2 border-b border-border bg-surfaceContainerHigh">
+            <p className="text-xs font-semibold text-text-tertiary uppercase tracking-wide">
               Version History
             </p>
           </div>
@@ -75,28 +75,28 @@ export function VersionDropdown({ currentVersion, versions, onVersionChange }: P
               <button
                 key={v.id}
                 onClick={() => handleVersionSelect(v.id)}
-                className={`w-full text-left px-3 py-2.5 hover:bg-slate-50 border-b border-slate-100 transition-colors ${
-                  v.id === currentVersion.id ? 'bg-blue-50' : ''
+                className={`w-full text-left px-3 py-2.5 hover:bg-surfaceContainerHigh border-b border-border transition-smooth cursor-pointer ${
+                  v.id === currentVersion.id ? 'bg-accent-bg' : ''
                 }`}
               >
                 <div className="flex justify-between items-start gap-2">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <p className="text-sm font-medium text-slate-900">
+                      <p className="text-sm font-medium text-text-primary">
                         Version {v.version}
                       </p>
                       {v.isLatest && (
-                        <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs font-medium rounded">
+                        <span className="px-2 py-0.5 bg-success-bg text-success text-xs font-medium rounded-lg ring-1 ring-success/20">
                           Latest
                         </span>
                       )}
                       {v.id === currentVersion.id && (
-                        <Check className="w-4 h-4 text-blue-600" />
+                        <Check className="w-4 h-4 text-accent" />
                       )}
                     </div>
                     
                     {v.versionNotes && (
-                      <p className="text-xs text-slate-600 mt-1 line-clamp-2">
+                      <p className="text-xs text-text-tertiary mt-1 line-clamp-2">
                         {v.versionNotes}
                       </p>
                     )}

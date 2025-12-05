@@ -158,11 +158,11 @@ export function VersionCompare({ oldVersion, newVersion, metadata }: Props) {
         return (
           <div className="space-y-2">
             {value.map((condition: Condition, idx: number) => (
-              <div key={condition.id || idx} className="text-xs bg-slate-50 p-2 rounded border border-slate-200">
-                {idx > 0 && <span className="text-slate-400 mr-2">{condition.logicalOp}</span>}
-                <span className="font-medium">{getFieldLabel(condition.field)}</span>
-                <span className="mx-1 text-slate-400">{getOperatorLabel(condition.operator)}</span>
-                <span>{condition.value}</span>
+              <div key={condition.id || idx} className="text-xs bg-surfaceContainerHigh p-2 rounded-lg border border-border">
+                {idx > 0 && <span className="text-text-muted mr-2">{condition.logicalOp}</span>}
+                <span className="font-medium text-text-primary">{getFieldLabel(condition.field)}</span>
+                <span className="mx-1 text-text-tertiary">{getOperatorLabel(condition.operator)}</span>
+                <span className="text-text-secondary">{condition.value}</span>
               </div>
             ))}
           </div>
@@ -175,8 +175,8 @@ export function VersionCompare({ oldVersion, newVersion, metadata }: Props) {
           <div className="space-y-1">
             {entries.map(([key, val]) => (
               <div key={key} className="text-xs">
-                <span className="font-medium text-slate-600">{getOutputFieldLabel(key)}:</span>{' '}
-                <span className="text-slate-800">{String(val)}</span>
+                <span className="font-medium text-text-tertiary">{getOutputFieldLabel(key)}:</span>{' '}
+                <span className="text-text-primary">{String(val)}</span>
               </div>
             ))}
           </div>
@@ -190,11 +190,11 @@ export function VersionCompare({ oldVersion, newVersion, metadata }: Props) {
   return (
     <div className="space-y-4">
       {/* Header */}
-      <div className="flex items-center justify-between bg-slate-50 rounded-md p-4 border border-slate-200">
+      <div className="flex items-center justify-between bg-surfaceContainerHigh rounded-lg p-4 border border-border">
         <div className="flex items-center gap-4">
           <div className="text-center">
-            <p className="text-xs text-slate-500 mb-1">Old Version</p>
-            <p className="text-lg font-semibold text-slate-900">v{oldVersion.version}</p>
+            <p className="text-xs text-text-tertiary mb-1">Old Version</p>
+            <p className="text-lg font-semibold text-text-primary">v{oldVersion.version}</p>
             <div className="mt-1">
               <UserTimeMeta
                 user={oldVersion.updatedBy}
@@ -205,11 +205,11 @@ export function VersionCompare({ oldVersion, newVersion, metadata }: Props) {
             </div>
           </div>
           
-          <ArrowRight className="w-5 h-5 text-slate-400" />
+          <ArrowRight className="w-5 h-5 text-text-muted" />
           
           <div className="text-center">
-            <p className="text-xs text-slate-500 mb-1">New Version</p>
-            <p className="text-lg font-semibold text-slate-900">v{newVersion.version}</p>
+            <p className="text-xs text-text-tertiary mb-1">New Version</p>
+            <p className="text-lg font-semibold text-text-primary">v{newVersion.version}</p>
             <div className="mt-1">
               <UserTimeMeta
                 user={newVersion.updatedBy}
@@ -222,7 +222,7 @@ export function VersionCompare({ oldVersion, newVersion, metadata }: Props) {
         </div>
 
         {hasChanges && (
-          <div className="flex items-center gap-2 text-amber-600">
+          <div className="flex items-center gap-2 text-warning">
             <AlertCircle className="w-4 h-4" />
             <span className="text-sm font-medium">{changedFields.length} fields changed</span>
           </div>
@@ -231,42 +231,42 @@ export function VersionCompare({ oldVersion, newVersion, metadata }: Props) {
 
       {/* Version notes */}
       {newVersion.versionNotes && (
-        <div className="bg-blue-50 border border-blue-200 rounded-md p-3">
-          <p className="text-xs font-semibold text-blue-900 mb-1">Change Notes:</p>
-          <p className="text-sm text-blue-800">{newVersion.versionNotes}</p>
+        <div className="bg-accent-bg border border-accent/20 rounded-lg p-3">
+          <p className="text-xs font-semibold text-accent mb-1">Change Notes:</p>
+          <p className="text-sm text-text-primary">{newVersion.versionNotes}</p>
         </div>
       )}
 
       {/* Changes table */}
       {!hasChanges ? (
-        <div className="text-center py-8 text-slate-500">
+        <div className="text-center py-8 text-text-tertiary">
           <p>No changes detected between these versions</p>
         </div>
       ) : (
-        <div className="border border-slate-200 rounded-md overflow-hidden">
+        <div className="border border-border rounded-lg overflow-hidden shadow-card">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 border-b border-slate-200">
+            <thead className="bg-surfaceContainerHigh border-b border-border">
               <tr>
-                <th className="px-4 py-2 text-left font-semibold text-slate-700 w-1/4">Field</th>
-                <th className="px-4 py-2 text-left font-semibold text-slate-700 w-3/8 bg-red-50">
+                <th className="px-4 py-2 text-left font-semibold text-text-secondary w-1/4">Field</th>
+                <th className="px-4 py-2 text-left font-semibold text-text-secondary w-3/8 bg-error-bg/30">
                   Old Value (v{oldVersion.version})
                 </th>
-                <th className="px-4 py-2 text-left font-semibold text-slate-700 w-3/8 bg-green-50">
+                <th className="px-4 py-2 text-left font-semibold text-text-secondary w-3/8 bg-success-bg/30">
                   New Value (v{newVersion.version})
                 </th>
               </tr>
             </thead>
             <tbody>
               {changedFields.map((diff) => (
-                <tr key={diff.field} className="border-b border-slate-100 last:border-b-0">
-                  <td className="px-4 py-3 font-medium text-slate-900">{diff.label}</td>
-                  <td className="px-4 py-3 bg-red-50/50 border-l-2 border-red-300">
-                    <div className={`text-xs text-slate-700 ${diff.isComplex ? '' : 'font-mono whitespace-pre-wrap break-words'}`}>
+                <tr key={diff.field} className="border-b border-border last:border-b-0">
+                  <td className="px-4 py-3 font-medium text-text-primary">{diff.label}</td>
+                  <td className="px-4 py-3 bg-error-bg/20 border-l-2 border-error/30">
+                    <div className={`text-xs text-text-primary ${diff.isComplex ? '' : 'font-mono whitespace-pre-wrap break-words'}`}>
                       {formatValue(diff.oldValue, diff.isComplex)}
                     </div>
                   </td>
-                  <td className="px-4 py-3 bg-green-50/50 border-l-2 border-green-300">
-                    <div className={`text-xs text-slate-700 ${diff.isComplex ? '' : 'font-mono whitespace-pre-wrap break-words'}`}>
+                  <td className="px-4 py-3 bg-success-bg/20 border-l-2 border-success/30">
+                    <div className={`text-xs text-text-primary ${diff.isComplex ? '' : 'font-mono whitespace-pre-wrap break-words'}`}>
                       {formatValue(diff.newValue, diff.isComplex)}
                     </div>
                   </td>
@@ -278,8 +278,8 @@ export function VersionCompare({ oldVersion, newVersion, metadata }: Props) {
       )}
 
       {/* Unchanged fields (collapsed by default) */}
-      <details className="border border-slate-200 rounded-md">
-        <summary className="px-4 py-2 bg-slate-50 cursor-pointer hover:bg-slate-100 text-sm text-slate-600">
+      <details className="border border-border rounded-lg shadow-card">
+        <summary className="px-4 py-2 bg-surfaceContainerHigh cursor-pointer hover:bg-surfaceContainerHighest text-sm text-text-secondary transition-smooth rounded-t-lg">
           Show unchanged fields ({diffs.length - changedFields.length})
         </summary>
         <div className="p-4 space-y-2">
@@ -287,8 +287,8 @@ export function VersionCompare({ oldVersion, newVersion, metadata }: Props) {
             .filter((d) => !d.changed)
             .map((diff) => (
               <div key={diff.field} className="flex items-start gap-2 text-sm">
-                <span className="font-medium text-slate-700 w-1/4">{diff.label}:</span>
-                <div className="text-slate-600 text-xs flex-1">
+                <span className="font-medium text-text-secondary w-1/4">{diff.label}:</span>
+                <div className="text-text-tertiary text-xs flex-1">
                   {typeof formatValue(diff.oldValue, diff.isComplex) === 'string' 
                     ? <span className="font-mono">{formatValue(diff.oldValue, diff.isComplex) as string}</span>
                     : formatValue(diff.oldValue, diff.isComplex)

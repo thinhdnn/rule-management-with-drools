@@ -270,6 +270,17 @@ public class ChangeRequestController {
                 return ResponseEntity.badRequest().body(errorResponse);
             }
 
+            // Check for conflicts with pending change requests
+            String conflictMessage = checkPendingChangeRequestConflicts(validationContext.changes(), factType);
+            if (conflictMessage != null) {
+                ErrorResponse errorResponse = ErrorResponse.builder()
+                        .success(false)
+                        .error(conflictMessage)
+                        .errorType("ConflictException")
+                        .build();
+                return ResponseEntity.badRequest().body(errorResponse);
+            }
+
             ChangeRequest changeRequest = new ChangeRequest();
             changeRequest.setFactType(factType);
             changeRequest.setTitle(request.getTitle());
@@ -1193,6 +1204,92 @@ public class ChangeRequestController {
                 .build();
             return ResponseEntity.internalServerError().body(errorResponse);
         }
+    }
+
+    /**
+     * Check if any rules in the proposed changes are already in pending change requests
+     * @param changes Proposed changes
+     * @param factType Fact type to check
+     * @return Error message if conflict found, null otherwise
+     */
+    private String checkPendingChangeRequestConflicts(ChangeRequestChanges changes, FactType factType) {
+        // Get all pending change requests for this fact type
+        List<ChangeRequest> pendingRequests = changeRequestRepository
+            .findByFactTypeAndStatusOrderByCreatedAtDesc(factType, ChangeRequestStatus.PENDING);
+        
+        if (pendingRequests.isEmpty()) {
+            return null; // No conflicts
+        }
+        
+        // Collect all rule IDs from pending change requests
+        Set<Long> pendingRuleIds = new HashSet<>();
+        List<String> conflictingRequestTitles = new ArrayList<>();
+        
+        for (ChangeRequest pendingRequest : pendingRequests) {
+            if (pendingRequest.getChangesJson() == null || pendingRequest.getChangesJson().isEmpty()) {
+                continue;
+            }
+            
+            try {
+                ChangeRequestChanges pendingChanges = objectMapper.readValue(
+                    pendingRequest.getChangesJson(), 
+                    ChangeRequestChanges.class
+                );
+                
+                Set<Long> requestRuleIds = new HashSet<>();
+                if (pendingChanges.getRulesToInclude() != null) {
+                    requestRuleIds.addAll(pendingChanges.getRulesToInclude());
+                }
+                if (pendingChanges.getRulesToExclude() != null) {
+                    requestRuleIds.addAll(pendingChanges.getRulesToExclude());
+                }
+                
+                // Check for conflicts with current changes
+                boolean hasConflict = false;
+                if (changes.getRulesToInclude() != null) {
+                    for (Long ruleId : changes.getRulesToInclude()) {
+                        if (requestRuleIds.contains(ruleId)) {
+                            hasConflict = true;
+                            pendingRuleIds.add(ruleId);
+                        }
+                    }
+                }
+                if (changes.getRulesToExclude() != null) {
+                    for (Long ruleId : changes.getRulesToExclude()) {
+                        if (requestRuleIds.contains(ruleId)) {
+                            hasConflict = true;
+                            pendingRuleIds.add(ruleId);
+                        }
+                    }
+                }
+                
+                if (hasConflict) {
+                    conflictingRequestTitles.add(pendingRequest.getTitle() + " (ID: " + pendingRequest.getId() + ")");
+                }
+            } catch (Exception e) {
+                log.warn("Failed to parse changes JSON for change request {}: {}", 
+                    pendingRequest.getId(), e.getMessage());
+            }
+        }
+        
+        if (!pendingRuleIds.isEmpty()) {
+            // Get rule names for better error message
+            List<DecisionRule> conflictingRules = decisionRuleRepository.findAllById(pendingRuleIds);
+            List<String> ruleNames = conflictingRules.stream()
+                .map(rule -> rule.getRuleName() + " (ID: " + rule.getId() + ")")
+                .collect(Collectors.toList());
+            
+            StringBuilder message = new StringBuilder();
+            message.append("Cannot create change request: The following rule(s) are already in pending change request(s):\n");
+            message.append(String.join(",\n", ruleNames));
+            message.append("\n\nPending change request(s):\n");
+            message.append(String.join(",\n", conflictingRequestTitles));
+            message.append("\n\nPlease wait for the existing change request(s) to be approved or rejected.");
+            
+            return message.toString();
+        }
+        
+        return null; // No conflicts
     }
 
     private String requireUserId(UserPrincipal currentUser) {

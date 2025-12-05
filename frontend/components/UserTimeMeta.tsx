@@ -36,16 +36,16 @@ export function UserTimeMeta({
       return null
     }
     return (
-      <div className={cn('flex items-center gap-1.5 text-sm text-slate-700', className)}>
-        <span className="font-medium text-slate-900">{label}</span>
-        <span className="text-slate-500">—</span>
+      <div className={cn('flex items-center gap-1.5 text-sm text-text-secondary', className)}>
+        <span className="font-medium text-text-primary">{label}</span>
+        <span className="text-text-tertiary">—</span>
       </div>
     )
   }
 
   return (
-    <div className={cn('flex flex-wrap items-center gap-1.5 text-sm text-slate-700', className)}>
-      {label && <span className="font-medium text-slate-900">{label}</span>}
+    <div className={cn('flex flex-wrap items-center gap-1.5 text-sm text-text-secondary', className)}>
+      {label && <span className="font-medium text-text-primary">{label}</span>}
       {showUser && (
         <span className="font-medium">by {resolvedUser}</span>
       )}

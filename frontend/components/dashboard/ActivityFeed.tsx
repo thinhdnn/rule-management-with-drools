@@ -12,16 +12,16 @@ interface ActivityFeedProps {
 }
 
 const statusStyles: Record<string, { badge: string; icon: ComponentType<{ className?: string }> }> = {
-  pending: { badge: 'bg-amber-50 text-amber-700 ring-amber-100', icon: Clock4 },
-  approved: { badge: 'bg-emerald-50 text-emerald-700 ring-emerald-100', icon: CheckCircle2 },
-  deployed: { badge: 'bg-sky-50 text-sky-700 ring-sky-100', icon: History },
-  rejected: { badge: 'bg-rose-50 text-rose-700 ring-rose-100', icon: TriangleAlert },
+  pending: { badge: 'bg-warning-bg text-warning ring-warning/20', icon: Clock4 },
+  approved: { badge: 'bg-success-bg text-success ring-success/20', icon: CheckCircle2 },
+  deployed: { badge: 'bg-accent-bg text-accent ring-accent/20', icon: History },
+  rejected: { badge: 'bg-error-bg text-error ring-error/20', icon: TriangleAlert },
 }
 
 export function ActivityFeed({ items, loading }: ActivityFeedProps) {
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-8 text-slate-500">
+      <div className="flex items-center justify-center py-8 text-text-tertiary">
         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
         Loading activity…
       </div>
@@ -30,8 +30,8 @@ export function ActivityFeed({ items, loading }: ActivityFeedProps) {
 
   if (!items?.length) {
     return (
-      <div className="flex flex-col items-center justify-center py-10 text-center text-slate-500">
-        <Bell className="mb-3 h-10 w-10 text-slate-300" strokeWidth={1.5} />
+      <div className="flex flex-col items-center justify-center py-10 text-center text-text-tertiary">
+        <Bell className="mb-3 h-10 w-10 text-text-muted" strokeWidth={1.5} />
         <p className="font-medium">No activity yet</p>
         <p className="text-sm">Deploy rules or process change requests to see updates.</p>
       </div>
@@ -49,20 +49,20 @@ export function ActivityFeed({ items, loading }: ActivityFeedProps) {
           <div key={item.id} className="flex items-start gap-4">
             <span
               className={cn(
-                'rounded-full p-2 ring-1 ring-inset transition',
+                'rounded-lg p-2.5 ring-1 ring-inset transition-smooth',
                 status.badge,
-                'bg-white/60 shadow-sm',
+                'bg-surface shadow-sm',
               )}
             >
               <Icon className="h-4 w-4" />
             </span>
             <div className="flex-1">
               <div className="flex flex-wrap items-center gap-2">
-                <p className="font-medium text-slate-900">{item.title}</p>
+                <p className="font-medium text-text-primary">{item.title}</p>
                 {item.status && (
                   <span
                     className={cn(
-                      'rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize ring-1 ring-inset',
+                      'rounded-lg px-2.5 py-1 text-xs font-semibold capitalize ring-1 ring-inset',
                       status.badge,
                     )}
                   >

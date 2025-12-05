@@ -46,31 +46,31 @@ export default function ExecutionsPage() {
   }
 
   const ActionColor: Record<string, string> = {
-    FLAG: 'bg-red-100 text-red-700',
-    APPROVE: 'bg-green-100 text-green-700',
-    REJECT: 'bg-red-100 text-red-700',
-    REVIEW: 'bg-yellow-100 text-yellow-700',
-    HOLD: 'bg-orange-100 text-orange-700',
+    FLAG: 'bg-error-bg text-error ring-1 ring-error/20',
+    APPROVE: 'bg-success-bg text-success ring-1 ring-success/20',
+    REJECT: 'bg-error-bg text-error ring-1 ring-error/20',
+    REVIEW: 'bg-warning-bg text-warning ring-1 ring-warning/20',
+    HOLD: 'bg-warning-bg text-warning ring-1 ring-warning/20',
   }
 
   const SourceColor: Record<string, string> = {
-    API: 'bg-blue-100 text-blue-700',
-    UI: 'bg-purple-100 text-purple-700',
+    API: 'bg-accent-bg text-accent ring-1 ring-accent/20',
+    UI: 'bg-secondary-bg text-secondary ring-1 ring-secondary/20',
   }
 
   const getActionColor = (action?: string) => {
-    if (!action) return 'bg-slate-100 text-slate-700'
-    return ActionColor[action] || 'bg-slate-100 text-slate-700'
+    if (!action) return 'bg-surfaceContainerHigh text-text-tertiary ring-1 ring-border'
+    return ActionColor[action] || 'bg-surfaceContainerHigh text-text-tertiary ring-1 ring-border'
   }
 
   if (error) {
     return (
       <div className="p-6">
-        <div className="bg-red-50 border border-red-200 rounded-md p-4 text-red-700">
+        <div className="bg-error-bg border border-error/20 rounded-lg p-4 text-error">
           Error loading executions. Please try again.
           <button
             onClick={() => refetch()}
-            className="ml-4 px-3 py-1 bg-red-600 text-white rounded-md hover:bg-red-700"
+            className="ml-4 px-3 py-1.5 bg-error text-white rounded-lg hover:bg-error-light transition-smooth cursor-pointer"
           >
             Retry
           </button>
@@ -80,17 +80,17 @@ export default function ExecutionsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col gap-6">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Play className="w-6 h-6 text-indigo-600" />
-          <h1 className="text-2xl font-bold text-slate-900">Rule Executions</h1>
-        </div>
+        <h1 className="page-title flex items-center gap-2">
+          <Play className="w-6 h-6 text-primary" />
+          Rule Executions
+        </h1>
         <button
           onClick={handleRefresh}
           disabled={refreshing}
-          className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-light disabled:opacity-50 disabled:cursor-not-allowed transition-smooth shadow-sm cursor-pointer"
         >
           <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
           Refresh
@@ -98,23 +98,23 @@ export default function ExecutionsPage() {
       </div>
 
       {/* Filters */}
-      <div className="bg-white rounded-lg border border-slate-200 p-4">
-        <div className="flex items-center gap-4">
+      <div className="bg-surface rounded-lg border border-border p-4 shadow-card">
+        <div className="flex items-center gap-4 flex-wrap">
           <div className="flex items-center gap-2">
-            <Filter className="w-4 h-4 text-slate-500" />
-            <span className="text-sm font-medium text-slate-700">Source:</span>
+            <Filter className="w-4 h-4 text-text-tertiary" />
+            <span className="text-body-sm font-medium text-text-secondary">Source:</span>
           </div>
           <select
             value={selectedSource}
             onChange={(e) => setSelectedSource(e.target.value)}
-            className="px-3 py-1 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className="h-9 px-3 border border-border rounded-lg text-body-sm focus:outline-none focus:ring-2 focus:ring-primary/10 focus:border-primary transition-smooth text-text-primary cursor-pointer hover:border-primary/30"
           >
             <option value="All">All</option>
             <option value="API">API</option>
             <option value="UI">UI</option>
           </select>
           {executions && (
-            <span className="text-sm text-slate-500">
+            <span className="text-body-sm text-text-tertiary">
               {executions.length} execution{executions.length !== 1 ? 's' : ''}
             </span>
           )}
@@ -122,80 +122,80 @@ export default function ExecutionsPage() {
       </div>
 
       {/* Table */}
-      <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
+      <div className="bg-surface rounded-lg border border-border overflow-hidden shadow-card">
         <div className="overflow-x-auto">
           <table className="w-full">
-            <thead className="bg-slate-50 border-b border-slate-200">
+            <thead className="bg-surfaceContainerHigh border-b border-border">
               <tr>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">
+                <th className="px-4 py-3 text-left text-xs font-semibold text-text-secondary uppercase tracking-wider">
                   Executed At
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">
+                <th className="px-4 py-3 text-left text-xs font-semibold text-text-secondary uppercase tracking-wider">
                   Rule Name
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">
+                <th className="px-4 py-3 text-left text-xs font-semibold text-text-secondary uppercase tracking-wider">
                   Declaration ID
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">
+                <th className="px-4 py-3 text-left text-xs font-semibold text-text-secondary uppercase tracking-wider">
                   Action
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">
+                <th className="px-4 py-3 text-left text-xs font-semibold text-text-secondary uppercase tracking-wider">
                   Score
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">
+                <th className="px-4 py-3 text-left text-xs font-semibold text-text-secondary uppercase tracking-wider">
                   Source
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">
+                <th className="px-4 py-3 text-left text-xs font-semibold text-text-secondary uppercase tracking-wider">
                   Result
                 </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-200">
+            <tbody className="divide-y divide-border">
               {isLoading ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
+                  <td colSpan={7} className="px-4 py-8 text-center text-text-tertiary">
                     Loading executions...
                   </td>
                 </tr>
               ) : executions && executions.length > 0 ? (
                 executions.map((execution) => (
-                  <tr key={execution.id} className="hover:bg-slate-50">
-                    <td className="px-4 py-3 text-sm text-slate-900">
+                  <tr key={execution.id} className="hover:bg-surfaceContainerHigh transition-smooth cursor-pointer">
+                    <td className="px-4 py-3 text-sm text-text-primary">
                       {formatDateTime(execution.executedAt)}
                     </td>
-                    <td className="px-4 py-3 text-sm font-medium text-slate-900">
+                    <td className="px-4 py-3 text-sm font-medium text-text-primary">
                       {execution.ruleName}
                     </td>
-                    <td className="px-4 py-3 text-sm text-slate-600">
+                    <td className="px-4 py-3 text-sm text-text-secondary">
                       {execution.declarationId}
                     </td>
                     <td className="px-4 py-3 text-sm">
                       {execution.ruleAction ? (
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${getActionColor(execution.ruleAction)}`}>
+                        <span className={`px-2.5 py-1 rounded-lg text-xs font-medium ${getActionColor(execution.ruleAction)}`}>
                           {execution.ruleAction}
                         </span>
                       ) : (
-                        <span className="text-slate-400">-</span>
+                        <span className="text-text-muted">-</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-sm text-slate-900">
+                    <td className="px-4 py-3 text-sm text-text-primary">
                       {execution.ruleScore !== null && execution.ruleScore !== undefined
                         ? execution.ruleScore.toFixed(2)
                         : '-'}
                     </td>
                     <td className="px-4 py-3 text-sm">
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${SourceColor[execution.executionSource] || 'bg-slate-100 text-slate-700'}`}>
+                      <span className={`px-2.5 py-1 rounded-lg text-xs font-medium ${SourceColor[execution.executionSource] || 'bg-surfaceContainerHigh text-text-tertiary ring-1 ring-border'}`}>
                         {execution.executionSource}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-sm text-slate-600 max-w-md truncate" title={execution.ruleResult}>
+                    <td className="px-4 py-3 text-sm text-text-secondary max-w-md truncate" title={execution.ruleResult}>
                       {execution.ruleResult || '-'}
                     </td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
+                  <td colSpan={7} className="px-4 py-8 text-center text-text-tertiary">
                     No executions found
                   </td>
                 </tr>

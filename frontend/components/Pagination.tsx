@@ -15,19 +15,19 @@ export function PaginationBar({ page, pageSize, total, onPageChange, onPageSizeC
   const end = Math.min(total, page * pageSize)
 
   return (
-    <div className="h-14 bg-surfaceContainer border border-outlineVariant rounded-md flex items-center justify-end px-3 gap-3" role="navigation" aria-label="Pagination" data-testid="pagination-root">
+    <div className="h-14 bg-surface border border-border rounded-lg flex items-center justify-end px-4 gap-4 shadow-card" role="navigation" aria-label="Pagination" data-testid="pagination-root">
       <div className="flex items-center gap-2">
-        <label className="text-sm text-slate-600">Rows per page</label>
-        <select className="h-9 px-2 rounded-md bg-white border border-outlineVariant focus-ring" value={pageSize} onChange={(e) => onPageSizeChange(Number(e.target.value))} data-testid="rows-per-page">
+        <label className="text-sm text-text-secondary">Rows per page</label>
+        <select className="h-9 px-3 rounded-lg bg-surface border border-border focus-ring transition-smooth text-text-primary hover:border-primary/30 focus:border-primary focus:ring-2 focus:ring-primary/10 cursor-pointer" value={pageSize} onChange={(e) => onPageSizeChange(Number(e.target.value))} data-testid="rows-per-page">
           <option value={10}>10</option>
           <option value={25}>25</option>
           <option value={50}>50</option>
         </select>
       </div>
-      <div className="text-sm text-slate-600">{start}–{end} of {total}</div>
+      <div className="text-sm text-text-secondary">{start}–{end} of {total}</div>
       <div className="flex items-center gap-1">
         <button
-          className="h-9 w-9 inline-flex items-center justify-center rounded-md border border-outlineVariant hover:bg-surfaceContainerHigh focus-ring disabled:opacity-50"
+          className="h-9 w-9 inline-flex items-center justify-center rounded-lg border border-border hover:bg-surfaceContainerHigh focus-ring transition-smooth disabled:opacity-50 disabled:cursor-not-allowed text-text-secondary hover:text-text-primary cursor-pointer"
           onClick={() => onPageChange(Math.max(1, page - 1))}
           disabled={page <= 1}
           aria-label="Previous page"
@@ -36,7 +36,7 @@ export function PaginationBar({ page, pageSize, total, onPageChange, onPageSizeC
           <ChevronLeft size={18} />
         </button>
         <button
-          className="h-9 w-9 inline-flex items-center justify-center rounded-md border border-outlineVariant hover:bg-surfaceContainerHigh focus-ring disabled:opacity-50"
+          className="h-9 w-9 inline-flex items-center justify-center rounded-lg border border-border hover:bg-surfaceContainerHigh focus-ring transition-smooth disabled:opacity-50 disabled:cursor-not-allowed text-text-secondary hover:text-text-primary cursor-pointer"
           onClick={() => onPageChange(Math.min(totalPages, page + 1))}
           disabled={page >= totalPages}
           aria-label="Next page"

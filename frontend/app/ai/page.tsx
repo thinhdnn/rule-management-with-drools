@@ -1,9 +1,11 @@
 "use client"
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { Brain, Sparkles, Loader2, CheckCircle2, AlertCircle, ChevronRight, Save, Eye, Zap, X } from 'lucide-react'
 import { SearchableSelect } from '@/components/SearchableSelect'
 import { api, fetchApi } from '@/lib/api'
+import { useKeyboardShortcuts } from '@/lib/useKeyboardShortcuts'
+import { useToast } from '@/components/Toast'
 
 type AIGenerateRequest = {
   naturalLanguageInput: string
@@ -61,6 +63,7 @@ type AIGenerateResponse = {
 
 export default function AIBuilderPage() {
   const router = useRouter()
+  const toast = useToast()
   const [factTypes, setFactTypes] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
   const [generating, setGenerating] = useState(false)
@@ -370,7 +373,7 @@ export default function AIBuilderPage() {
         setError(null)
         // Show success notification
         const successMessage = `Successfully saved ${savedCount} rule(s)${failedCount > 0 ? `. ${failedCount} failed.` : '!'}`
-        alert(successMessage)
+        toast.showSuccess(successMessage)
         // Navigate to rules page after a short delay
         setTimeout(() => {
           router.push('/rules')
@@ -430,24 +433,24 @@ export default function AIBuilderPage() {
   }
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6">
+    <div className="flex flex-col gap-6">
       {/* Header */}
       <div className="flex items-center gap-3">
-        <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center">
+        <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-secondary to-primary flex items-center justify-center">
           <Brain className="text-white" size={24} />
         </div>
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">AI Rule Builder</h1>
-          <p className="text-sm text-slate-600">Generate rules from natural language descriptions using AI</p>
+          <h1 className="page-title">AI Rule Builder</h1>
+          <p className="page-subtitle">Generate rules from natural language descriptions using AI</p>
         </div>
       </div>
 
       {/* Input Form */}
-      <div className="bg-white rounded-lg border border-slate-200 shadow-sm">
+      <div className="bg-surface rounded-lg border border-border shadow-card">
         <div className="p-6 space-y-6">
           {/* Fact Type Selector */}
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-2">
+            <label className="block text-body-sm font-medium text-text-secondary mb-2">
               Fact Type
             </label>
             <SearchableSelect
@@ -456,49 +459,49 @@ export default function AIBuilderPage() {
               onChange={(value) => setSelectedFactType(value)}
               placeholder="Select fact type"
             />
-            <p className="text-xs text-slate-500 mt-1">
+            <p className="text-body-xs text-text-tertiary mt-1">
               Data type that the rule will apply to
             </p>
           </div>
 
           {/* Natural Language Input */}
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-2">
+            <label className="block text-body-sm font-medium text-text-secondary mb-2">
               Rule Description (English or Vietnamese)
             </label>
             <textarea
               value={naturalInput}
               onChange={(e) => setNaturalInput(e.target.value)}
               placeholder="Example: If total gross mass is greater than 1000kg then require inspection&#10;&#10;Or: Nếu tổng trọng lượng hàng hóa lớn hơn 1000kg thì cần kiểm tra"
-              className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none"
+              className="w-full px-4 py-3 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/10 focus:border-primary transition-smooth resize-none text-body text-text-primary placeholder:text-text-muted"
               rows={6}
             />
-            <p className="text-xs text-slate-500 mt-1">
+            <p className="text-body-xs text-text-tertiary mt-1">
               Describe the rule in natural language. AI will convert it to a structured rule.
             </p>
           </div>
 
           {/* Additional Context (Optional) */}
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-2">
+            <label className="block text-body-sm font-medium text-text-secondary mb-2">
               Additional Context (Optional)
             </label>
             <textarea
               value={additionalContext}
               onChange={(e) => setAdditionalContext(e.target.value)}
               placeholder="Add context or special requirements for AI..."
-              className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none"
+              className="w-full px-4 py-3 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/10 focus:border-primary transition-smooth resize-none text-body text-text-primary placeholder:text-text-muted"
               rows={3}
             />
           </div>
 
           {/* Error Display */}
           {error && (
-            <div className="flex items-start gap-3 p-4 bg-red-50 border border-red-200 rounded-lg">
-              <AlertCircle className="text-red-600 shrink-0 mt-0.5" size={20} />
+            <div className="flex items-start gap-3 p-4 bg-error-bg border border-error/20 rounded-lg">
+              <AlertCircle className="text-error shrink-0 mt-0.5" size={20} />
               <div className="flex-1">
-                <p className="text-sm font-medium text-red-900">Error</p>
-                <p className="text-sm text-red-700 mt-1">{error}</p>
+                <p className="text-body-sm font-medium text-error">Error</p>
+                <p className="text-body-sm text-error mt-1">{error}</p>
               </div>
             </div>
           )}
@@ -508,7 +511,7 @@ export default function AIBuilderPage() {
             <button
               onClick={handleGenerate}
               disabled={generating || !naturalInput.trim()}
-              className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg hover:from-purple-700 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+              className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-secondary to-primary text-white rounded-lg hover:from-secondary-light hover:to-primary-light disabled:opacity-50 disabled:cursor-not-allowed transition-smooth shadow-sm cursor-pointer"
             >
               {generating ? (
                 <>

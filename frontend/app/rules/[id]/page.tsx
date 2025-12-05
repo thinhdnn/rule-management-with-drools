@@ -11,6 +11,7 @@ import { VersionTimeline } from '@/components/VersionTimeline'
 import { VersionCompare } from '@/components/VersionCompare'
 import { UserTimeMeta } from '@/components/UserTimeMeta'
 import { formatDateTime } from '@/lib/datetime'
+import { useToast } from '@/components/Toast'
 
 type RuleOutput = {
   action: string | null
@@ -76,6 +77,7 @@ type Props = { params: Promise<{ id: string }> }
 
 export default function RuleDetailPage({ params }: Props) {
   const router = useRouter()
+  const toast = useToast()
   const { id } = use(params) // Unwrap params Promise using React.use()
   const [rule, setRule] = useState<Rule | null>(null)
   const [versions, setVersions] = useState<RuleVersion[]>([])
@@ -112,8 +114,8 @@ export default function RuleDetailPage({ params }: Props) {
           version: v.version,
           isLatest: v.isLatest,
           versionNotes: v.versionNotes,
-          updatedAt: v.lastModifiedDate || v.updatedAt || v.createdAt,
-          updatedBy: v.lastModifiedBy || v.updatedBy,
+          updatedAt: v.updatedAt || v.createdAt,
+          updatedBy: v.updatedBy || v.createdBy,
         })) : []
         setVersions(transformedVersions)
         
@@ -155,8 +157,9 @@ export default function RuleDetailPage({ params }: Props) {
       // Navigate to the newly created version
       router.push(`/rules/${restoredRule.id}`)
       router.refresh()
+      toast.showSuccess('Version restored successfully!')
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to restore version')
+      toast.showError(err instanceof Error ? err.message : 'Failed to restore version')
     }
   }
 
@@ -204,7 +207,7 @@ export default function RuleDetailPage({ params }: Props) {
           })
           .catch((err) => {
             console.error('Failed to load versions for comparison:', err)
-            alert(err instanceof Error ? err.message : 'Failed to load versions')
+            toast.showError(err instanceof Error ? err.message : 'Failed to load versions')
           })
           .finally(() => {
             setCompareLoading(false)
@@ -263,7 +266,7 @@ export default function RuleDetailPage({ params }: Props) {
             onClick={() => {
               if (confirm('Are you sure you want to delete this rule?')) {
                 // TODO: Implement delete
-                alert('Delete not implemented yet')
+                toast.showInfo('Delete not implemented yet')
               }
             }}
             className="inline-flex items-center gap-2 px-4 py-2 text-sm bg-red-600 text-white rounded-md hover:bg-red-700 focus-ring"
@@ -280,8 +283,8 @@ export default function RuleDetailPage({ params }: Props) {
         <div className="flex items-start justify-between">
           <div className="flex items-start gap-4">
             <div>
-              <h1 className="text-2xl font-semibold text-slate-900">{rule.label || rule.ruleName}</h1>
-              <p className="text-sm text-slate-500 mt-1">ID: {rule.id}</p>
+              <h1 className="page-title">{rule.label || rule.ruleName}</h1>
+              <p className="text-body-sm text-text-tertiary mt-1">ID: {rule.id}</p>
             </div>
             
             {/* Version Dropdown */}
@@ -549,7 +552,7 @@ export default function RuleDetailPage({ params }: Props) {
                           setCompareData1(data1)
                           setCompareData2(data2)
                         } catch (err) {
-                          alert(err instanceof Error ? err.message : 'Failed to load versions')
+                          toast.showError(err instanceof Error ? err.message : 'Failed to load versions')
                         } finally {
                           setCompareLoading(false)
                         }
@@ -587,7 +590,7 @@ export default function RuleDetailPage({ params }: Props) {
                           setCompareData1(data1)
                           setCompareData2(data2)
                         } catch (err) {
-                          alert(err instanceof Error ? err.message : 'Failed to load versions')
+                          toast.showError(err instanceof Error ? err.message : 'Failed to load versions')
                         } finally {
                           setCompareLoading(false)
                         }
@@ -631,7 +634,7 @@ export default function RuleDetailPage({ params }: Props) {
                         setCompareData1(data1)
                         setCompareData2(data2)
                       } catch (err) {
-                        alert(err instanceof Error ? err.message : 'Failed to load versions')
+                        toast.showError(err instanceof Error ? err.message : 'Failed to load versions')
                       } finally {
                         setCompareLoading(false)
                       }
@@ -665,7 +668,7 @@ export default function RuleDetailPage({ params }: Props) {
                 onClick={() => {
                   if (rule.ruleContent) {
                     navigator.clipboard.writeText(rule.ruleContent)
-                    alert('DRL content copied to clipboard!')
+                    toast.showSuccess('DRL content copied to clipboard!')
                   }
                 }}
                 className="px-3 py-1.5 text-sm bg-slate-100 text-slate-700 rounded-md hover:bg-slate-200 focus-ring"

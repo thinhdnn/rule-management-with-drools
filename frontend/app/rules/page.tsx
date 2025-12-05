@@ -1,11 +1,10 @@
 "use client"
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { FilterRow } from '@/components/FilterRow'
 import { DataTable } from '@/components/DataTable'
 import { PaginationBar } from '@/components/Pagination'
 import { api, fetchApi } from '@/lib/api'
-import { FileText, Package } from 'lucide-react'
+import { FileText, Package, Search } from 'lucide-react'
 
 export type Rule = {
   id: string
@@ -125,60 +124,124 @@ export default function RulesPage() {
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold flex items-center gap-2">
+        <h1 className="page-title flex items-center gap-2">
           <FileText className="w-6 h-6" />
           Rules
         </h1>
       </div>
 
-      {/* Fact Type Tabs */}
-      {factTypes.length > 0 && (
-        <div className="bg-white border border-outlineVariant rounded-lg p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <Package size={18} className="text-slate-500" />
-            <span className="text-sm font-medium text-slate-700">Fact Type:</span>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={() => handleFactTypeChange('All')}
-              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-2 ${
-                selectedFactType === 'All'
-                  ? 'bg-indigo-600 text-white shadow-md'
-                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-              }`}
-            >
-              <FileText size={16} />
-              All Rules
-            </button>
-            {factTypes.map((factType) => (
-              <button
-                key={factType}
-                onClick={() => handleFactTypeChange(factType)}
-                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-2 ${
-                  selectedFactType === factType
-                    ? 'bg-indigo-600 text-white shadow-md'
-                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                }`}
-              >
-                {factType === 'Declaration' ? <FileText size={16} /> : <Package size={16} />}
-                {factType}
-              </button>
-            ))}
-          </div>
-          {selectedFactType !== 'All' && (
-            <div className="mt-3 text-xs text-slate-500">
-              Showing {data?.items.length || 0} rule(s) for <span className="font-semibold text-slate-700">{selectedFactType}</span>
+      {/* Fact Types and Filters - Combined Row */}
+      <div className="bg-surface rounded-lg border border-border p-4 shadow-card">
+        <div className="flex flex-col lg:flex-row lg:items-center gap-4">
+          {/* Fact Type Tabs - Left Side */}
+          {factTypes.length > 0 && (
+            <div className="flex items-center gap-3 flex-wrap flex-shrink-0">
+              <div className="flex items-center gap-1.5 text-body-sm text-text-tertiary">
+                <Package size={14} />
+                <span>Fact Type:</span>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                <button
+                  onClick={() => handleFactTypeChange('All')}
+                  className={`px-2.5 py-1 rounded-lg text-body-sm font-medium transition-smooth cursor-pointer ${
+                    selectedFactType === 'All'
+                      ? 'bg-primary text-white shadow-sm hover:bg-primary-light'
+                      : 'bg-surfaceContainerHigh text-text-secondary hover:bg-surfaceContainerHighest hover:text-text-primary'
+                  }`}
+                >
+                  All
+                </button>
+                {factTypes.map((factType) => (
+                  <button
+                    key={factType}
+                    onClick={() => handleFactTypeChange(factType)}
+                    className={`px-2.5 py-1 rounded-lg text-body-sm font-medium transition-smooth cursor-pointer ${
+                      selectedFactType === factType
+                        ? 'bg-primary text-white shadow-sm hover:bg-primary-light'
+                        : 'bg-surfaceContainerHigh text-text-secondary hover:bg-surfaceContainerHighest hover:text-text-primary'
+                    }`}
+                  >
+                    {factType}
+                  </button>
+                ))}
+              </div>
+              {selectedFactType !== 'All' && (
+                <span className="text-body-xs text-text-tertiary">
+                  ({data?.items.length || 0} rules)
+                </span>
+              )}
             </div>
           )}
-        </div>
-      )}
 
-      <FilterRow
-        onChange={(f) => { setPage(1); setFilters({...f, factType: filters.factType}) }}
-        defaults={filters}
-      />
+          {/* Divider - Only visible on large screens */}
+          {factTypes.length > 0 && (
+            <div className="hidden lg:block w-px h-8 bg-border flex-shrink-0"></div>
+          )}
+
+          {/* Filters - Right Side */}
+          <div className="flex-1 flex flex-col sm:flex-row gap-2 min-w-0">
+            <div className="relative flex-1 min-w-0" data-testid="filter-search">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-tertiary" size={16} aria-hidden="true" />
+              <input
+                className="w-full h-9 pl-8 pr-3 rounded-lg bg-surface border border-border focus-ring transition-smooth text-body-sm text-text-primary placeholder:text-text-muted hover:border-primary/30 focus:border-primary focus:ring-2 focus:ring-primary/10"
+                placeholder="Search by name/type…"
+                value={filters.query}
+                onChange={(e) => { setPage(1); setFilters({...filters, query: e.target.value}) }}
+              />
+            </div>
+
+            <select 
+              className="h-9 px-2.5 rounded-lg bg-surface border border-border focus-ring transition-smooth text-body-sm text-text-primary hover:border-primary/30 focus:border-primary focus:ring-2 focus:ring-primary/10 cursor-pointer flex-shrink-0" 
+              value={filters.docType} 
+              onChange={(e) => { setPage(1); setFilters({...filters, docType: e.target.value}) }} 
+              data-testid="filter-doc" 
+              aria-label="Document Type"
+            >
+              <option value="">Doc: All</option>
+              <option>Import Declaration</option>
+              <option>Valuation</option>
+              <option>Container</option>
+            </select>
+
+            <select 
+              className="h-9 px-2.5 rounded-lg bg-surface border border-border focus-ring transition-smooth text-body-sm text-text-primary hover:border-primary/30 focus:border-primary focus:ring-2 focus:ring-primary/10 cursor-pointer flex-shrink-0" 
+              value={filters.ruleType} 
+              onChange={(e) => { setPage(1); setFilters({...filters, ruleType: e.target.value}) }} 
+              data-testid="filter-type" 
+              aria-label="Rule Type"
+            >
+              <option value="">Type: All</option>
+              <option>Risk</option>
+              <option>Classification</option>
+              <option>Compliance</option>
+              <option>Valuation</option>
+            </select>
+
+            <select 
+              className="h-9 px-2.5 rounded-lg bg-surface border border-border focus-ring transition-smooth text-body-sm text-text-primary hover:border-primary/30 focus:border-primary focus:ring-2 focus:ring-primary/10 cursor-pointer flex-shrink-0" 
+              value={filters.status} 
+              onChange={(e) => { setPage(1); setFilters({...filters, status: e.target.value}) }} 
+              data-testid="filter-status" 
+              aria-label="Status"
+            >
+              <option value="">Status: All</option>
+              <option>Active</option>
+              <option>Draft</option>
+              <option>Inactive</option>
+            </select>
+
+            <a 
+              href="/rules/new" 
+              data-testid="btn-new-rule" 
+              className="h-9 inline-flex items-center justify-center px-3 rounded-lg bg-primary text-white text-body-sm font-medium focus-ring transition-smooth hover:bg-primary-light shadow-sm cursor-pointer flex-shrink-0 whitespace-nowrap"
+            >
+              New Rule
+            </a>
+          </div>
+        </div>
+      </div>
 
       <DataTable
         data-testid="table-rules"

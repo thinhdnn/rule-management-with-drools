@@ -23,25 +23,25 @@ export function FilterRow({ onChange, defaults }: Props) {
   }, [payload, onChange])
 
   return (
-    <section className="bg-surfaceContainerHighest rounded-md p-4 flex flex-col md:flex-row gap-3 items-stretch" aria-label="Filters">
+    <section className="bg-surface rounded-lg border border-border p-4 flex flex-col md:flex-row gap-3 items-stretch shadow-card" aria-label="Filters">
       <div className="relative flex-1" data-testid="filter-search">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} aria-hidden="true" />
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-text-tertiary" size={18} aria-hidden="true" />
         <input
-          className="w-full h-10 pl-9 pr-3 rounded-md bg-white border border-outlineVariant focus-ring"
+          className="w-full h-10 pl-9 pr-3 rounded-lg bg-surface border border-border focus-ring transition-smooth text-text-primary placeholder:text-text-muted hover:border-primary/30 focus:border-primary focus:ring-2 focus:ring-primary/10"
           placeholder="Search by name/type…"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
       </div>
 
-      <select className="h-10 px-3 rounded-md bg-white border border-outlineVariant focus-ring" value={docType} onChange={(e) => setDocType(e.target.value)} data-testid="filter-doc" aria-label="Document Type">
+      <select className="h-10 px-3 rounded-lg bg-surface border border-border focus-ring transition-smooth text-text-primary hover:border-primary/30 focus:border-primary focus:ring-2 focus:ring-primary/10 cursor-pointer" value={docType} onChange={(e) => setDocType(e.target.value)} data-testid="filter-doc" aria-label="Document Type">
         <option value="">Document Type: All</option>
         <option>Import Declaration</option>
         <option>Valuation</option>
         <option>Container</option>
       </select>
 
-      <select className="h-10 px-3 rounded-md bg-white border border-outlineVariant focus-ring" value={ruleType} onChange={(e) => setRuleType(e.target.value)} data-testid="filter-type" aria-label="Rule Type">
+      <select className="h-10 px-3 rounded-lg bg-surface border border-border focus-ring transition-smooth text-text-primary hover:border-primary/30 focus:border-primary focus:ring-2 focus:ring-primary/10 cursor-pointer" value={ruleType} onChange={(e) => setRuleType(e.target.value)} data-testid="filter-type" aria-label="Rule Type">
         <option value="">Rule Type: All</option>
         <option>Risk</option>
         <option>Classification</option>
@@ -49,14 +49,14 @@ export function FilterRow({ onChange, defaults }: Props) {
         <option>Valuation</option>
       </select>
 
-      <select className="h-10 px-3 rounded-md bg-white border border-outlineVariant focus-ring" value={status} onChange={(e) => setStatus(e.target.value)} data-testid="filter-status" aria-label="Status">
+      <select className="h-10 px-3 rounded-lg bg-surface border border-border focus-ring transition-smooth text-text-primary hover:border-primary/30 focus:border-primary focus:ring-2 focus:ring-primary/10 cursor-pointer" value={status} onChange={(e) => setStatus(e.target.value)} data-testid="filter-status" aria-label="Status">
         <option value="">Status: All</option>
         <option>Active</option>
         <option>Draft</option>
         <option>Inactive</option>
       </select>
 
-      <a href="/rules/new" data-testid="btn-new-rule" className="h-10 inline-flex items-center justify-center px-4 rounded-md bg-primary text-white font-medium focus-ring">New Rule</a>
+      <a href="/rules/new" data-testid="btn-new-rule" className="h-10 inline-flex items-center justify-center px-4 rounded-lg bg-primary text-white font-medium focus-ring transition-smooth hover:bg-primary-light shadow-sm cursor-pointer">New Rule</a>
     </section>
   )
 }

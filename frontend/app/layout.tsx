@@ -4,6 +4,7 @@ import { Providers } from '@/components/Providers'
 import { AuthProvider } from '@/components/AuthProvider'
 import { AuthGate } from '@/components/AuthGate'
 import { AppShell } from '@/components/AppShell'
+import { ToastProvider } from '@/components/Toast'
 
 export const metadata = {
   title: 'Rule Management',
@@ -16,11 +17,13 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       <body className="antialiased">
         <Providers>
           <AuthProvider>
-            <AuthGate>
-              <AppShell>
-                {children}
-              </AppShell>
-            </AuthGate>
+            <ToastProvider>
+              <AuthGate>
+                <AppShell>
+                  {children}
+                </AppShell>
+              </AuthGate>
+            </ToastProvider>
           </AuthProvider>
         </Providers>
       </body>

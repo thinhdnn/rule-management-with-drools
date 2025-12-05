@@ -7,6 +7,8 @@ import { api, fetchApi } from '@/lib/api'
 import { useAuth } from '@/components/AuthProvider'
 import { UserTimeMeta } from '@/components/UserTimeMeta'
 import { formatDateTime } from '@/lib/datetime'
+import { useKeyboardShortcuts } from '@/lib/useKeyboardShortcuts'
+import { useToast } from '@/components/Toast'
 
 export type ChangeRequest = {
   id: number
@@ -52,6 +54,7 @@ type ChangeRequestValidationResult = {
 export default function ChangeRequestsPage() {
   const router = useRouter()
   const { user } = useAuth()
+  const toast = useToast()
   const [factTypes, setFactTypes] = useState<string[]>([])
   const [selectedFactType, setSelectedFactType] = useState<string>('All')
   const [selectedStatus, setSelectedStatus] = useState<string>('All')
@@ -67,6 +70,13 @@ export default function ChangeRequestsPage() {
   const [selectedDeploymentId, setSelectedDeploymentId] = useState<number | null>(null)
   const [deployNowReason, setDeployNowReason] = useState<string>('')
   const [changeRequestRules, setChangeRequestRules] = useState<Map<number, any>>(new Map())
+  const [showRejectModal, setShowRejectModal] = useState(false)
+  const [rejectingId, setRejectingId] = useState<number | null>(null)
+  const [rejectionReason, setRejectionReason] = useState<string>('')
+  const [showCancelConfirmModal, setShowCancelConfirmModal] = useState(false)
+  const [cancellingId, setCancellingId] = useState<number | null>(null)
+  const [showCancelDeploymentModal, setShowCancelDeploymentModal] = useState(false)
+  const [cancellingDeploymentId, setCancellingDeploymentId] = useState<number | null>(null)
   const [createForm, setCreateForm] = useState({
     factType: 'Declaration',
     title: '',
@@ -80,6 +90,42 @@ export default function ChangeRequestsPage() {
 
   // Check if current user is administrator
   const isAdministrator = user?.roles?.includes('RULE_ADMINISTRATOR') ?? false
+
+  // Keyboard shortcuts for modals
+  useKeyboardShortcuts({
+    onEscape: () => {
+      if (showCreateModal) {
+        setShowCreateModal(false)
+        setPreviewChanges(null)
+        setPreviewRules(new Map())
+        setValidationResult(null)
+      } else if (showDetailModal) {
+        setShowDetailModal(false)
+        setSelectedChangeRequest(null)
+        setChangeRequestRules(new Map())
+      } else if (showDeploymentModal) {
+        setShowDeploymentModal(false)
+      } else if (showDeployNowModal) {
+        setShowDeployNowModal(false)
+      }
+    },
+    onEnter: (e) => {
+      // Only handle Enter in modals, not in inputs
+      const target = e.target as HTMLElement
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT') {
+        return
+      }
+      
+      // If in create modal and form is valid, create
+      if (showCreateModal && createForm.title && createForm.factType && !previewLoading && !validationLoading) {
+        const submitButton = document.querySelector('[data-testid="create-change-request-btn"]') as HTMLButtonElement
+        if (submitButton && !submitButton.disabled) {
+          handleCreate()
+        }
+      }
+    },
+    enabled: showCreateModal || showDetailModal || showDeploymentModal || showDeployNowModal,
+  })
 
   // Load fact types on mount
   useEffect(() => {
@@ -196,13 +242,13 @@ export default function ChangeRequestsPage() {
 
   const handleCreate = async () => {
     if (!createForm.factType) {
-      alert('Please select a fact type before submitting.')
+      toast.showWarning('Please select a fact type before submitting.')
       return
     }
 
     const validation = await validateCurrentChanges()
     if (!validation || !validation.success) {
-      alert(validation?.message || 'Validation failed. Please fix issues before submitting.')
+      toast.showError(validation?.message || 'Validation failed. Please fix issues before submitting.')
       return
     }
 
@@ -225,16 +271,16 @@ export default function ChangeRequestsPage() {
         description: '',
       })
       refetch()
-      alert(response.message || 'Change request created successfully!')
+      toast.showSuccess(response.message || 'Change request created successfully!')
     } catch (err) {
       console.error('Failed to create change request:', err)
-      alert(err instanceof Error ? err.message : 'Failed to create change request')
+      toast.showError(err instanceof Error ? err.message : 'Failed to create change request')
     }
   }
 
   const handleValidateBuild = async () => {
     if (!createForm.factType) {
-      alert('Please select a fact type before validating.')
+      toast.showWarning('Please select a fact type before validating.')
       return
     }
     await validateCurrentChanges()
@@ -259,12 +305,12 @@ export default function ChangeRequestsPage() {
     // Validate scheduled deployment
     if (deploymentOption === 'SCHEDULED') {
       if (!scheduledTime) {
-        alert('Please select a scheduled time')
+        toast.showWarning('Please select a scheduled time')
         return
       }
       const scheduled = new Date(scheduledTime)
       if (scheduled <= new Date()) {
-        alert('Scheduled time must be in the future')
+        toast.showWarning('Scheduled time must be in the future')
         return
       }
     }
@@ -291,47 +337,81 @@ export default function ChangeRequestsPage() {
       refetch()
 
       if (deploymentOption === 'IMMEDIATE') {
-        alert('Change request approved and rules deployed successfully!')
+        toast.showSuccess('Change request approved and rules deployed successfully!')
       } else {
-        alert(`Change request approved! Deployment scheduled for ${new Date(scheduledTime).toLocaleString()}`)
+        toast.showSuccess(`Change request approved! Deployment scheduled for ${new Date(scheduledTime).toLocaleString()}`)
       }
     } catch (err) {
       console.error('Failed to approve change request:', err)
-      alert(err instanceof Error ? err.message : 'Failed to approve change request')
+      toast.showError(err instanceof Error ? err.message : 'Failed to approve change request')
     }
   }
 
-  const handleReject = async (id: number) => {
-    const reason = prompt('Please provide a reason for rejection:')
-    if (!reason) return
-
-    try {
-      await fetchApi(api.changeRequests.reject(id), {
-        method: 'POST',
-        body: JSON.stringify({ rejectionReason: reason }),
-      })
-      refetch()
-      alert('Change request rejected successfully!')
-    } catch (err) {
-      console.error('Failed to reject change request:', err)
-      alert(err instanceof Error ? err.message : 'Failed to reject change request')
-    }
+  const handleReject = (id: number) => {
+    setRejectingId(id)
+    setRejectionReason('')
+    setShowRejectModal(true)
   }
 
-  const handleCancel = async (id: number) => {
-    if (!confirm('Are you sure you want to cancel this change request?')) {
+  const confirmReject = async () => {
+    if (!rejectingId) return
+    if (!rejectionReason.trim()) {
+      toast.showWarning('Please provide a reason for rejection')
       return
     }
 
     try {
-      await fetchApi(api.changeRequests.cancel(id), {
+      await fetchApi(api.changeRequests.reject(rejectingId), {
+        method: 'POST',
+        body: JSON.stringify({ rejectionReason: rejectionReason.trim() }),
+      })
+      refetch()
+      toast.showSuccess('Change request rejected successfully!')
+      setShowRejectModal(false)
+      setRejectingId(null)
+      setRejectionReason('')
+    } catch (err) {
+      console.error('Failed to reject change request:', err)
+      toast.showError(err instanceof Error ? err.message : 'Failed to reject change request')
+    }
+  }
+
+  const handleCancel = (id: number) => {
+    setCancellingId(id)
+    setShowCancelConfirmModal(true)
+  }
+
+  const confirmCancel = async () => {
+    if (!cancellingId) return
+
+    try {
+      await fetchApi(api.changeRequests.cancel(cancellingId), {
         method: 'POST',
       })
       refetch()
-      alert('Change request cancelled successfully!')
+      toast.showSuccess('Change request cancelled successfully!')
+      setShowCancelConfirmModal(false)
+      setCancellingId(null)
     } catch (err) {
       console.error('Failed to cancel change request:', err)
-      alert(err instanceof Error ? err.message : 'Failed to cancel change request')
+      toast.showError(err instanceof Error ? err.message : 'Failed to cancel change request')
+    }
+  }
+
+  const confirmCancelDeployment = async () => {
+    if (!cancellingDeploymentId) return
+
+    try {
+      await fetchApi(api.changeRequests.scheduledDeployments.cancel(cancellingDeploymentId), {
+        method: 'POST',
+      })
+      refetchScheduled()
+      toast.showSuccess('Deployment cancelled successfully')
+      setShowCancelDeploymentModal(false)
+      setCancellingDeploymentId(null)
+    } catch (err) {
+      console.error('Failed to cancel deployment:', err)
+      toast.showError(err instanceof Error ? err.message : 'Failed to cancel deployment')
     }
   }
 
@@ -414,16 +494,16 @@ export default function ChangeRequestsPage() {
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-6">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold flex items-center gap-2">
+        <h1 className="page-title flex items-center gap-2">
           <FileCheck className="w-6 h-6" />
           Change Requests
         </h1>
         <button
           onClick={() => setShowCreateModal(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 focus-ring"
+          className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-light transition-smooth shadow-sm cursor-pointer focus-ring"
         >
           <Plus size={16} />
           New Change Request
@@ -431,34 +511,34 @@ export default function ChangeRequestsPage() {
       </div>
 
       {/* Tab Navigation */}
-      <div className="flex border-b border-slate-200">
+      <div className="flex border-b border-border">
         <button
           onClick={() => setCurrentTab('requests')}
-          className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
+          className={`px-6 py-3 text-body-sm font-medium border-b-2 transition-smooth cursor-pointer ${
             currentTab === 'requests'
-              ? 'border-indigo-600 text-indigo-600'
-              : 'border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300'
+              ? 'border-primary text-primary'
+              : 'border-transparent text-text-secondary hover:text-text-primary hover:border-border'
           }`}
         >
           Change Requests
           {changeRequests && changeRequests.length > 0 && (
-            <span className="ml-2 px-2 py-0.5 text-xs rounded-full bg-slate-100 text-slate-700">
+            <span className="ml-2 px-2 py-0.5 text-body-xs rounded-lg bg-surfaceContainerHigh text-text-secondary">
               {changeRequests.length}
             </span>
           )}
         </button>
         <button
           onClick={() => setCurrentTab('scheduled')}
-          className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
+          className={`px-6 py-3 text-body-sm font-medium border-b-2 transition-smooth cursor-pointer ${
             currentTab === 'scheduled'
-              ? 'border-indigo-600 text-indigo-600'
-              : 'border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300'
+              ? 'border-primary text-primary'
+              : 'border-transparent text-text-secondary hover:text-text-primary hover:border-border'
           }`}
         >
           <Clock className="w-4 h-4 inline mr-2" />
           Scheduled Deployments
           {scheduledDeployments && scheduledDeployments.length > 0 && (
-            <span className="ml-2 px-2 py-0.5 text-xs rounded-full bg-slate-100 text-slate-700">
+            <span className="ml-2 px-2 py-0.5 text-body-xs rounded-lg bg-surfaceContainerHigh text-text-secondary">
               {scheduledDeployments.length}
             </span>
           )}
@@ -515,15 +595,15 @@ export default function ChangeRequestsPage() {
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead className="bg-slate-50 border-b border-outlineVariant">
-                <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-slate-700 uppercase">ID</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-slate-700 uppercase">Title</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-slate-700 uppercase">Fact Type</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-slate-700 uppercase">Status</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-slate-700 uppercase">Created</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-slate-700 uppercase">Actions</th>
-                </tr>
-              </thead>
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase">ID</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase">Title</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase">Fact Type</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase">Status</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase">Created</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase">Actions</th>
+                  </tr>
+                </thead>
               <tbody className="divide-y divide-outlineVariant">
                 {changeRequests.map((cr) => (
                   <tr
@@ -608,13 +688,13 @@ export default function ChangeRequestsPage() {
               <table className="w-full">
                 <thead className="bg-slate-50 border-b border-outlineVariant">
                   <tr>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-slate-600 uppercase">ID</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-slate-600 uppercase">Fact Type</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-slate-600 uppercase">Scheduled Time</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-slate-600 uppercase">Status</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-slate-600 uppercase">Retries</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-slate-600 uppercase">Notes</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-slate-600 uppercase">Actions</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">ID</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">Fact Type</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">Scheduled Time</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">Status</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">Retries</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">Notes</th>
+                    <th className="px-4 py-3 text-right text-xs font-semibold text-slate-600 uppercase">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-outlineVariant">
@@ -698,19 +778,9 @@ export default function ChangeRequestsPage() {
                               Deploy Now
                             </button>
                             <button
-                              onClick={async () => {
-                                if (confirm('Cancel this scheduled deployment?')) {
-                                  try {
-                                    await fetchApi(api.changeRequests.scheduledDeployments.cancel(deployment.id), {
-                                      method: 'POST',
-                                    })
-                                    refetchScheduled()
-                                    alert('Deployment cancelled successfully')
-                                  } catch (err) {
-                                    console.error('Failed to cancel deployment:', err)
-                                    alert(err instanceof Error ? err.message : 'Failed to cancel deployment')
-                                  }
-                                }
+                              onClick={() => {
+                                setCancellingDeploymentId(deployment.id)
+                                setShowCancelDeploymentModal(true)
                               }}
                               className="px-3 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700 focus-ring"
                             >
@@ -738,7 +808,7 @@ export default function ChangeRequestsPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
           <div className="bg-white rounded-lg shadow-lg w-full max-w-2xl max-h-[90vh] overflow-y-auto">
             <div className="p-6 border-b border-outlineVariant">
-              <h2 className="text-xl font-semibold">Create Change Request</h2>
+              <h2 className="section-title">Create Change Request</h2>
             </div>
             <div className="p-6 space-y-4">
               {/* Fact Type */}
@@ -862,16 +932,16 @@ export default function ChangeRequestsPage() {
                               <table className="w-full text-sm">
                                 <thead className="bg-slate-50 border-b border-outlineVariant sticky top-0">
                                   <tr>
-                                    <th className="px-3 py-2 text-left text-xs font-medium text-slate-700 uppercase">
+                                    <th className="px-3 py-2 text-left text-xs font-semibold text-slate-700 uppercase">
                                       Change
                                     </th>
-                                    <th className="px-3 py-2 text-left text-xs font-medium text-slate-700 uppercase">
+                                    <th className="px-3 py-2 text-left text-xs font-semibold text-slate-700 uppercase">
                                       Rule ID
                                     </th>
-                                    <th className="px-3 py-2 text-left text-xs font-medium text-slate-700 uppercase">
+                                    <th className="px-3 py-2 text-left text-xs font-semibold text-slate-700 uppercase">
                                       Rule Name
                                     </th>
-                                    <th className="px-3 py-2 text-left text-xs font-medium text-slate-700 uppercase">
+                                    <th className="px-3 py-2 text-left text-xs font-semibold text-slate-700 uppercase">
                                       Status
                                     </th>
                                   </tr>
@@ -1095,7 +1165,7 @@ export default function ChangeRequestsPage() {
           <div className="bg-white rounded-lg shadow-lg w-full max-w-4xl max-h-[90vh] overflow-y-auto">
             <div className="p-6 border-b border-outlineVariant">
               <div className="flex items-center justify-between">
-                <h2 className="text-xl font-semibold">Change Request Details</h2>
+                <h2 className="section-title">Change Request Details</h2>
                 <button
                   onClick={() => {
                     setShowDetailModal(false)
@@ -1240,11 +1310,11 @@ export default function ChangeRequestsPage() {
                       <table className="w-full">
                         <thead className="bg-slate-50 border-b border-outlineVariant">
                           <tr>
-                            <th className="px-4 py-2 text-left text-xs font-medium text-slate-700 uppercase">Action</th>
-                            <th className="px-4 py-2 text-left text-xs font-medium text-slate-700 uppercase">Rule ID</th>
-                            <th className="px-4 py-2 text-left text-xs font-medium text-slate-700 uppercase">Rule Name</th>
-                            <th className="px-4 py-2 text-left text-xs font-medium text-slate-700 uppercase">Status</th>
-                            <th className="px-4 py-2 text-center text-xs font-medium text-slate-700 uppercase">Actions</th>
+                            <th className="px-4 py-2 text-left text-xs font-semibold text-slate-700 uppercase">Action</th>
+                            <th className="px-4 py-2 text-left text-xs font-semibold text-slate-700 uppercase">Rule ID</th>
+                            <th className="px-4 py-2 text-left text-xs font-semibold text-slate-700 uppercase">Rule Name</th>
+                            <th className="px-4 py-2 text-left text-xs font-semibold text-slate-700 uppercase">Status</th>
+                            <th className="px-4 py-2 text-center text-xs font-semibold text-slate-700 uppercase">Actions</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-outlineVariant">
@@ -1447,7 +1517,7 @@ export default function ChangeRequestsPage() {
           <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
             <div className="p-6">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-semibold text-slate-900 flex items-center gap-2">
+                <h2 className="section-title flex items-center gap-2">
                   <Package className="w-5 h-5 text-indigo-600" />
                   Deployment Options
                 </h2>
@@ -1574,7 +1644,7 @@ export default function ChangeRequestsPage() {
           <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
             <div className="p-6">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-semibold text-slate-900 flex items-center gap-2">
+                <h2 className="section-title flex items-center gap-2">
                   <Package className="w-5 h-5 text-green-600" />
                   Deploy Now
                 </h2>
@@ -1633,7 +1703,7 @@ export default function ChangeRequestsPage() {
                 <button
                   onClick={async () => {
                     if (!deployNowReason.trim()) {
-                      alert('Please provide a reason for immediate deployment')
+                      toast.showWarning('Please provide a reason for immediate deployment')
                       return
                     }
 
@@ -1646,10 +1716,10 @@ export default function ChangeRequestsPage() {
                       setSelectedDeploymentId(null)
                       setDeployNowReason('')
                       refetchScheduled()
-                      alert('Deployment executed immediately')
+                      toast.showSuccess('Deployment executed immediately')
                     } catch (err) {
                       console.error('Failed to deploy immediately:', err)
-                      alert(err instanceof Error ? err.message : 'Failed to deploy immediately')
+                      toast.showError(err instanceof Error ? err.message : 'Failed to deploy immediately')
                     }
                   }}
                   className="px-4 py-2 text-sm bg-green-600 text-white rounded-md hover:bg-green-700 focus-ring flex items-center gap-2"
@@ -1658,6 +1728,125 @@ export default function ChangeRequestsPage() {
                   Deploy Now
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reject Modal */}
+      {showRejectModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowRejectModal(false)}>
+          <div className="bg-surface rounded-lg border border-border shadow-card p-6 max-w-md w-full mx-4" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-text-primary mb-4">Reject Change Request</h3>
+            <p className="text-body-sm text-text-secondary mb-4">Please provide a reason for rejection:</p>
+            <textarea
+              value={rejectionReason}
+              onChange={(e) => setRejectionReason(e.target.value)}
+              placeholder="Enter rejection reason..."
+              className="w-full h-24 px-3 py-2 rounded-lg bg-surface border border-border focus-ring transition-smooth text-text-primary text-body-sm placeholder:text-text-muted hover:border-primary/30 focus:border-primary focus:ring-2 focus:ring-primary/10 resize-none"
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') {
+                  setShowRejectModal(false)
+                  setRejectingId(null)
+                  setRejectionReason('')
+                } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                  e.preventDefault()
+                  confirmReject()
+                }
+              }}
+            />
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                onClick={() => {
+                  setShowRejectModal(false)
+                  setRejectingId(null)
+                  setRejectionReason('')
+                }}
+                className="px-4 py-2 text-sm text-slate-700 border border-slate-300 rounded-md hover:bg-slate-50 focus-ring"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmReject}
+                className="px-4 py-2 text-sm bg-red-600 text-white rounded-md hover:bg-red-700 focus-ring"
+              >
+                Reject
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Cancel Confirm Modal */}
+      {showCancelConfirmModal && (
+        <div 
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" 
+          onClick={() => setShowCancelConfirmModal(false)}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') {
+              setShowCancelConfirmModal(false)
+              setCancellingId(null)
+            }
+          }}
+          tabIndex={-1}
+        >
+          <div className="bg-surface rounded-lg border border-border shadow-card p-6 max-w-md w-full mx-4" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-text-primary mb-4">Cancel Change Request</h3>
+            <p className="text-body-sm text-text-secondary mb-6">Are you sure you want to cancel this change request?</p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowCancelConfirmModal(false)
+                  setCancellingId(null)
+                }}
+                className="px-4 py-2 text-sm text-slate-700 border border-slate-300 rounded-md hover:bg-slate-50 focus-ring"
+              >
+                No
+              </button>
+              <button
+                onClick={confirmCancel}
+                className="px-4 py-2 text-sm bg-slate-600 text-white rounded-md hover:bg-slate-700 focus-ring"
+              >
+                Yes, Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Cancel Deployment Confirm Modal */}
+      {showCancelDeploymentModal && (
+        <div 
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" 
+          onClick={() => setShowCancelDeploymentModal(false)}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') {
+              setShowCancelDeploymentModal(false)
+              setCancellingDeploymentId(null)
+            }
+          }}
+          tabIndex={-1}
+        >
+          <div className="bg-surface rounded-lg border border-border shadow-card p-6 max-w-md w-full mx-4" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-text-primary mb-4">Cancel Scheduled Deployment</h3>
+            <p className="text-body-sm text-text-secondary mb-6">Are you sure you want to cancel this scheduled deployment?</p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowCancelDeploymentModal(false)
+                  setCancellingDeploymentId(null)
+                }}
+                className="px-4 py-2 text-sm text-slate-700 border border-slate-300 rounded-md hover:bg-slate-50 focus-ring"
+              >
+                No
+              </button>
+              <button
+                onClick={confirmCancelDeployment}
+                className="px-4 py-2 text-sm bg-red-600 text-white rounded-md hover:bg-red-700 focus-ring"
+              >
+                Yes, Cancel
+              </button>
             </div>
           </div>
         </div>

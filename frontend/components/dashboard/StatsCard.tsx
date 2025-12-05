@@ -6,15 +6,15 @@ import { useMemo } from 'react'
 
 const accentStyles: Record<DashboardAccent, string> = {
   indigo:
-    'bg-indigo-50 text-indigo-700 ring-1 ring-inset ring-indigo-100 dark:bg-indigo-950/30 dark:text-indigo-200',
+    'bg-primary-bg text-primary ring-1 ring-inset ring-primary/20',
   green:
-    'bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-100 dark:bg-emerald-950/20 dark:text-emerald-200',
+    'bg-success-bg text-success ring-1 ring-inset ring-success/20',
   blue:
-    'bg-sky-50 text-sky-700 ring-1 ring-inset ring-sky-100 dark:bg-sky-950/20 dark:text-sky-200',
+    'bg-accent-bg text-accent ring-1 ring-inset ring-accent/20',
   orange:
-    'bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-100 dark:bg-amber-950/20 dark:text-amber-200',
+    'bg-warning-bg text-warning ring-1 ring-inset ring-warning/20',
   pink:
-    'bg-fuchsia-50 text-fuchsia-700 ring-1 ring-inset ring-fuchsia-100 dark:bg-fuchsia-950/20 dark:text-fuchsia-200',
+    'bg-secondary-bg text-secondary ring-1 ring-inset ring-secondary/20',
 }
 
 const formatter = new Intl.NumberFormat('en-US')
@@ -30,22 +30,22 @@ export function StatsCard({
   const trendPrefix = trend?.positive === false ? '−' : '+'
 
   return (
-    <div className="group relative overflow-hidden rounded-2xl border border-slate-100 bg-white p-6 shadow-sm transition hover:-translate-y-1 hover:shadow-lg">
+    <div className="group relative overflow-hidden rounded-xl border border-border bg-surface p-6 shadow-card transition-smooth hover:shadow-card-hover hover:-translate-y-0.5 cursor-pointer">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <p className="text-sm font-medium text-slate-500">{title}</p>
-          <p className="mt-3 text-3xl font-semibold text-slate-900 tracking-tight">{formattedValue}</p>
+          <p className="text-sm font-medium text-text-tertiary">{title}</p>
+          <p className="mt-3 text-3xl font-semibold text-text-primary tracking-tight">{formattedValue}</p>
         </div>
-        <div className={cn('rounded-2xl p-3 text-xl', accentStyles[color])}>
+        <div className={cn('rounded-lg p-3', accentStyles[color])}>
           <Icon className="h-6 w-6" strokeWidth={1.6} />
         </div>
       </div>
       {trend && (
-        <div className="mt-4 flex items-center text-sm text-slate-500">
+        <div className="mt-4 flex items-center text-sm text-text-tertiary">
           <span
             className={cn(
-              'mr-2 rounded-full px-2 py-0.5 text-xs font-medium',
-              trend.positive === false ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-600',
+              'mr-2 rounded-lg px-2.5 py-1 text-xs font-medium',
+              trend.positive === false ? 'bg-error-bg text-error' : 'bg-success-bg text-success',
             )}
           >
             {trendPrefix}
@@ -57,12 +57,12 @@ export function StatsCard({
       <div
         aria-hidden
         className={cn(
-          'pointer-events-none absolute inset-x-4 bottom-0 h-24 rounded-t-[48px] blur-3xl transition',
-          color === 'indigo' && 'bg-indigo-200/40 group-hover:bg-indigo-300/60',
-          color === 'green' && 'bg-emerald-200/40 group-hover:bg-emerald-300/60',
-          color === 'blue' && 'bg-sky-200/40 group-hover:bg-sky-300/60',
-          color === 'orange' && 'bg-amber-200/40 group-hover:bg-amber-300/60',
-          color === 'pink' && 'bg-fuchsia-200/40 group-hover:bg-fuchsia-300/60',
+          'pointer-events-none absolute inset-x-4 bottom-0 h-24 rounded-t-[48px] blur-3xl opacity-30 transition-opacity group-hover:opacity-40',
+          color === 'indigo' && 'bg-primary-lighter',
+          color === 'green' && 'bg-success-light',
+          color === 'blue' && 'bg-accent-light',
+          color === 'orange' && 'bg-warning-light',
+          color === 'pink' && 'bg-secondary-light',
         )}
       />
     </div>

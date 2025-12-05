@@ -28,10 +28,10 @@ export function Sidebar() {
 
   const Drawer = (
     <aside
-      className="w-[280px] shrink-0 bg-surfaceContainer border-r border-outlineVariant h-screen sticky top-0 hidden lg:block"
+      className="w-[260px] shrink-0 bg-surface border-r border-border h-screen sticky top-0 hidden lg:block"
       aria-label="Sidebar Navigation"
     >
-      <nav className="p-3">
+      <nav className="p-4">
         <ul className="space-y-1">
           {navItems.map((item) => {
             const active = pathname.startsWith(item.href) && item.href !== '/'
@@ -41,21 +41,25 @@ export function Sidebar() {
                 <Link
                   data-testid={item.testId}
                   href={item.href}
-                  className={`group flex items-center gap-3 h-12 px-3 rounded-md focus-ring ${
+                  className={`group flex items-center gap-3 h-11 px-3 rounded-lg focus-ring transition-smooth cursor-pointer ${
                     active
-                      ? 'bg-indigo-50 text-indigo-700 border-l-4 border-indigo-500'
-                      : 'text-slate-600 hover:bg-surfaceContainerHigh'
+                      ? 'bg-primary-bg text-primary border-l-2 border-primary shadow-sm'
+                      : 'text-text-secondary hover:bg-surfaceContainerHigh hover:text-text-primary'
                   }`}
                 >
-                  <Icon size={20} />
+                  <Icon size={20} className={active ? 'text-primary' : ''} />
                   <span className="text-sm font-medium">{item.label}</span>
                 </Link>
               </li>
             )
           })}
-          <li><div className="my-2 h-px bg-outlineVariant" /></li>
+          <li><div className="my-3 h-px bg-border-light" /></li>
           <li>
-            <Link href="/settings" data-testid="sidebar-settings-item" className="flex items-center gap-3 h-12 px-3 rounded-md text-slate-600 hover:bg-surfaceContainerHigh focus-ring">
+            <Link 
+              href="/settings" 
+              data-testid="sidebar-settings-item" 
+              className="flex items-center gap-3 h-11 px-3 rounded-lg text-text-secondary hover:bg-surfaceContainerHigh hover:text-text-primary focus-ring transition-smooth cursor-pointer"
+            >
               <Settings size={20} />
               <span className="text-sm font-medium">Settings</span>
             </Link>
@@ -67,18 +71,27 @@ export function Sidebar() {
 
   const Sheet = (
     <div className={`fixed inset-0 z-50 lg:hidden ${open ? '' : 'pointer-events-none'}`} aria-hidden={!open}>
-      <div className={`absolute inset-0 bg-black/30 transition-opacity ${open ? 'opacity-100' : 'opacity-0'}`} onClick={() => setOpen(false)} />
-      <aside className={`absolute top-0 left-0 h-full w-[280px] bg-surfaceContainer border-r border-outlineVariant transition-transform ${open ? 'translate-x-0' : '-translate-x-full'}`}>
-        <nav className="p-3">
-          <button className="mb-2 text-sm text-slate-600 focus-ring" onClick={() => setOpen(false)}>Close</button>
+      <div className={`absolute inset-0 bg-black/20 backdrop-blur-sm transition-opacity ${open ? 'opacity-100' : 'opacity-0'}`} onClick={() => setOpen(false)} />
+      <aside className={`absolute top-0 left-0 h-full w-[260px] bg-surface border-r border-border transition-transform duration-300 ${open ? 'translate-x-0' : '-translate-x-full'}`}>
+        <nav className="p-4">
+          <button className="mb-4 text-sm text-text-secondary hover:text-text-primary focus-ring transition-smooth rounded-lg px-3 py-2 hover:bg-surfaceContainerHigh" onClick={() => setOpen(false)}>Close</button>
           <ul className="space-y-1">
             {navItems.concat([{ href: '/settings', label: 'Settings', icon: Settings, testId: 'sidebar-settings-item' }]).map((item) => {
               const Icon = item.icon
               const active = pathname.startsWith(item.href) && item.href !== '/'
               return (
                 <li key={item.href}>
-                  <Link data-testid={item.testId} href={item.href} onClick={() => setOpen(false)} className={`group flex items-center gap-3 h-12 px-3 rounded-md focus-ring ${active ? 'bg-indigo-50 text-indigo-700 border-l-4 border-indigo-500' : 'text-slate-600 hover:bg-surfaceContainerHigh'}`}>
-                    <Icon size={20} />
+                  <Link 
+                    data-testid={item.testId} 
+                    href={item.href} 
+                    onClick={() => setOpen(false)} 
+                    className={`group flex items-center gap-3 h-11 px-3 rounded-lg focus-ring transition-smooth cursor-pointer ${
+                      active 
+                        ? 'bg-primary-bg text-primary border-l-2 border-primary shadow-sm' 
+                        : 'text-text-secondary hover:bg-surfaceContainerHigh hover:text-text-primary'
+                    }`}
+                  >
+                    <Icon size={20} className={active ? 'text-primary' : ''} />
                     <span className="text-sm font-medium">{item.label}</span>
                   </Link>
                 </li>
