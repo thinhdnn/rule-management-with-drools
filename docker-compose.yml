@@ -39,7 +39,7 @@ services:
       - AI_API_KEY=${AI_API_KEY:-}
       - AI_PROVIDER=${AI_PROVIDER:-openrouter}
       - AI_BASE_URL=${AI_BASE_URL:-}
-      - AI_MODEL=${AI_MODEL:-openai/gpt-4o}
+      - AI_MODEL=${AI_MODEL:-openai/gpt-oss-120b:free}
     ports:
       - "9031:8080"
     depends_on:

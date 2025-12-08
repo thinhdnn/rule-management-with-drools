@@ -8,7 +8,7 @@
 ai:
   api-key: YOUR_AI_API_KEY_HERE
   provider: openrouter  # "openrouter" (default) or "openai"
-  model: openai/gpt-4o  # OpenRouter format: "provider/model-name" or OpenAI format: "gpt-4o"
+  model: openai/gpt-oss-120b:free  # OpenRouter format: "provider/model-name" or OpenAI format: "gpt-4o"
   enabled: true
 
 # Optional: Override other settings for development

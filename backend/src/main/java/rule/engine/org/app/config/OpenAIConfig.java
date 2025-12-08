@@ -21,7 +21,7 @@ public class OpenAIConfig {
     private String apiKey;
     private String provider = "openrouter"; // "openai" or "openrouter"
     private String baseUrl; // Optional, defaults based on provider
-    private String model = "openai/gpt-4o"; // OpenRouter format: "openai/gpt-4o" or "anthropic/claude-3.5-sonnet"
+    private String model = "openai/gpt-oss-120b:free"; // OpenRouter format: "openai/gpt-4o" or "anthropic/claude-3.5-sonnet"
     private Double temperature = 0.2;
     private Integer maxTokens = 2000;
     private Integer timeout = 30;

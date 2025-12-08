@@ -50,7 +50,7 @@ ai:
   api-key: ${AI_API_KEY:}
   provider: ${AI_PROVIDER:openrouter} # "openrouter" or "openai"
   base-url: ${AI_BASE_URL:} # Optional, defaults based on provider
-  model: ${AI_MODEL:openai/gpt-4o} # OpenRouter format: "provider/model-name"
+  model: ${AI_MODEL:openai/gpt-oss-120b:free} # OpenRouter format: "provider/model-name"
   temperature: 0.2
   max-tokens: 2000
   timeout: 30
