@@ -46,7 +46,11 @@ import rule.engine.org.app.domain.service.AIRuleGeneratorService;
 import rule.engine.org.app.domain.service.UserDisplayNameService;
 import rule.engine.org.app.domain.entity.ui.KieContainerVersion;
 import rule.engine.org.app.api.request.AIGenerateRuleRequest;
+import rule.engine.org.app.api.request.BatchAIGenerateRuleRequest;
+import rule.engine.org.app.api.request.BatchCreateRulesRequest;
 import rule.engine.org.app.api.response.AIGenerateRuleResponse;
+import rule.engine.org.app.api.response.BatchAIGenerateRuleResponse;
+import rule.engine.org.app.api.response.BatchCreateRulesResponse;
 import rule.engine.org.app.security.UserPrincipal;
 import rule.engine.org.app.util.RuleFieldExtractor;
 import rule.engine.org.app.util.DrlConstants;
@@ -174,6 +178,81 @@ public class RuleController {
     }
 
     /**
+     * Batch AI-powered rule generation endpoint.
+     * Accepts multiple natural language inputs and generates structured rules using AI in a single API call.
+     * This is more efficient than calling the single endpoint multiple times as it reduces token usage.
+     * IMPORTANT: This endpoint must be placed BEFORE the single ai-generate endpoint to avoid path conflicts.
+     */
+    @PostMapping(value = "/ai-generate/batch", consumes = org.springframework.http.MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<BatchAIGenerateRuleResponse> batchGenerateRulesFromNaturalLanguage(
+            @RequestBody BatchAIGenerateRuleRequest request) {
+        if (request == null || request.getRequests() == null || request.getRequests().isEmpty()) {
+            BatchAIGenerateRuleResponse errorResponse = BatchAIGenerateRuleResponse.builder()
+                .success(false)
+                .total(0)
+                .successful(0)
+                .failed(0)
+                .results(List.of())
+                .build();
+            return ResponseEntity.badRequest().body(errorResponse);
+        }
+
+        List<AIGenerateRuleResponse> results = new java.util.ArrayList<>();
+        int successful = 0;
+        int failed = 0;
+
+        // Use common fact type and context if provided, otherwise use from individual requests
+        String commonFactType = request.getFactType();
+        String commonAdditionalContext = request.getAdditionalContext();
+
+        for (AIGenerateRuleRequest singleRequest : request.getRequests()) {
+            try {
+                // Override fact type and context if provided at batch level
+                if (commonFactType != null) {
+                    singleRequest.setFactType(commonFactType);
+                }
+                if (commonAdditionalContext != null) {
+                    singleRequest.setAdditionalContext(commonAdditionalContext);
+                }
+                
+                // Generate rule using existing service
+                AIGenerateRuleResponse response = aiRuleGeneratorService.generateRule(singleRequest);
+                
+                if (response.getSuccess() && response.getValidation() != null && response.getValidation().getValid()) {
+                    successful++;
+                } else {
+                    failed++;
+                }
+                
+                results.add(response);
+                
+            } catch (Exception e) {
+                log.error("Error generating rule in batch: {}", e.getMessage(), e);
+                failed++;
+                AIGenerateRuleResponse errorResponse = AIGenerateRuleResponse.builder()
+                    .success(false)
+                    .errorMessage("Failed to generate rule: " + e.getMessage())
+                    .suggestions(List.of(
+                        "Please try rephrasing your request",
+                        "Ensure AI API (OpenRouter/OpenAI) is properly configured"
+                    ))
+                    .build();
+                results.add(errorResponse);
+            }
+        }
+
+        BatchAIGenerateRuleResponse batchResponse = BatchAIGenerateRuleResponse.builder()
+            .success(failed == 0)
+            .total(request.getRequests().size())
+            .successful(successful)
+            .failed(failed)
+            .results(results)
+            .build();
+
+        return ResponseEntity.ok(batchResponse);
+    }
+
+    /**
      * AI-powered rule generation endpoint.
      * Accepts natural language input and generates a structured rule using AI (OpenRouter or OpenAI).
      * Returns the generated rule for preview or saves it directly based on previewOnly flag.
@@ -293,88 +372,253 @@ public class RuleController {
         return ResponseEntity.ok(response);
     }
 
-    @PostMapping
+    /**
+     * Batch create multiple rules in a single API call.
+     * Returns results for each rule (success or error) in a single response.
+     * IMPORTANT: This endpoint must be placed BEFORE the single create endpoint to avoid path conflicts.
+     */
+    @PostMapping("/batch")
     @org.springframework.transaction.annotation.Transactional
-    public ResponseEntity<?> createRule(@RequestBody CreateRuleRequest request) {
-        // Build DecisionRule from request DTO
-        DecisionRule rule = buildRuleFromRequest(request);
-        
-        // Check for duplicate rule name (only check latest versions)
-        if (rule.getRuleName() != null) {
-            Optional<DecisionRule> existingRule = decisionRuleRepository.findByRuleNameAndIsLatestTrue(rule.getRuleName());
-            if (existingRule.isPresent()) {
-                ErrorResponse errorResponse = ErrorResponse.builder()
-                    .success(false)
-                    .error("Rule name already exists")
-                    .errorType("ValidationException")
-                    .build();
-                return ResponseEntity.badRequest().body(errorResponse);
-            }
-        }
-        
-        // Generate ruleContent before saving (uses placeholder ID 0 if rule not yet saved)
-        String ruleContent = buildCompleteDrlFromRequest(request, rule);
-        if (ruleContent == null || ruleContent.isBlank()) {
+    public ResponseEntity<?> batchCreateRules(@RequestBody BatchCreateRulesRequest request) {
+        if (request == null || request.getRules() == null || request.getRules().isEmpty()) {
             ErrorResponse errorResponse = ErrorResponse.builder()
                 .success(false)
-                .error("Failed to generate rule content: conditions or output are required")
+                .error("Rules list cannot be empty")
                 .errorType("ValidationException")
                 .build();
             return ResponseEntity.badRequest().body(errorResponse);
         }
-        rule.setRuleContent(ruleContent);
-        
-        // Save DecisionRule (now with ruleContent)
-        DecisionRule saved = decisionRuleRepository.save(rule);
-        
-        // Rebuild ruleContent with correct rule ID (if ID was used as placeholder)
-        if (saved.getId() != null && saved.getId() != 0L) {
-            String updatedRuleContent = buildCompleteDrlFromRequest(request, saved);
-            if (updatedRuleContent != null && !updatedRuleContent.isBlank()) {
-                saved.setRuleContent(updatedRuleContent);
-                saved = decisionRuleRepository.save(saved);
-            }
-        }
-        
-        // Parse and save conditions if provided
-        if (request.getConditions() != null && !request.getConditions().isEmpty()) {
+
+        List<BatchCreateRulesResponse.RuleSaveResult> results = new java.util.ArrayList<>();
+        int successful = 0;
+        int failed = 0;
+        FactType factType = null;
+
+        for (int i = 0; i < request.getRules().size(); i++) {
+            CreateRuleRequest ruleRequest = request.getRules().get(i);
+            BatchCreateRulesResponse.RuleSaveResult result = BatchCreateRulesResponse.RuleSaveResult.builder()
+                .index(i)
+                .ruleName(ruleRequest.getRuleName())
+                .success(false)
+                .build();
+
             try {
-                saveRuleConditions(saved, request.getConditions());
-                conditionGroupRepository.flush(); // Ensure conditions are persisted
-                conditionRepository.flush(); // Ensure conditions are persisted
-                int totalConditions = (request.getConditions().getAndConditions() != null ? request.getConditions().getAndConditions().size() : 0) +
-                                     (request.getConditions().getOrConditions() != null ? request.getConditions().getOrConditions().size() : 0);
-                log.info("Successfully saved {} conditions for rule {}", 
-                    totalConditions, saved.getId());
-            } catch (Exception ex) {
-                log.error("Failed to persist structured conditions for rule {}: {}", saved.getRuleName(), ex.getMessage(), ex);
-                throw ex; // Re-throw to fail the request
+                // Build DecisionRule from request DTO
+                DecisionRule rule = buildRuleFromRequest(ruleRequest);
+                
+                // Check for duplicate rule name (only check latest versions)
+                if (rule.getRuleName() != null) {
+                    Optional<DecisionRule> existingRule = decisionRuleRepository.findByRuleNameAndIsLatestTrue(rule.getRuleName());
+                    if (existingRule.isPresent()) {
+                        result.setSuccess(false);
+                        result.setError("Rule name already exists: " + rule.getRuleName());
+                        result.setErrorType("ValidationException");
+                        failed++;
+                        results.add(result);
+                        continue;
+                    }
+                }
+                
+                // Track fact type for rebuild (use first rule's fact type)
+                if (factType == null && rule.getFactType() != null) {
+                    factType = rule.getFactType();
+                }
+                
+                // Generate ruleContent before saving
+                String ruleContent = buildCompleteDrlFromRequest(ruleRequest, rule);
+                if (ruleContent == null || ruleContent.isBlank()) {
+                    result.setSuccess(false);
+                    result.setError("Failed to generate rule content: conditions or output are required");
+                    result.setErrorType("ValidationException");
+                    failed++;
+                    results.add(result);
+                    continue;
+                }
+                rule.setRuleContent(ruleContent);
+                
+                // Save DecisionRule
+                DecisionRule saved = decisionRuleRepository.save(rule);
+                
+                // Rebuild ruleContent with correct rule ID
+                if (saved.getId() != null && saved.getId() != 0L) {
+                    String updatedRuleContent = buildCompleteDrlFromRequest(ruleRequest, saved);
+                    if (updatedRuleContent != null && !updatedRuleContent.isBlank()) {
+                        saved.setRuleContent(updatedRuleContent);
+                        saved = decisionRuleRepository.save(saved);
+                    }
+                }
+                
+                // Parse and save conditions if provided
+                if (ruleRequest.getConditions() != null && !ruleRequest.getConditions().isEmpty()) {
+                    try {
+                        saveRuleConditions(saved, ruleRequest.getConditions());
+                        conditionGroupRepository.flush();
+                        conditionRepository.flush();
+                    } catch (Exception ex) {
+                        log.error("Failed to persist structured conditions for rule {}: {}", saved.getRuleName(), ex.getMessage(), ex);
+                        result.setSuccess(false);
+                        result.setError("Failed to save rule conditions: " + ex.getMessage());
+                        result.setErrorType(ex.getClass().getSimpleName());
+                        failed++;
+                        results.add(result);
+                        continue;
+                    }
+                }
+                
+                // Parse and save outputs if provided
+                if (ruleRequest.getOutput() != null) {
+                    try {
+                        saveRuleOutputs(saved, ruleRequest.getOutput());
+                        outputRepository.flush();
+                    } catch (Exception ex) {
+                        log.warn("Failed to persist rule outputs for rule {}: {}", saved.getRuleName(), ex.getMessage());
+                        // Output errors are non-critical, continue
+                    }
+                }
+                
+                // Mark as successful
+                result.setSuccess(true);
+                result.setRuleId(saved.getId());
+                successful++;
+                results.add(result);
+                
+            } catch (Exception e) {
+                log.error("Error creating rule at index {}: {}", i, e.getMessage(), e);
+                result.setSuccess(false);
+                result.setError(e.getMessage() != null ? e.getMessage() : "Failed to create rule: " + e.getClass().getSimpleName());
+                result.setErrorType(e.getClass().getSimpleName());
+                failed++;
+                results.add(result);
             }
         }
         
-        // Parse and save outputs if provided
-        if (request.getOutput() != null) {
-            try {
-                saveRuleOutputs(saved, request.getOutput());
-                outputRepository.flush(); // Ensure outputs are persisted
-            } catch (Exception ex) {
-                log.warn("Failed to persist rule outputs for rule {}: {}", saved.getRuleName(), ex.getMessage());
-            }
-        }
-        
-        // Flush all changes before reloading
+        // Flush all changes
         decisionRuleRepository.flush();
         
-        // Rebuild rules for this fact type
-        FactType factType = saved.getFactType() != null ? saved.getFactType() : FactType.DECLARATION;
-        ruleEngineManager.rebuildRules(factType.getValue());
+        // Rebuild rules for fact type (only once for all rules)
+        if (factType != null && successful > 0) {
+            try {
+                ruleEngineManager.rebuildRules(factType.getValue());
+            } catch (Exception ex) {
+                log.error("Failed to rebuild rules for fact type {}: {}", factType, ex.getMessage(), ex);
+                // Continue even if rebuild fails - rules are already saved
+            }
+        }
         
-        // Reload rule from database to ensure all associations are loaded
-        saved = decisionRuleRepository.findById(saved.getId()).orElse(saved);
+        BatchCreateRulesResponse response = BatchCreateRulesResponse.builder()
+            .success(failed == 0)
+            .total(request.getRules().size())
+            .successful(successful)
+            .failed(failed)
+            .results(results)
+            .build();
         
-        // Build response using DTO
-        RuleResponse response = buildRuleResponse(saved, request);
         return ResponseEntity.ok(response);
+    }
+
+    @PostMapping
+    @org.springframework.transaction.annotation.Transactional
+    public ResponseEntity<?> createRule(@RequestBody CreateRuleRequest request) {
+        try {
+            // Build DecisionRule from request DTO
+            DecisionRule rule = buildRuleFromRequest(request);
+            
+            // Check for duplicate rule name (only check latest versions)
+            if (rule.getRuleName() != null) {
+                Optional<DecisionRule> existingRule = decisionRuleRepository.findByRuleNameAndIsLatestTrue(rule.getRuleName());
+                if (existingRule.isPresent()) {
+                    ErrorResponse errorResponse = ErrorResponse.builder()
+                        .success(false)
+                        .error("Rule name already exists: " + rule.getRuleName())
+                        .errorType("ValidationException")
+                        .build();
+                    return ResponseEntity.badRequest().body(errorResponse);
+                }
+            }
+            
+            // Generate ruleContent before saving (uses placeholder ID 0 if rule not yet saved)
+            String ruleContent = buildCompleteDrlFromRequest(request, rule);
+            if (ruleContent == null || ruleContent.isBlank()) {
+                ErrorResponse errorResponse = ErrorResponse.builder()
+                    .success(false)
+                    .error("Failed to generate rule content: conditions or output are required")
+                    .errorType("ValidationException")
+                    .build();
+                return ResponseEntity.badRequest().body(errorResponse);
+            }
+            rule.setRuleContent(ruleContent);
+            
+            // Save DecisionRule (now with ruleContent)
+            DecisionRule saved = decisionRuleRepository.save(rule);
+            
+            // Rebuild ruleContent with correct rule ID (if ID was used as placeholder)
+            if (saved.getId() != null && saved.getId() != 0L) {
+                String updatedRuleContent = buildCompleteDrlFromRequest(request, saved);
+                if (updatedRuleContent != null && !updatedRuleContent.isBlank()) {
+                    saved.setRuleContent(updatedRuleContent);
+                    saved = decisionRuleRepository.save(saved);
+                }
+            }
+            
+            // Parse and save conditions if provided
+            if (request.getConditions() != null && !request.getConditions().isEmpty()) {
+                try {
+                    saveRuleConditions(saved, request.getConditions());
+                    conditionGroupRepository.flush(); // Ensure conditions are persisted
+                    conditionRepository.flush(); // Ensure conditions are persisted
+                    int totalConditions = (request.getConditions().getAndConditions() != null ? request.getConditions().getAndConditions().size() : 0) +
+                                         (request.getConditions().getOrConditions() != null ? request.getConditions().getOrConditions().size() : 0);
+                    log.info("Successfully saved {} conditions for rule {}", 
+                        totalConditions, saved.getId());
+                } catch (Exception ex) {
+                    log.error("Failed to persist structured conditions for rule {}: {}", saved.getRuleName(), ex.getMessage(), ex);
+                    ErrorResponse errorResponse = ErrorResponse.builder()
+                        .success(false)
+                        .error("Failed to save rule conditions: " + ex.getMessage())
+                        .errorType(ex.getClass().getSimpleName())
+                        .build();
+                    return ResponseEntity.badRequest().body(errorResponse);
+                }
+            }
+            
+            // Parse and save outputs if provided
+            if (request.getOutput() != null) {
+                try {
+                    saveRuleOutputs(saved, request.getOutput());
+                    outputRepository.flush(); // Ensure outputs are persisted
+                } catch (Exception ex) {
+                    log.warn("Failed to persist rule outputs for rule {}: {}", saved.getRuleName(), ex.getMessage());
+                    // Output errors are non-critical, but we should still log them
+                }
+            }
+            
+            // Flush all changes before reloading
+            decisionRuleRepository.flush();
+            
+            // Rebuild rules for this fact type
+            FactType factType = saved.getFactType() != null ? saved.getFactType() : FactType.DECLARATION;
+            try {
+                ruleEngineManager.rebuildRules(factType.getValue());
+            } catch (Exception ex) {
+                log.error("Failed to rebuild rules for fact type {}: {}", factType, ex.getMessage(), ex);
+                // Continue even if rebuild fails - rule is already saved
+            }
+            
+            // Reload rule from database to ensure all associations are loaded
+            saved = decisionRuleRepository.findById(saved.getId()).orElse(saved);
+            
+            // Build response using DTO
+            RuleResponse response = buildRuleResponse(saved, request);
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            log.error("Error creating rule", e);
+            ErrorResponse errorResponse = ErrorResponse.builder()
+                .success(false)
+                .error(e.getMessage() != null ? e.getMessage() : "Failed to create rule: " + e.getClass().getSimpleName())
+                .errorType(e.getClass().getSimpleName())
+                .build();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+        }
     }
 
     @PutMapping("/{id}")

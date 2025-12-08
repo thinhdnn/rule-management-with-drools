@@ -46,27 +46,27 @@ export default function ExecutionsPage() {
   }
 
   const ActionColor: Record<string, string> = {
-    FLAG: 'bg-error-bg text-error ring-1 ring-error/20',
-    APPROVE: 'bg-success-bg text-success ring-1 ring-success/20',
-    REJECT: 'bg-error-bg text-error ring-1 ring-error/20',
-    REVIEW: 'bg-warning-bg text-warning ring-1 ring-warning/20',
-    HOLD: 'bg-warning-bg text-warning ring-1 ring-warning/20',
+    FLAG: 'bg-error-bg dark:bg-error/20 text-error dark:text-error-light ring-1 ring-error/20 dark:ring-error/30',
+    APPROVE: 'bg-success-bg dark:bg-success/20 text-success dark:text-success-light ring-1 ring-success/20 dark:ring-success/30',
+    REJECT: 'bg-error-bg dark:bg-error/20 text-error dark:text-error-light ring-1 ring-error/20 dark:ring-error/30',
+    REVIEW: 'bg-warning-bg dark:bg-warning/20 text-warning dark:text-warning-light ring-1 ring-warning/20 dark:ring-warning/30',
+    HOLD: 'bg-warning-bg dark:bg-warning/20 text-warning dark:text-warning-light ring-1 ring-warning/20 dark:ring-warning/30',
   }
 
   const SourceColor: Record<string, string> = {
-    API: 'bg-accent-bg text-accent ring-1 ring-accent/20',
-    UI: 'bg-secondary-bg text-secondary ring-1 ring-secondary/20',
+    API: 'bg-accent-bg dark:bg-accent/20 text-accent dark:text-accent-light ring-1 ring-accent/20 dark:ring-accent/30',
+    UI: 'bg-secondary-bg dark:bg-secondary/20 text-secondary dark:text-secondary-light ring-1 ring-secondary/20 dark:ring-secondary/30',
   }
 
   const getActionColor = (action?: string) => {
-    if (!action) return 'bg-surfaceContainerHigh text-text-tertiary ring-1 ring-border'
-    return ActionColor[action] || 'bg-surfaceContainerHigh text-text-tertiary ring-1 ring-border'
+    if (!action) return 'bg-surfaceContainerHigh dark:bg-surfaceContainerHighest text-text-tertiary ring-1 ring-border'
+    return ActionColor[action] || 'bg-surfaceContainerHigh dark:bg-surfaceContainerHighest text-text-tertiary ring-1 ring-border'
   }
 
   if (error) {
     return (
       <div className="p-6">
-        <div className="bg-error-bg border border-error/20 rounded-lg p-4 text-error">
+        <div className="bg-error-bg dark:bg-error/10 border border-error/30 dark:border-error/20 rounded-lg p-4 text-error dark:text-error-light">
           Error loading executions. Please try again.
           <button
             onClick={() => refetch()}
@@ -107,7 +107,7 @@ export default function ExecutionsPage() {
           <select
             value={selectedSource}
             onChange={(e) => setSelectedSource(e.target.value)}
-            className="h-9 px-3 border border-border rounded-lg text-body-sm focus:outline-none focus:ring-2 focus:ring-primary/10 focus:border-primary transition-smooth text-text-primary cursor-pointer hover:border-primary/30"
+            className="h-9 px-3 border border-border rounded-lg text-body-sm focus:outline-none focus:ring-2 focus:ring-primary/10 focus:border-primary transition-smooth text-text-primary bg-surface cursor-pointer hover:border-primary/30"
           >
             <option value="All">All</option>
             <option value="API">API</option>
@@ -125,27 +125,27 @@ export default function ExecutionsPage() {
       <div className="bg-surface rounded-lg border border-border overflow-hidden shadow-card">
         <div className="overflow-x-auto">
           <table className="w-full">
-            <thead className="bg-surfaceContainerHigh border-b border-border">
+            <thead className="bg-surfaceContainerHigh dark:bg-surfaceContainerHighest border-b border-border">
               <tr>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-text-secondary uppercase tracking-wider">
+                <th className="px-4 py-3 text-left text-xs font-semibold text-text-primary uppercase tracking-wider">
                   Executed At
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-text-secondary uppercase tracking-wider">
+                <th className="px-4 py-3 text-left text-xs font-semibold text-text-primary uppercase tracking-wider">
                   Rule Name
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-text-secondary uppercase tracking-wider">
+                <th className="px-4 py-3 text-left text-xs font-semibold text-text-primary uppercase tracking-wider">
                   Declaration ID
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-text-secondary uppercase tracking-wider">
+                <th className="px-4 py-3 text-left text-xs font-semibold text-text-primary uppercase tracking-wider">
                   Action
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-text-secondary uppercase tracking-wider">
+                <th className="px-4 py-3 text-left text-xs font-semibold text-text-primary uppercase tracking-wider">
                   Score
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-text-secondary uppercase tracking-wider">
+                <th className="px-4 py-3 text-left text-xs font-semibold text-text-primary uppercase tracking-wider">
                   Source
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-text-secondary uppercase tracking-wider">
+                <th className="px-4 py-3 text-left text-xs font-semibold text-text-primary uppercase tracking-wider">
                   Result
                 </th>
               </tr>
@@ -159,7 +159,7 @@ export default function ExecutionsPage() {
                 </tr>
               ) : executions && executions.length > 0 ? (
                 executions.map((execution) => (
-                  <tr key={execution.id} className="hover:bg-surfaceContainerHigh transition-smooth cursor-pointer">
+                  <tr key={execution.id} className="hover:bg-surfaceContainerHigh dark:hover:bg-surfaceContainerHighest transition-colors cursor-pointer">
                     <td className="px-4 py-3 text-sm text-text-primary">
                       {formatDateTime(execution.executedAt)}
                     </td>
@@ -184,7 +184,7 @@ export default function ExecutionsPage() {
                         : '-'}
                     </td>
                     <td className="px-4 py-3 text-sm">
-                      <span className={`px-2.5 py-1 rounded-lg text-xs font-medium ${SourceColor[execution.executionSource] || 'bg-surfaceContainerHigh text-text-tertiary ring-1 ring-border'}`}>
+                      <span className={`px-2.5 py-1 rounded-lg text-xs font-medium ${SourceColor[execution.executionSource] || 'bg-surfaceContainerHigh dark:bg-surfaceContainerHighest text-text-tertiary ring-1 ring-border'}`}>
                         {execution.executionSource}
                       </span>
                     </td>

@@ -458,38 +458,38 @@ export default function ChangeRequestsPage() {
   }
 
   const getStatusBadge = (status: string) => {
-    const baseClasses = 'inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium'
+    const baseClasses = 'inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium';
     switch (status) {
       case 'Pending':
         return (
-          <span className={`${baseClasses} bg-yellow-100 text-yellow-800`}>
+          <span className={`${baseClasses} bg-warning-bg text-warning dark:bg-warning/20 dark:text-warning-light`}>
             <Clock className="w-3 h-3" />
             Pending
           </span>
-        )
+        );
       case 'Approved':
         return (
-          <span className={`${baseClasses} bg-green-100 text-green-800`}>
+          <span className={`${baseClasses} bg-success-bg text-success dark:bg-success/20 dark:text-success-light`}>
             <CheckCircle className="w-3 h-3" />
             Approved
           </span>
-        )
+        );
       case 'Rejected':
         return (
-          <span className={`${baseClasses} bg-red-100 text-red-800`}>
+          <span className={`${baseClasses} bg-error-bg text-error dark:bg-error/20 dark:text-error-light`}>
             <XCircle className="w-3 h-3" />
             Rejected
           </span>
-        )
+        );
       case 'Cancelled':
         return (
-          <span className={`${baseClasses} bg-slate-100 text-slate-800`}>
+          <span className={`${baseClasses} bg-surfaceContainerHigh text-text-secondary dark:bg-surfaceContainerHighest dark:text-text-tertiary`}>
             <XCircle className="w-3 h-3" />
             Cancelled
           </span>
-        )
+        );
       default:
-        return <span className={baseClasses}>{status}</span>
+        return <span className={baseClasses}>{status}</span>;
     }
   }
 
@@ -547,15 +547,15 @@ export default function ChangeRequestsPage() {
 
       {/* Filters (only show for change requests tab) */}
       {currentTab === 'requests' && (
-        <div className="flex items-center gap-4 bg-white border border-outlineVariant rounded-md p-4">
+        <div className="flex items-center gap-4 bg-surface border border-outlineVariant rounded-md p-4">
         {/* Fact Type Filter */}
         <div className="flex items-center gap-2">
-          <Package size={16} className="text-slate-500" />
-          <label className="text-sm font-medium text-slate-700">Fact Type:</label>
+          <Package size={16} className="text-text-tertiary" />
+          <label className="text-sm font-medium text-text-primary">Fact Type:</label>
           <select
             value={selectedFactType}
             onChange={(e) => setSelectedFactType(e.target.value)}
-            className="px-3 py-1.5 text-sm border border-outlineVariant rounded-md focus-ring"
+            className="px-3 py-1.5 text-sm border border-outlineVariant rounded-md focus-ring bg-surface text-text-primary"
           >
             <option value="All">All</option>
             {factTypes.map((type) => (
@@ -568,11 +568,11 @@ export default function ChangeRequestsPage() {
 
         {/* Status Filter */}
         <div className="flex items-center gap-2">
-          <label className="text-sm font-medium text-slate-700">Status:</label>
+          <label className="text-sm font-medium text-text-primary">Status:</label>
           <select
             value={selectedStatus}
             onChange={(e) => setSelectedStatus(e.target.value)}
-            className="px-3 py-1.5 text-sm border border-outlineVariant rounded-md focus-ring"
+            className="px-3 py-1.5 text-sm border border-outlineVariant rounded-md focus-ring bg-surface text-text-primary"
           >
             <option value="All">All</option>
             <option value="Pending">Pending</option>
@@ -586,34 +586,34 @@ export default function ChangeRequestsPage() {
 
       {/* Change Requests List */}
       {currentTab === 'requests' && (
-      <div className="bg-white border border-outlineVariant rounded-md overflow-hidden">
+      <div className="bg-surface border border-outlineVariant rounded-md overflow-hidden">
         {isLoading ? (
-          <div className="p-8 text-center text-slate-500">Loading...</div>
+          <div className="p-8 text-center text-text-tertiary">Loading...</div>
         ) : !changeRequests || changeRequests.length === 0 ? (
-          <div className="p-8 text-center text-slate-500">No change requests found</div>
+          <div className="p-8 text-center text-text-tertiary">No change requests found</div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full">
-              <thead className="bg-slate-50 border-b border-outlineVariant">
+              <thead className="bg-surfaceContainerHigh dark:bg-surfaceContainerHighest border-b border-outlineVariant">
                   <tr>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase">ID</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase">Title</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase">Fact Type</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase">Status</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase">Created</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase">Actions</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-text-primary uppercase">ID</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-text-primary uppercase">Title</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-text-primary uppercase">Fact Type</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-text-primary uppercase">Status</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-text-primary uppercase">Created</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-text-primary uppercase">Actions</th>
                   </tr>
                 </thead>
               <tbody className="divide-y divide-outlineVariant">
                 {changeRequests.map((cr) => (
                   <tr
                     key={cr.id}
-                    className="hover:bg-slate-50 cursor-pointer"
+                    className="hover:bg-surfaceContainerHigh dark:hover:bg-surfaceContainerHighest cursor-pointer transition-colors"
                     onClick={() => handleViewDetail(cr)}
                   >
-                    <td className="px-4 py-3 text-sm text-slate-900">#{cr.id}</td>
-                    <td className="px-4 py-3 text-sm text-slate-900">{cr.title}</td>
-                    <td className="px-4 py-3 text-sm text-slate-600">{cr.factType}</td>
+                    <td className="px-4 py-3 text-sm text-text-primary">#{cr.id}</td>
+                    <td className="px-4 py-3 text-sm text-text-primary">{cr.title}</td>
+                    <td className="px-4 py-3 text-sm text-text-secondary">{cr.factType}</td>
                     <td className="px-4 py-3">{getStatusBadge(cr.status)}</td>
                     <td className="px-4 py-3">
                       <UserTimeMeta
@@ -627,7 +627,7 @@ export default function ChangeRequestsPage() {
                       <div className="flex items-center gap-2">
                         <button
                           onClick={() => handleViewDetail(cr)}
-                          className="px-2 py-1 text-xs bg-indigo-600 text-white rounded hover:bg-indigo-700 focus-ring flex items-center gap-1"
+                          className="px-2 py-1 text-xs bg-primary text-white rounded hover:bg-primary-light focus-ring flex items-center gap-1 transition-colors cursor-pointer"
                           title="View Details"
                         >
                           <Eye className="w-3 h-3" />
@@ -637,13 +637,13 @@ export default function ChangeRequestsPage() {
                           <>
                             <button
                               onClick={() => handleApprove(cr.id)}
-                              className="px-3 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700 focus-ring"
+                              className="px-3 py-1 text-xs bg-success text-white rounded hover:bg-success-light focus-ring transition-colors cursor-pointer"
                             >
                               Approve
                             </button>
                             <button
                               onClick={() => handleReject(cr.id)}
-                              className="px-3 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700 focus-ring"
+                              className="px-3 py-1 text-xs bg-error text-white rounded hover:bg-error-light focus-ring transition-colors cursor-pointer"
                             >
                               Reject
                             </button>
@@ -652,13 +652,13 @@ export default function ChangeRequestsPage() {
                         {cr.status === 'Pending' && user?.id === cr.createdBy && (
                           <button
                             onClick={() => handleCancel(cr.id)}
-                            className="px-3 py-1 text-xs bg-slate-600 text-white rounded hover:bg-slate-700 focus-ring"
+                            className="px-3 py-1 text-xs bg-text-tertiary text-white rounded hover:bg-text-secondary focus-ring transition-colors cursor-pointer"
                           >
                             Cancel
                           </button>
                         )}
                         {cr.status === 'Rejected' && cr.rejectionReason && (
-                          <span className="text-xs text-red-600" title={cr.rejectionReason}>
+                          <span className="text-xs text-error" title={cr.rejectionReason}>
                             {cr.rejectionReason}
                           </span>
                         )}
@@ -675,84 +675,84 @@ export default function ChangeRequestsPage() {
 
       {/* Scheduled Deployments View */}
       {currentTab === 'scheduled' && (
-        <div className="bg-white border border-outlineVariant rounded-md overflow-hidden">
+        <div className="bg-surface border border-outlineVariant rounded-md overflow-hidden">
           {!scheduledDeployments ? (
-            <div className="p-8 text-center text-slate-500">Loading...</div>
+            <div className="p-8 text-center text-text-tertiary">Loading...</div>
           ) : scheduledDeployments.length === 0 ? (
-            <div className="p-8 text-center text-slate-500">
-              <Clock className="w-12 h-12 mx-auto mb-4 text-slate-300" />
+            <div className="p-8 text-center text-text-tertiary">
+              <Clock className="w-12 h-12 mx-auto mb-4 text-text-muted" />
               <p>No scheduled deployments found</p>
             </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full">
-                <thead className="bg-slate-50 border-b border-outlineVariant">
+                <thead className="bg-surfaceContainerHigh dark:bg-surfaceContainerHighest border-b border-outlineVariant">
                   <tr>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">ID</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">Fact Type</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">Scheduled Time</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">Status</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">Retries</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">Notes</th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold text-slate-600 uppercase">Actions</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-text-primary uppercase">ID</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-text-primary uppercase">Fact Type</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-text-primary uppercase">Scheduled Time</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-text-primary uppercase">Status</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-text-primary uppercase">Retries</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-text-primary uppercase">Notes</th>
+                    <th className="px-4 py-3 text-right text-xs font-semibold text-text-primary uppercase">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-outlineVariant">
                   {scheduledDeployments.map((deployment: any) => (
-                    <tr key={deployment.id} className="hover:bg-slate-50">
-                      <td className="px-4 py-3 text-sm text-slate-900">#{deployment.id}</td>
+                    <tr key={deployment.id} className="hover:bg-surfaceContainerHigh dark:hover:bg-surfaceContainerHighest transition-colors">
+                      <td className="px-4 py-3 text-sm text-text-primary">#{deployment.id}</td>
                       <td className="px-4 py-3">
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold bg-blue-100 text-blue-800 border border-blue-200">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold bg-accent-bg text-accent dark:bg-accent/20 dark:text-accent-light border border-accent/30">
                           {deployment.factType}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-sm text-slate-700">
+                      <td className="px-4 py-3 text-sm text-text-secondary">
                         {formatDateTime(deployment.scheduledTime) || '-'}
                       </td>
                       <td className="px-4 py-3">
                         {deployment.status === 'PENDING' && (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-warning-bg text-warning dark:bg-warning/20 dark:text-warning-light">
                             <Clock className="w-3 h-3 mr-1" />
                             Pending
                           </span>
                         )}
                         {deployment.status === 'EXECUTING' && (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-accent-bg text-accent dark:bg-accent/20 dark:text-accent-light">
                             <Clock className="w-3 h-3 mr-1 animate-spin" />
                             Executing
                           </span>
                         )}
                         {deployment.status === 'COMPLETED' && (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-success-bg text-success dark:bg-success/20 dark:text-success-light">
                             <CheckCircle className="w-3 h-3 mr-1" />
                             Completed
                           </span>
                         )}
                         {deployment.status === 'FAILED' && (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-error-bg text-error dark:bg-error/20 dark:text-error-light">
                             <XCircle className="w-3 h-3 mr-1" />
                             Failed
                           </span>
                         )}
                         {deployment.status === 'CANCELLED' && (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-800">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-surfaceContainerHigh text-text-secondary dark:bg-surfaceContainerHighest dark:text-text-tertiary">
                             Cancelled
                           </span>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-sm text-slate-700">
+                      <td className="px-4 py-3 text-sm text-text-secondary">
                         {deployment.retryCount} / {deployment.maxRetries}
                       </td>
-                      <td className="px-4 py-3 text-sm text-slate-700">
+                      <td className="px-4 py-3 text-sm text-text-secondary">
                         <div className="space-y-1">
                           {deployment.deploymentNotes && (
                             <div>
-                              <span className="text-xs text-slate-500">Notes: </span>
+                              <span className="text-xs text-text-tertiary">Notes: </span>
                               {deployment.deploymentNotes}
                             </div>
                           )}
                           {deployment.immediateDeploymentReason && (
-                            <div className="text-green-700">
+                            <div className="text-success">
                               <span className="text-xs font-medium">Deploy Reason: </span>
                               {deployment.immediateDeploymentReason}
                             </div>
@@ -771,7 +771,7 @@ export default function ChangeRequestsPage() {
                                 setDeployNowReason('')
                                 setShowDeployNowModal(true)
                               }}
-                              className="px-3 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700 focus-ring flex items-center gap-1"
+                              className="px-3 py-1 text-xs bg-success text-white rounded hover:bg-success-light focus-ring flex items-center gap-1 transition-colors cursor-pointer"
                               title="Deploy Now"
                             >
                               <Package className="w-3 h-3" />
@@ -782,14 +782,14 @@ export default function ChangeRequestsPage() {
                                 setCancellingDeploymentId(deployment.id)
                                 setShowCancelDeploymentModal(true)
                               }}
-                              className="px-3 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700 focus-ring"
+                              className="px-3 py-1 text-xs bg-error text-white rounded hover:bg-error-light focus-ring transition-colors cursor-pointer"
                             >
                               Cancel
                             </button>
                           </div>
                         )}
                         {deployment.status === 'FAILED' && deployment.errorMessage && (
-                          <span className="text-xs text-red-600" title={deployment.errorMessage}>
+                          <span className="text-xs text-error" title={deployment.errorMessage}>
                             Error: {deployment.errorMessage.substring(0, 50)}...
                           </span>
                         )}
@@ -805,19 +805,19 @@ export default function ChangeRequestsPage() {
 
       {/* Create Modal */}
       {showCreateModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
-          <div className="bg-white rounded-lg shadow-lg w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 dark:bg-black/50">
+          <div className="bg-surface rounded-lg shadow-lg w-full max-w-2xl max-h-[90vh] overflow-y-auto border border-outlineVariant">
             <div className="p-6 border-b border-outlineVariant">
               <h2 className="section-title">Create Change Request</h2>
             </div>
             <div className="p-6 space-y-4">
               {/* Fact Type */}
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Fact Type</label>
+                <label className="block text-sm font-medium text-text-primary mb-1">Fact Type</label>
                 <select
                   value={createForm.factType}
                   onChange={(e) => setCreateForm({ ...createForm, factType: e.target.value })}
-                  className="w-full px-3 py-1.5 text-sm border border-outlineVariant rounded-md focus-ring"
+                  className="w-full px-3 py-1.5 text-sm border border-outlineVariant rounded-md focus-ring bg-surface text-text-primary"
                 >
                   {factTypes.map((type) => (
                     <option key={type} value={type}>
@@ -829,23 +829,23 @@ export default function ChangeRequestsPage() {
 
               {/* Title */}
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Title</label>
+                <label className="block text-sm font-medium text-text-primary mb-1">Title</label>
                 <input
                   type="text"
                   value={createForm.title}
                   onChange={(e) => setCreateForm({ ...createForm, title: e.target.value })}
-                  className="w-full px-3 py-1.5 text-sm border border-outlineVariant rounded-md focus-ring"
+                  className="w-full px-3 py-1.5 text-sm border border-outlineVariant rounded-md focus-ring bg-surface text-text-primary placeholder:text-text-muted"
                   placeholder="e.g., Update Declaration Rules for Q1 2025"
                 />
               </div>
 
               {/* Description */}
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Description</label>
+                <label className="block text-sm font-medium text-text-primary mb-1">Description</label>
                 <textarea
                   value={createForm.description}
                   onChange={(e) => setCreateForm({ ...createForm, description: e.target.value })}
-                  className="w-full px-3 py-1.5 text-sm border border-outlineVariant rounded-md focus-ring"
+                  className="w-full px-3 py-1.5 text-sm border border-outlineVariant rounded-md focus-ring bg-surface text-text-primary placeholder:text-text-muted"
                   rows={4}
                   placeholder="Describe what was changed and why (e.g., Added new high-risk rules for Q1 2025, Updated threshold values, Deactivated obsolete rules...)"
                 />
@@ -853,14 +853,14 @@ export default function ChangeRequestsPage() {
 
               {/* Preview Changes */}
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">
+                <label className="block text-sm font-medium text-text-primary mb-2">
                   Detected Changes (vs Last Deployed Version)
                 </label>
 
                 {previewLoading ? (
                   <div className="border border-outlineVariant rounded-md p-8 text-center">
-                    <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
-                    <p className="text-sm text-slate-600 mt-2">Detecting changes...</p>
+                    <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                    <p className="text-sm text-text-secondary mt-2">Detecting changes...</p>
                   </div>
                 ) : previewChanges ? (
                   (() => {
@@ -902,22 +902,22 @@ export default function ChangeRequestsPage() {
                     return (
                       <>
                         {/* Summary */}
-                        <div className="bg-slate-50 border border-outlineVariant rounded-md p-3 mb-2">
+                        <div className="bg-surfaceContainerHigh dark:bg-surfaceContainerHighest border border-outlineVariant rounded-md p-3 mb-2">
                           <div className="flex items-center justify-between text-sm">
-                            <span className="text-slate-700 font-medium">Total Changes:</span>
-                            <span className="text-slate-900 font-semibold">
+                            <span className="text-text-primary font-medium">Total Changes:</span>
+                            <span className="text-text-primary font-semibold">
                               {displayTotalChanges}
                             </span>
                           </div>
                           {displayTotalChanges > 0 && (
                             <div className="mt-2 flex gap-4 text-xs">
                               {(addedRuleIds.length > 0 || updatedPairs.length > 0) && (
-                                <span className="text-green-700">
+                                <span className="text-success">
                                   ✓ {addedRuleIds.length + updatedPairs.length} Added/Updated
                                 </span>
                               )}
                               {removedRuleIds.length > 0 && (
-                                <span className="text-red-700">
+                                <span className="text-error">
                                   ✗ {removedRuleIds.length} Removed
                                 </span>
                               )}
@@ -930,18 +930,18 @@ export default function ChangeRequestsPage() {
                           <div className="border border-outlineVariant rounded-md overflow-hidden">
                             <div className="overflow-x-auto max-h-64 overflow-y-auto">
                               <table className="w-full text-sm">
-                                <thead className="bg-slate-50 border-b border-outlineVariant sticky top-0">
+                                <thead className="bg-surfaceContainerHigh dark:bg-surfaceContainerHighest border-b border-outlineVariant sticky top-0">
                                   <tr>
-                                    <th className="px-3 py-2 text-left text-xs font-semibold text-slate-700 uppercase">
+                                    <th className="px-3 py-2 text-left text-xs font-semibold text-text-primary uppercase">
                                       Change
                                     </th>
-                                    <th className="px-3 py-2 text-left text-xs font-semibold text-slate-700 uppercase">
+                                    <th className="px-3 py-2 text-left text-xs font-semibold text-text-primary uppercase">
                                       Rule ID
                                     </th>
-                                    <th className="px-3 py-2 text-left text-xs font-semibold text-slate-700 uppercase">
+                                    <th className="px-3 py-2 text-left text-xs font-semibold text-text-primary uppercase">
                                       Rule Name
                                     </th>
-                                    <th className="px-3 py-2 text-left text-xs font-semibold text-slate-700 uppercase">
+                                    <th className="px-3 py-2 text-left text-xs font-semibold text-text-primary uppercase">
                                       Status
                                     </th>
                                   </tr>
@@ -951,27 +951,27 @@ export default function ChangeRequestsPage() {
                                   {addedRuleIds.map((ruleId) => {
                                     const rule = previewRules.get(ruleId)
                                     return (
-                                      <tr key={`added-${ruleId}`} className="hover:bg-slate-50">
+                                      <tr key={`added-${ruleId}`} className="hover:bg-surfaceContainerHigh dark:hover:bg-surfaceContainerHighest transition-colors">
                                         <td className="px-3 py-2">
-                                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-success-bg text-success dark:bg-success/20 dark:text-success-light">
                                             Added
                                           </span>
                                         </td>
-                                        <td className="px-3 py-2 text-slate-900">#{ruleId}</td>
-                                        <td className="px-3 py-2 text-slate-900">
+                                        <td className="px-3 py-2 text-text-primary">#{ruleId}</td>
+                                        <td className="px-3 py-2 text-text-primary">
                                           {rule?.ruleName || rule?.name || `Rule #${ruleId}`}
                                         </td>
                                         <td className="px-3 py-2">
                                           {rule?.status === 'ACTIVE' ? (
-                                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-success-bg text-success dark:bg-success/20 dark:text-success-light">
                                               Active
                                             </span>
                                           ) : rule?.status === 'DRAFT' ? (
-                                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-warning-bg text-warning dark:bg-warning/20 dark:text-warning-light">
                                               Draft
                                             </span>
                                           ) : (
-                                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-700">
+                                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-surfaceContainerHigh text-text-secondary dark:bg-surfaceContainerHighest dark:text-text-tertiary">
                                               Inactive
                                             </span>
                                           )}
@@ -986,28 +986,28 @@ export default function ChangeRequestsPage() {
                                     return (
                                       <tr
                                         key={`updated-${newRuleId}-${oldRuleId}`}
-                                        className="hover:bg-slate-50"
+                                        className="hover:bg-surfaceContainerHigh dark:hover:bg-surfaceContainerHighest transition-colors"
                                       >
                                         <td className="px-3 py-2">
-                                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-accent-bg text-accent dark:bg-accent/20 dark:text-accent-light">
                                             Updated
                                           </span>
                                         </td>
-                                        <td className="px-3 py-2 text-slate-900">#{newRuleId}</td>
-                                        <td className="px-3 py-2 text-slate-900">
+                                        <td className="px-3 py-2 text-text-primary">#{newRuleId}</td>
+                                        <td className="px-3 py-2 text-text-primary">
                                           {rule?.ruleName || rule?.name || `Rule #${newRuleId}`}
                                         </td>
                                         <td className="px-3 py-2">
                                           {rule?.status === 'ACTIVE' ? (
-                                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-success-bg text-success dark:bg-success/20 dark:text-success-light">
                                               Active
                                             </span>
                                           ) : rule?.status === 'DRAFT' ? (
-                                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-warning-bg text-warning dark:bg-warning/20 dark:text-warning-light">
                                               Draft
                                             </span>
                                           ) : (
-                                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-700">
+                                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-surfaceContainerHigh text-text-secondary dark:bg-surfaceContainerHighest dark:text-text-tertiary">
                                               Inactive
                                             </span>
                                           )}
@@ -1020,27 +1020,27 @@ export default function ChangeRequestsPage() {
                                   {removedRuleIds.map((ruleId) => {
                                     const rule = previewRules.get(ruleId)
                                     return (
-                                      <tr key={`removed-${ruleId}`} className="hover:bg-slate-50">
+                                      <tr key={`removed-${ruleId}`} className="hover:bg-surfaceContainerHigh dark:hover:bg-surfaceContainerHighest transition-colors">
                                         <td className="px-3 py-2">
-                                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-error-bg text-error dark:bg-error/20 dark:text-error-light">
                                             Removed
                                           </span>
                                         </td>
-                                        <td className="px-3 py-2 text-slate-900">#{ruleId}</td>
-                                        <td className="px-3 py-2 text-slate-900">
+                                        <td className="px-3 py-2 text-text-primary">#{ruleId}</td>
+                                        <td className="px-3 py-2 text-text-primary">
                                           {rule?.ruleName || rule?.name || `Rule #${ruleId}`}
                                         </td>
                                         <td className="px-3 py-2">
                                           {rule?.status === 'ACTIVE' ? (
-                                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-success-bg text-success dark:bg-success/20 dark:text-success-light">
                                               Active
                                             </span>
                                           ) : rule?.status === 'DRAFT' ? (
-                                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-warning-bg text-warning dark:bg-warning/20 dark:text-warning-light">
                                               Draft
                                             </span>
                                           ) : (
-                                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-700">
+                                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-surfaceContainerHigh text-text-secondary dark:bg-surfaceContainerHighest dark:text-text-tertiary">
                                               Inactive
                                             </span>
                                           )}
@@ -1055,7 +1055,7 @@ export default function ChangeRequestsPage() {
                         ) : (
                           <div className="border border-outlineVariant rounded-md p-6 text-center">
                             <svg
-                              className="w-12 h-12 mx-auto text-slate-300 mb-2"
+                              className="w-12 h-12 mx-auto text-text-muted mb-2"
                               fill="none"
                               stroke="currentColor"
                               viewBox="0 0 24 24"
@@ -1067,8 +1067,8 @@ export default function ChangeRequestsPage() {
                                 d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
                               />
                             </svg>
-                            <p className="text-sm text-slate-600">No changes detected</p>
-                            <p className="text-xs text-slate-500 mt-1">
+                            <p className="text-sm text-text-secondary">No changes detected</p>
+                            <p className="text-xs text-text-tertiary mt-1">
                               All rules are same as deployed version
                             </p>
                           </div>
@@ -1077,7 +1077,7 @@ export default function ChangeRequestsPage() {
                     )
                   })()
                 ) : (
-                  <div className="border border-outlineVariant rounded-md p-6 text-center text-sm text-slate-500">
+                  <div className="border border-outlineVariant rounded-md p-6 text-center text-sm text-text-tertiary">
                     Select a fact type to preview changes
                   </div>
                 )}
@@ -1087,31 +1087,31 @@ export default function ChangeRequestsPage() {
                 <div
                   className={`border rounded-md p-4 text-sm ${
                     validationResult.success
-                      ? 'border-green-200 bg-green-50'
-                      : 'border-red-200 bg-red-50'
+                      ? 'border-success/30 bg-success-bg dark:bg-success/10'
+                      : 'border-error/30 bg-error-bg dark:bg-error/10'
                   }`}
                 >
                   <div className="flex items-center justify-between">
                     <span
                       className={`font-semibold ${
-                        validationResult.success ? 'text-green-800' : 'text-red-800'
+                        validationResult.success ? 'text-success dark:text-success-light' : 'text-error dark:text-error-light'
                       }`}
                     >
                       {validationResult.success ? 'Validation succeeded' : 'Validation failed'}
                     </span>
                     {validationResult.releaseId && (
-                      <span className="text-xs text-slate-500">
+                      <span className="text-xs text-text-tertiary">
                         ReleaseId: {validationResult.releaseId}
                       </span>
                     )}
                   </div>
-                  <p className="mt-1 text-slate-700">{validationResult.message}</p>
+                  <p className="mt-1 text-text-primary">{validationResult.message}</p>
                   {validationResult.error && !validationResult.success && (
-                    <p className="mt-2 text-xs text-red-700 break-words">
+                    <p className="mt-2 text-xs text-error break-words">
                       {validationResult.error}
                     </p>
                   )}
-                  <div className="mt-2 text-xs text-slate-600 flex flex-wrap gap-4">
+                  <div className="mt-2 text-xs text-text-secondary flex flex-wrap gap-4">
                     <span>
                       Compiled rules: {validationResult.compiledRuleCount ?? previewChanges?.totalChanges ?? 0}
                     </span>
@@ -1133,24 +1133,24 @@ export default function ChangeRequestsPage() {
                   setPreviewRules(new Map())
                   setValidationResult(null)
                 }}
-                className="px-4 py-2 text-sm border border-outlineVariant rounded-md hover:bg-slate-50 focus-ring"
+                className="px-4 py-2 text-sm border border-outlineVariant rounded-md hover:bg-surfaceContainerHigh focus-ring transition-colors cursor-pointer text-text-primary"
               >
                 Cancel
               </button>
               <button
                 onClick={handleValidateBuild}
                 disabled={previewLoading || validationLoading}
-                className="px-4 py-2 text-sm border border-indigo-200 text-indigo-700 rounded-md hover:bg-indigo-50 disabled:opacity-50 disabled:cursor-not-allowed focus-ring flex items-center gap-2"
+                className="px-4 py-2 text-sm border border-primary/30 text-primary rounded-md hover:bg-primary-bg dark:hover:bg-primary/10 disabled:opacity-50 disabled:cursor-not-allowed focus-ring flex items-center gap-2 transition-colors"
               >
                 {validationLoading && (
-                  <span className="inline-block w-4 h-4 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
+                  <span className="inline-block w-4 h-4 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
                 )}
                 Validate Build
               </button>
               <button
                 onClick={handleCreate}
                 disabled={!createForm.title || !createForm.factType || previewLoading || validationLoading}
-                className="px-4 py-2 text-sm bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed focus-ring"
+                className="px-4 py-2 text-sm bg-primary text-white rounded-md hover:bg-primary-light disabled:opacity-50 disabled:cursor-not-allowed focus-ring transition-colors cursor-pointer"
               >
                 Create Change Request
               </button>
@@ -1161,8 +1161,8 @@ export default function ChangeRequestsPage() {
 
       {/* Change Request Detail Modal */}
       {showDetailModal && selectedChangeRequest && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
-          <div className="bg-white rounded-lg shadow-lg w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 dark:bg-black/50">
+          <div className="bg-surface rounded-lg shadow-lg w-full max-w-4xl max-h-[90vh] overflow-y-auto border border-outlineVariant">
             <div className="p-6 border-b border-outlineVariant">
               <div className="flex items-center justify-between">
                 <h2 className="section-title">Change Request Details</h2>
@@ -1172,7 +1172,7 @@ export default function ChangeRequestsPage() {
                     setSelectedChangeRequest(null)
                     setChangeRequestRules(new Map())
                   }}
-                  className="text-slate-500 hover:text-slate-700 focus-ring"
+                  className="text-text-tertiary hover:text-text-primary focus-ring transition-colors cursor-pointer"
                 >
                   ✕
                 </button>
@@ -1182,22 +1182,22 @@ export default function ChangeRequestsPage() {
               {/* Basic Information */}
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Title</label>
-                  <div className="text-sm text-slate-900">{selectedChangeRequest.title}</div>
+                  <label className="block text-sm font-medium text-text-primary mb-1">Title</label>
+                  <div className="text-sm text-text-primary">{selectedChangeRequest.title}</div>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Fact Type</label>
-                  <div className="text-sm text-slate-900">{selectedChangeRequest.factType}</div>
+                  <label className="block text-sm font-medium text-text-primary mb-1">Fact Type</label>
+                  <div className="text-sm text-text-primary">{selectedChangeRequest.factType}</div>
                 </div>
                 {selectedChangeRequest.description && (
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Description</label>
-                    <div className="text-sm text-slate-900 whitespace-pre-wrap">{selectedChangeRequest.description}</div>
+                    <label className="block text-sm font-medium text-text-primary mb-1">Description</label>
+                    <div className="text-sm text-text-primary whitespace-pre-wrap">{selectedChangeRequest.description}</div>
                   </div>
                 )}
                 <div className="flex flex-wrap items-start gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Status</label>
+                    <label className="block text-sm font-medium text-text-primary mb-1">Status</label>
                     <div>{getStatusBadge(selectedChangeRequest.status)}</div>
                   </div>
                   <UserTimeMeta
@@ -1231,23 +1231,23 @@ export default function ChangeRequestsPage() {
               </div>
 
               {selectedChangeRequest.validationStatus && (
-                <div className="border border-outlineVariant rounded-md p-4 space-y-2 bg-slate-50">
+                <div className="border border-outlineVariant rounded-md p-4 space-y-2 bg-surfaceContainerHigh dark:bg-surfaceContainerHighest">
                   <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-slate-700">Build Validation</span>
+                    <span className="text-sm font-medium text-text-primary">Build Validation</span>
                     <span
                       className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${
                         selectedChangeRequest.validationStatus === 'SUCCESS'
-                          ? 'bg-green-100 text-green-800'
-                          : 'bg-red-100 text-red-800'
+                          ? 'bg-success-bg text-success dark:bg-success/20 dark:text-success-light'
+                          : 'bg-error-bg text-error dark:bg-error/20 dark:text-error-light'
                       }`}
                     >
                       {selectedChangeRequest.validationStatus}
                     </span>
                   </div>
                   {selectedChangeRequest.validationMessage && (
-                    <p className="text-sm text-slate-700">{selectedChangeRequest.validationMessage}</p>
+                    <p className="text-sm text-text-primary">{selectedChangeRequest.validationMessage}</p>
                   )}
-                  <div className="text-xs text-slate-500 flex flex-wrap gap-4">
+                  <div className="text-xs text-text-tertiary flex flex-wrap gap-4">
                     {selectedChangeRequest.validationCheckedAt && (
                       <span>Checked at: {formatDateTime(selectedChangeRequest.validationCheckedAt)}</span>
                     )}
@@ -1267,25 +1267,25 @@ export default function ChangeRequestsPage() {
               )}
 
               {selectedChangeRequest.executionTestStatus && (
-                <div className="border border-outlineVariant rounded-md p-4 space-y-2 bg-blue-50">
+                <div className="border border-outlineVariant rounded-md p-4 space-y-2 bg-accent-bg dark:bg-accent/10">
                   <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-slate-700">Execution Test</span>
+                    <span className="text-sm font-medium text-text-primary">Execution Test</span>
                     <span
                       className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${
                         selectedChangeRequest.executionTestStatus === 'PASSED'
-                          ? 'bg-green-100 text-green-800'
+                          ? 'bg-success-bg text-success dark:bg-success/20 dark:text-success-light'
                           : selectedChangeRequest.executionTestStatus === 'FAILED'
-                          ? 'bg-red-100 text-red-800'
-                          : 'bg-slate-100 text-slate-800'
+                          ? 'bg-error-bg text-error dark:bg-error/20 dark:text-error-light'
+                          : 'bg-surfaceContainerHigh text-text-secondary dark:bg-surfaceContainerHighest dark:text-text-tertiary'
                       }`}
                     >
                       {selectedChangeRequest.executionTestStatus}
                     </span>
                   </div>
                   {selectedChangeRequest.executionTestMessage && (
-                    <p className="text-sm text-slate-700">{selectedChangeRequest.executionTestMessage}</p>
+                    <p className="text-sm text-text-primary">{selectedChangeRequest.executionTestMessage}</p>
                   )}
-                  <div className="text-xs text-slate-500 flex flex-wrap gap-4">
+                  <div className="text-xs text-text-tertiary flex flex-wrap gap-4">
                     {typeof selectedChangeRequest.executionTestHitsCount === 'number' && (
                       <span>Rule hits: {selectedChangeRequest.executionTestHitsCount}</span>
                     )}
@@ -1302,19 +1302,19 @@ export default function ChangeRequestsPage() {
               {/* Changes Table */}
               {selectedChangeRequest.changesJson && (
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                  <label className="block text-sm font-medium text-text-primary mb-2">
                     Detected Changes (vs Last Deployed Version)
                   </label>
                   <div className="border border-outlineVariant rounded-md overflow-hidden">
                     <div className="overflow-x-auto">
                       <table className="w-full">
-                        <thead className="bg-slate-50 border-b border-outlineVariant">
+                        <thead className="bg-surfaceContainerHigh dark:bg-surfaceContainerHighest border-b border-outlineVariant">
                           <tr>
-                            <th className="px-4 py-2 text-left text-xs font-semibold text-slate-700 uppercase">Action</th>
-                            <th className="px-4 py-2 text-left text-xs font-semibold text-slate-700 uppercase">Rule ID</th>
-                            <th className="px-4 py-2 text-left text-xs font-semibold text-slate-700 uppercase">Rule Name</th>
-                            <th className="px-4 py-2 text-left text-xs font-semibold text-slate-700 uppercase">Status</th>
-                            <th className="px-4 py-2 text-center text-xs font-semibold text-slate-700 uppercase">Actions</th>
+                            <th className="px-4 py-2 text-left text-xs font-semibold text-text-primary uppercase">Action</th>
+                            <th className="px-4 py-2 text-left text-xs font-semibold text-text-primary uppercase">Rule ID</th>
+                            <th className="px-4 py-2 text-left text-xs font-semibold text-text-primary uppercase">Rule Name</th>
+                            <th className="px-4 py-2 text-left text-xs font-semibold text-text-primary uppercase">Status</th>
+                            <th className="px-4 py-2 text-center text-xs font-semibold text-text-primary uppercase">Actions</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-outlineVariant">
@@ -1393,7 +1393,7 @@ export default function ChangeRequestsPage() {
                                 return (
                                   <tr>
                                     <td colSpan={5} className="px-4 py-8 text-center">
-                                      <div className="text-slate-500 text-sm">
+                                      <div className="text-text-tertiary text-sm">
                                         <div className="mb-2">No changes detected</div>
                                         <div className="text-xs">All rules are same as deployed version</div>
                                       </div>
@@ -1407,33 +1407,33 @@ export default function ChangeRequestsPage() {
                                 const ruleName = rule?.ruleName || rule?.name || `Rule #${row.ruleId}`
 
                                 return (
-                                  <tr key={`${row.action}-${row.ruleId}`} className="hover:bg-slate-50">
+                                  <tr key={`${row.action}-${row.ruleId}`} className="hover:bg-surfaceContainerHigh dark:hover:bg-surfaceContainerHighest transition-colors">
                                     <td className="px-4 py-2">
                                       <span
                                         className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
                                           row.color === 'green'
-                                            ? 'bg-green-100 text-green-800'
+                                            ? 'bg-success-bg text-success dark:bg-success/20 dark:text-success-light'
                                             : row.color === 'blue'
-                                            ? 'bg-blue-100 text-blue-800'
-                                            : 'bg-red-100 text-red-800'
+                                            ? 'bg-accent-bg text-accent dark:bg-accent/20 dark:text-accent-light'
+                                            : 'bg-error-bg text-error dark:bg-error/20 dark:text-error-light'
                                         }`}
                                       >
                                         {row.action}
                                       </span>
                                     </td>
-                                    <td className="px-4 py-2 text-sm text-slate-900">#{row.ruleId}</td>
-                                    <td className="px-4 py-2 text-sm text-slate-900">{ruleName}</td>
+                                    <td className="px-4 py-2 text-sm text-text-primary">#{row.ruleId}</td>
+                                    <td className="px-4 py-2 text-sm text-text-primary">{ruleName}</td>
                                     <td className="px-4 py-2">
                                       {rule?.status === 'ACTIVE' ? (
-                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-success-bg text-success dark:bg-success/20 dark:text-success-light">
                                           Active
                                         </span>
                                       ) : rule?.status === 'DRAFT' ? (
-                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-warning-bg text-warning dark:bg-warning/20 dark:text-warning-light">
                                           Draft
                                         </span>
                                       ) : (
-                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-700">
+                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-surfaceContainerHigh text-text-secondary dark:bg-surfaceContainerHighest dark:text-text-tertiary">
                                           Inactive
                                         </span>
                                       )}
@@ -1441,7 +1441,7 @@ export default function ChangeRequestsPage() {
                                     <td className="px-4 py-2 text-center">
                                       <button
                                         onClick={() => handleViewRule(row.ruleId)}
-                                        className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-indigo-100 text-indigo-700 rounded hover:bg-indigo-200 focus-ring"
+                                        className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-primary-bg text-primary dark:bg-primary/20 dark:text-primary-light rounded hover:bg-primary/30 focus-ring transition-colors cursor-pointer"
                                         title="View Rule Details"
                                       >
                                         <ExternalLink className="w-3 h-3" />
@@ -1478,7 +1478,7 @@ export default function ChangeRequestsPage() {
                           setShowDetailModal(false)
                           handleApprove(selectedChangeRequest.id)
                         }}
-                        className="px-4 py-2 text-sm bg-green-600 text-white rounded-md hover:bg-green-700 focus-ring"
+                        className="px-4 py-2 text-sm bg-success text-white rounded-md hover:bg-success-light focus-ring transition-colors cursor-pointer"
                       >
                         Approve
                       </button>
@@ -1487,7 +1487,7 @@ export default function ChangeRequestsPage() {
                           setShowDetailModal(false)
                           handleReject(selectedChangeRequest.id)
                         }}
-                        className="px-4 py-2 text-sm bg-red-600 text-white rounded-md hover:bg-red-700 focus-ring"
+                        className="px-4 py-2 text-sm bg-error text-white rounded-md hover:bg-error-light focus-ring transition-colors cursor-pointer"
                       >
                         Reject
                       </button>
@@ -1499,7 +1499,7 @@ export default function ChangeRequestsPage() {
                         setShowDetailModal(false)
                         handleCancel(selectedChangeRequest.id)
                       }}
-                      className="px-4 py-2 text-sm bg-slate-600 text-white rounded-md hover:bg-slate-700 focus-ring"
+                      className="px-4 py-2 text-sm bg-text-tertiary text-white rounded-md hover:bg-text-secondary focus-ring transition-colors cursor-pointer"
                     >
                       Cancel
                     </button>
@@ -1513,8 +1513,8 @@ export default function ChangeRequestsPage() {
 
       {/* Deployment Options Modal */}
       {showDeploymentModal && selectedChangeRequest && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
+        <div className="fixed inset-0 bg-black/50 dark:bg-black/60 flex items-center justify-center z-50">
+          <div className="bg-surface rounded-lg shadow-xl w-full max-w-md mx-4 border border-outlineVariant">
             <div className="p-6">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="section-title flex items-center gap-2">
@@ -1523,7 +1523,7 @@ export default function ChangeRequestsPage() {
                 </h2>
                 <button
                   onClick={() => setShowDeploymentModal(false)}
-                  className="text-slate-500 hover:text-slate-700"
+                  className="text-text-tertiary hover:text-text-primary transition-colors cursor-pointer"
                 >
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -1531,11 +1531,11 @@ export default function ChangeRequestsPage() {
                 </button>
               </div>
 
-              <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                <p className="text-sm text-blue-800">
+              <div className="mb-4 p-4 bg-accent-bg dark:bg-accent/10 border border-accent/30 rounded-lg">
+                <p className="text-sm text-accent dark:text-accent-light">
                   <span className="font-semibold">Change Request:</span> {selectedChangeRequest.title}
                 </p>
-                <p className="text-xs text-blue-600 mt-1">
+                <p className="text-xs text-accent/80 dark:text-accent-light/80 mt-1">
                   Only <span className="font-semibold">active</span> and <span className="font-semibold">latest</span> rules will be deployed
                 </p>
               </div>
@@ -1543,37 +1543,37 @@ export default function ChangeRequestsPage() {
               <div className="space-y-4">
                 {/* Deployment Option Selection */}
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                  <label className="block text-sm font-medium text-text-primary mb-2">
                     Deployment Option
                   </label>
                   <div className="space-y-2">
-                    <label className="flex items-center gap-3 p-3 border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-50">
+                    <label className="flex items-center gap-3 p-3 border border-outlineVariant rounded-lg cursor-pointer hover:bg-surfaceContainerHigh dark:hover:bg-surfaceContainerHighest transition-colors">
                       <input
                         type="radio"
                         name="deploymentOption"
                         value="IMMEDIATE"
                         checked={deploymentOption === 'IMMEDIATE'}
                         onChange={(e) => setDeploymentOption(e.target.value as 'IMMEDIATE' | 'SCHEDULED')}
-                        className="w-4 h-4 text-indigo-600"
+                        className="w-4 h-4 text-primary"
                       />
                       <div>
-                        <div className="font-medium text-slate-900">Deploy Now</div>
-                        <div className="text-xs text-slate-500">Rules will be deployed immediately</div>
+                        <div className="font-medium text-text-primary">Deploy Now</div>
+                        <div className="text-xs text-text-tertiary">Rules will be deployed immediately</div>
                       </div>
                     </label>
 
-                    <label className="flex items-center gap-3 p-3 border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-50">
+                    <label className="flex items-center gap-3 p-3 border border-outlineVariant rounded-lg cursor-pointer hover:bg-surfaceContainerHigh dark:hover:bg-surfaceContainerHighest transition-colors">
                       <input
                         type="radio"
                         name="deploymentOption"
                         value="SCHEDULED"
                         checked={deploymentOption === 'SCHEDULED'}
                         onChange={(e) => setDeploymentOption(e.target.value as 'IMMEDIATE' | 'SCHEDULED')}
-                        className="w-4 h-4 text-indigo-600"
+                        className="w-4 h-4 text-primary"
                       />
                       <div>
-                        <div className="font-medium text-slate-900">Schedule Deployment</div>
-                        <div className="text-xs text-slate-500">Deploy at a specific date and time</div>
+                        <div className="font-medium text-text-primary">Schedule Deployment</div>
+                        <div className="text-xs text-text-tertiary">Deploy at a specific date and time</div>
                       </div>
                     </label>
                   </div>
@@ -1583,8 +1583,8 @@ export default function ChangeRequestsPage() {
                 {deploymentOption === 'SCHEDULED' && (
                   <>
                     <div>
-                      <label htmlFor="scheduledTime" className="block text-sm font-medium text-slate-700 mb-2">
-                        Scheduled Time <span className="text-red-500">*</span>
+                      <label htmlFor="scheduledTime" className="block text-sm font-medium text-text-primary mb-2">
+                        Scheduled Time <span className="text-error">*</span>
                       </label>
                       <input
                         type="datetime-local"
@@ -1592,16 +1592,16 @@ export default function ChangeRequestsPage() {
                         value={scheduledTime}
                         onChange={(e) => setScheduledTime(e.target.value)}
                         min={new Date().toISOString().slice(0, 16)}
-                        className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        className="w-full px-3 py-2 border border-outlineVariant rounded-md focus-ring bg-surface text-text-primary"
                         required
                       />
-                      <p className="text-xs text-slate-500 mt-1">
+                      <p className="text-xs text-text-tertiary mt-1">
                         Deployment will run every minute, starting at the scheduled time
                       </p>
                     </div>
 
                     <div>
-                      <label htmlFor="deploymentNotes" className="block text-sm font-medium text-slate-700 mb-2">
+                      <label htmlFor="deploymentNotes" className="block text-sm font-medium text-text-primary mb-2">
                         Deployment Notes (Optional)
                       </label>
                       <textarea
@@ -1609,7 +1609,7 @@ export default function ChangeRequestsPage() {
                         value={deploymentNotes}
                         onChange={(e) => setDeploymentNotes(e.target.value)}
                         rows={3}
-                        className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        className="w-full px-3 py-2 border border-outlineVariant rounded-md focus-ring bg-surface text-text-primary placeholder:text-text-muted"
                         placeholder="Add notes about this deployment..."
                       />
                     </div>
@@ -1621,13 +1621,13 @@ export default function ChangeRequestsPage() {
               <div className="flex justify-end gap-3 mt-6">
                 <button
                   onClick={() => setShowDeploymentModal(false)}
-                  className="px-4 py-2 text-sm text-slate-700 border border-slate-300 rounded-md hover:bg-slate-50"
+                  className="px-4 py-2 text-sm text-text-primary border border-outlineVariant rounded-md hover:bg-surfaceContainerHigh focus-ring transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleConfirmApprove}
-                  className="px-4 py-2 text-sm bg-green-600 text-white rounded-md hover:bg-green-700 focus-ring flex items-center gap-2"
+                  className="px-4 py-2 text-sm bg-success text-white rounded-md hover:bg-success-light focus-ring flex items-center gap-2 transition-colors cursor-pointer"
                 >
                   <CheckCircle className="w-4 h-4" />
                   {deploymentOption === 'IMMEDIATE' ? 'Approve & Deploy Now' : 'Approve & Schedule'}
@@ -1640,8 +1640,8 @@ export default function ChangeRequestsPage() {
 
       {/* Deploy Now Modal */}
       {showDeployNowModal && selectedDeploymentId && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
+        <div className="fixed inset-0 bg-black/50 dark:bg-black/60 flex items-center justify-center z-50">
+          <div className="bg-surface rounded-lg shadow-xl w-full max-w-md mx-4 border border-outlineVariant">
             <div className="p-6">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="section-title flex items-center gap-2">
@@ -1654,7 +1654,7 @@ export default function ChangeRequestsPage() {
                     setSelectedDeploymentId(null)
                     setDeployNowReason('')
                   }}
-                  className="text-slate-500 hover:text-slate-700"
+                  className="text-text-tertiary hover:text-text-primary transition-colors cursor-pointer"
                 >
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -1662,27 +1662,27 @@ export default function ChangeRequestsPage() {
                 </button>
               </div>
 
-              <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-                <p className="text-sm text-yellow-800">
+              <div className="mb-4 p-4 bg-warning-bg dark:bg-warning/10 border border-warning/30 rounded-lg">
+                <p className="text-sm text-warning dark:text-warning-light">
                   This deployment will be executed immediately instead of waiting for the scheduled time.
                 </p>
               </div>
 
               <div className="space-y-4">
                 <div>
-                  <label htmlFor="deployNowReason" className="block text-sm font-medium text-slate-700 mb-2">
-                    Reason for Immediate Deployment <span className="text-red-500">*</span>
+                  <label htmlFor="deployNowReason" className="block text-sm font-medium text-text-primary mb-2">
+                    Reason for Immediate Deployment <span className="text-error">*</span>
                   </label>
                   <textarea
                     id="deployNowReason"
                     value={deployNowReason}
                     onChange={(e) => setDeployNowReason(e.target.value)}
                     rows={4}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                    className="w-full px-3 py-2 border border-outlineVariant rounded-md focus-ring bg-surface text-text-primary placeholder:text-text-muted"
                     placeholder="Please provide a reason for deploying immediately..."
                     required
                   />
-                  <p className="text-xs text-slate-500 mt-1">
+                  <p className="text-xs text-text-tertiary mt-1">
                     This reason will be recorded for audit purposes
                   </p>
                 </div>
@@ -1696,7 +1696,7 @@ export default function ChangeRequestsPage() {
                     setSelectedDeploymentId(null)
                     setDeployNowReason('')
                   }}
-                  className="px-4 py-2 text-sm text-slate-700 border border-slate-300 rounded-md hover:bg-slate-50"
+                  className="px-4 py-2 text-sm text-text-primary border border-outlineVariant rounded-md hover:bg-surfaceContainerHigh focus-ring transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
@@ -1722,7 +1722,7 @@ export default function ChangeRequestsPage() {
                       toast.showError(err instanceof Error ? err.message : 'Failed to deploy immediately')
                     }
                   }}
-                  className="px-4 py-2 text-sm bg-green-600 text-white rounded-md hover:bg-green-700 focus-ring flex items-center gap-2"
+                  className="px-4 py-2 text-sm bg-success text-white rounded-md hover:bg-success-light focus-ring flex items-center gap-2 transition-colors cursor-pointer"
                 >
                   <Package className="w-4 h-4" />
                   Deploy Now
@@ -1763,13 +1763,13 @@ export default function ChangeRequestsPage() {
                   setRejectingId(null)
                   setRejectionReason('')
                 }}
-                className="px-4 py-2 text-sm text-slate-700 border border-slate-300 rounded-md hover:bg-slate-50 focus-ring"
+                className="px-4 py-2 text-sm text-text-primary border border-outlineVariant rounded-md hover:bg-surfaceContainerHigh focus-ring transition-colors cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 onClick={confirmReject}
-                className="px-4 py-2 text-sm bg-red-600 text-white rounded-md hover:bg-red-700 focus-ring"
+                className="px-4 py-2 text-sm bg-error text-white rounded-md hover:bg-error-light focus-ring transition-colors cursor-pointer"
               >
                 Reject
               </button>
@@ -1800,13 +1800,13 @@ export default function ChangeRequestsPage() {
                   setShowCancelConfirmModal(false)
                   setCancellingId(null)
                 }}
-                className="px-4 py-2 text-sm text-slate-700 border border-slate-300 rounded-md hover:bg-slate-50 focus-ring"
+                className="px-4 py-2 text-sm text-text-primary border border-outlineVariant rounded-md hover:bg-surfaceContainerHigh focus-ring transition-colors cursor-pointer"
               >
                 No
               </button>
               <button
                 onClick={confirmCancel}
-                className="px-4 py-2 text-sm bg-slate-600 text-white rounded-md hover:bg-slate-700 focus-ring"
+                className="px-4 py-2 text-sm bg-text-tertiary text-white rounded-md hover:bg-text-secondary focus-ring transition-colors cursor-pointer"
               >
                 Yes, Cancel
               </button>
@@ -1837,13 +1837,13 @@ export default function ChangeRequestsPage() {
                   setShowCancelDeploymentModal(false)
                   setCancellingDeploymentId(null)
                 }}
-                className="px-4 py-2 text-sm text-slate-700 border border-slate-300 rounded-md hover:bg-slate-50 focus-ring"
+                className="px-4 py-2 text-sm text-text-primary border border-outlineVariant rounded-md hover:bg-surfaceContainerHigh focus-ring transition-colors cursor-pointer"
               >
                 No
               </button>
               <button
                 onClick={confirmCancelDeployment}
-                className="px-4 py-2 text-sm bg-red-600 text-white rounded-md hover:bg-red-700 focus-ring"
+                className="px-4 py-2 text-sm bg-error text-white rounded-md hover:bg-error-light focus-ring transition-colors cursor-pointer"
               >
                 Yes, Cancel
               </button>

@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, Save, Loader2, Plus, Trash2, FileText, Package, FilePlus } from 'lucide-react'
 import { SearchableSelect } from '@/components/SearchableSelect'
+import { Select } from '@/components/Select'
 import { api, fetchApi } from '@/lib/api'
 import { transformRule } from '@/app/api/rules/transform'
 import { useKeyboardShortcuts } from '@/lib/useKeyboardShortcuts'
@@ -368,7 +369,7 @@ export default function NewRulePage() {
 
   if (!metadata) {
     return (
-      <div className="text-center text-red-600 py-10">
+      <div className="text-center text-error py-10">
         Failed to load field metadata. Please refresh the page.
       </div>
     )
@@ -380,7 +381,7 @@ export default function NewRulePage() {
       <div className="flex items-center justify-between">
         <button
           onClick={() => router.back()}
-          className="inline-flex items-center gap-2 text-slate-600 hover:text-slate-900 focus-ring rounded-md px-2 py-1"
+          className="inline-flex items-center gap-2 text-text-secondary hover:text-text-primary focus-ring rounded-md px-2 py-1 transition-colors cursor-pointer"
         >
           <FilePlus className="w-4 h-4" />
           <ArrowLeft className="w-4 h-4" />
@@ -388,18 +389,18 @@ export default function NewRulePage() {
         </button>
         {/* Fact Type Toggle */}
         {factTypes.length > 0 && (
-          <div className="flex items-center gap-2 bg-white border border-outlineVariant rounded-md p-2">
-            <Package size={16} className="text-slate-500" />
+          <div className="flex items-center gap-2 bg-surface border border-outlineVariant rounded-md p-2">
+            <Package size={16} className="text-text-tertiary" />
             <div className="flex gap-1">
               {factTypes.map((factType) => (
                 <button
                   key={factType}
                   type="button"
                   onClick={() => setFormData(prev => ({ ...prev, factType }))}
-                  className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-1.5 ${
+                  className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-1.5 cursor-pointer ${
                     formData.factType === factType
-                      ? 'bg-indigo-600 text-white shadow-md'
-                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                      ? 'bg-primary text-white shadow-md'
+                      : 'bg-surfaceContainerHigh text-text-secondary hover:bg-surfaceContainerHighest'
                   }`}
                 >
                   {factType === 'Declaration' ? <FileText size={14} /> : <Package size={14} />}
@@ -412,17 +413,17 @@ export default function NewRulePage() {
       </div>
 
       {error && (
-        <div className="bg-red-50 border border-red-200 rounded-md p-4">
-          <p className="text-red-800">{error}</p>
+        <div className="bg-error-bg border border-error/30 rounded-md p-4">
+          <p className="text-error">{error}</p>
         </div>
       )}
 
       <form ref={formRef} onSubmit={handleSubmit} className="space-y-6">
         {/* Basic Information */}
-        <div className="bg-white rounded-md border border-outlineVariant p-6 space-y-4">
+        <div className="bg-surface rounded-md border border-outlineVariant p-6 space-y-4">
           <div>
-            <label htmlFor="ruleName" className="block text-sm font-medium text-slate-700 mb-1">
-              Rule Name <span className="text-red-600">*</span>
+            <label htmlFor="ruleName" className="block text-sm font-medium text-text-secondary mb-1">
+              Rule Name <span className="text-error">*</span>
             </label>
             <input
               id="ruleName"
@@ -433,7 +434,7 @@ export default function NewRulePage() {
               className="w-full px-3 py-1.5 text-sm border border-outlineVariant rounded-md focus-ring"
               placeholder="e.g., high_value_import_flag"
             />
-            <p className="text-xs text-slate-500 mt-1">Internal identifier for the rule (use lowercase with underscores)</p>
+            <p className="text-xs text-text-tertiary mt-1">Internal identifier for the rule (use lowercase with underscores)</p>
           </div>
         </div>
 
@@ -463,17 +464,17 @@ export default function NewRulePage() {
                                    hasSameObjectPath(prevCondition.field, condition.field)
 
               return (
-                <div key={condition.id} className="flex items-start gap-2 bg-slate-50 p-3 rounded-md">
+                <div key={condition.id} className="flex items-start gap-2 bg-surfaceContainerHigh p-3 rounded-md">
                   <div className="flex-1 grid grid-cols-12 gap-2">
                     {idx > 0 && showLogicalOp && (
-                      <select
+                      <Select
                         value={prevCondition?.logicalOp || 'AND'}
                         onChange={(e) => updateCondition(prevCondition.id, { logicalOp: e.target.value as LogicalOperator })}
-                        className="col-span-2 h-9 px-2 text-sm rounded-md border border-outlineVariant focus-ring"
+                        className="col-span-2 text-sm"
                       >
                         <option value="AND">AND</option>
                         <option value="OR">OR</option>
-                      </select>
+                      </Select>
                     )}
                     
                     <SearchableSelect
@@ -503,12 +504,12 @@ export default function NewRulePage() {
                       className={idx > 0 && showLogicalOp ? 'col-span-4' : 'col-span-6'}
                     />
 
-                    <select
+                    <Select
                       value={condition.operator && operators.some(op => op.operator === condition.operator) 
                         ? condition.operator 
                         : (operators.length > 0 ? operators[0].operator : '')}
                       onChange={(e) => updateCondition(condition.id, { operator: e.target.value })}
-                      className="col-span-3 h-9 px-2 text-sm rounded-md border border-outlineVariant focus-ring"
+                      className="col-span-3 text-sm"
                       disabled={!condition.field || operators.length === 0}
                       title={operators.find(op => op.operator === condition.operator)?.description}
                     >
@@ -517,7 +518,7 @@ export default function NewRulePage() {
                           {op.label}
                         </option>
                       ))}
-                    </select>
+                    </Select>
 
                     <input
                       type={selectedField?.type === 'integer' || selectedField?.type === 'decimal' ? 'number' : 'text'}
@@ -535,7 +536,7 @@ export default function NewRulePage() {
                     <button
                       type="button"
                       onClick={() => removeCondition(condition.id)}
-                      className="p-2 text-red-600 hover:bg-red-50 rounded-md focus-ring"
+                      className="p-2 text-error hover:bg-error-bg rounded-md focus-ring transition-colors cursor-pointer"
                       aria-label="Remove condition"
                     >
                       <Trash2 size={16} />
@@ -550,7 +551,7 @@ export default function NewRulePage() {
         {/* Outputs (Then) */}
         <section className="bg-surface rounded-md border border-outlineVariant p-6">
           <h2 className="text-lg font-semibold mb-4">Outputs (Then)</h2>
-          <p className="text-sm text-slate-600 mb-4">
+          <p className="text-sm text-text-secondary mb-4">
             Define what happens when this rule matches
           </p>
 
@@ -573,16 +574,16 @@ export default function NewRulePage() {
                 if (field.name === 'action') {
                   return (
                     <div key={field.name}>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">
-                        {field.label} {isRequired && <span className="text-red-600">*</span>}
+                      <label className="block text-sm font-medium text-text-secondary mb-1">
+                        {field.label} {isRequired && <span className="text-error">*</span>}
                       </label>
-                      <select
+                      <Select
                         value={fieldValue}
                         onChange={(e) => setFormData(prev => ({
                           ...prev,
                           output: { ...prev.output, [field.name]: e.target.value }
                         }))}
-                        className="w-full px-3 py-1.5 text-sm border border-outlineVariant rounded-md focus-ring"
+                        className="w-full text-sm"
                         required={isRequired}
                       >
                         <option value="">-- Select {field.label} --</option>
@@ -591,9 +592,9 @@ export default function NewRulePage() {
                         <option value="REJECT">REJECT</option>
                         <option value="REVIEW">REVIEW</option>
                         <option value="HOLD">HOLD</option>
-                      </select>
+                      </Select>
                       {field.description && (
-                        <p className="text-xs text-slate-500 mt-1">{field.description}</p>
+                        <p className="text-xs text-text-tertiary mt-1">{field.description}</p>
                       )}
                     </div>
                   )
@@ -603,8 +604,8 @@ export default function NewRulePage() {
                 if (isTextarea) {
                   return (
                     <div key={field.name} className={field.name === 'result' || field.name === 'description' ? 'md:col-span-2' : ''}>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">
-                        {field.label} {isRequired && <span className="text-red-600">*</span>}
+                      <label className="block text-sm font-medium text-text-secondary mb-1">
+                        {field.label} {isRequired && <span className="text-error">*</span>}
                       </label>
                       <textarea
                         value={fieldValue}
@@ -617,7 +618,7 @@ export default function NewRulePage() {
                         placeholder={field.description || `Enter ${field.label.toLowerCase()}`}
                       />
                       {field.description && (
-                        <p className="text-xs text-slate-500 mt-1">{field.description}</p>
+                        <p className="text-xs text-text-tertiary mt-1">{field.description}</p>
                       )}
                     </div>
                   )
@@ -627,8 +628,8 @@ export default function NewRulePage() {
                 if (isNumber) {
                   return (
                     <div key={field.name}>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">
-                        {field.label} {isRequired && <span className="text-red-600">*</span>}
+                      <label className="block text-sm font-medium text-text-secondary mb-1">
+                        {field.label} {isRequired && <span className="text-error">*</span>}
                       </label>
                       <input
                         type="number"
@@ -644,7 +645,7 @@ export default function NewRulePage() {
                         placeholder={field.description || `Enter ${field.label.toLowerCase()}`}
                       />
                       {field.description && (
-                        <p className="text-xs text-slate-500 mt-1">{field.description}</p>
+                        <p className="text-xs text-text-tertiary mt-1">{field.description}</p>
                       )}
                     </div>
                   )
@@ -653,8 +654,8 @@ export default function NewRulePage() {
                 // Default text input
                 return (
                   <div key={field.name}>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">
-                      {field.label} {isRequired && <span className="text-red-600">*</span>}
+                    <label className="block text-sm font-medium text-text-secondary mb-1">
+                      {field.label} {isRequired && <span className="text-error">*</span>}
                     </label>
                     <input
                       type="text"
@@ -667,14 +668,14 @@ export default function NewRulePage() {
                       placeholder={field.description || `Enter ${field.label.toLowerCase()}`}
                     />
                     {field.description && (
-                      <p className="text-xs text-slate-500 mt-1">{field.description}</p>
+                      <p className="text-xs text-text-tertiary mt-1">{field.description}</p>
                     )}
                   </div>
                 )
               })}
             </div>
           ) : (
-            <p className="text-sm text-slate-500">Loading output fields...</p>
+            <p className="text-sm text-text-tertiary">Loading output fields...</p>
           )}
         </section>
 
@@ -700,7 +701,7 @@ export default function NewRulePage() {
           <button
             type="button"
             onClick={() => router.back()}
-            className="px-4 py-2 text-sm border border-outlineVariant rounded-md hover:bg-slate-50 focus-ring"
+            className="px-4 py-2 text-sm border border-outlineVariant rounded-md hover:bg-surfaceContainerHigh focus-ring transition-colors cursor-pointer"
           >
             Cancel
           </button>

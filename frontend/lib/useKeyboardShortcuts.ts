@@ -7,6 +7,8 @@ type KeyboardShortcutsOptions = {
   onEscape?: (e: KeyboardEvent) => void
   enabled?: boolean
   preventDefault?: boolean
+  /** Allow handling Enter even when focus is inside inputs/selects (except textarea) */
+  allowInInputs?: boolean
 }
 
 /**
@@ -22,6 +24,7 @@ export function useKeyboardShortcuts({
   onEscape,
   enabled = true,
   preventDefault = true,
+  allowInInputs = false,
 }: KeyboardShortcutsOptions) {
   // Use refs to always have latest callbacks
   const onEnterRef = useRef(onEnter)
@@ -67,16 +70,21 @@ export function useKeyboardShortcuts({
         return
       }
 
-      // Handle Enter key - only when not in input/textarea/select
+      // Handle Enter key
       if (e.key === 'Enter' && onEnterRef.current) {
-        if (!isInput && !isTextarea && !isSelect && !isContentEditable) {
-          if (preventDefault) e.preventDefault()
-          onEnterRef.current(e)
-          return
-        }
+        // When allowInInputs is true, allow Enter everywhere except textarea/contenteditable
+        const canHandleEnter = allowInInputs
+          ? !isTextarea && !isContentEditable
+          : !isInput && !isTextarea && !isSelect && !isContentEditable
+
+        if (!canHandleEnter) return
+
+        if (preventDefault) e.preventDefault()
+        onEnterRef.current(e)
+        return
       }
     },
-    [enabled, preventDefault],
+    [enabled, preventDefault, allowInInputs],
   )
 
   useEffect(() => {

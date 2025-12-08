@@ -229,13 +229,13 @@ export default function RuleDetailPage({ params }: Props) {
       <div className="space-y-4">
         <button
           onClick={() => router.back()}
-          className="inline-flex items-center gap-2 text-slate-600 hover:text-slate-900"
+          className="inline-flex items-center gap-2 text-text-secondary hover:text-text-primary transition-colors cursor-pointer"
         >
           <ArrowLeft className="w-4 h-4" />
           Back
         </button>
-        <div className="bg-red-50 border border-red-200 rounded-md p-4">
-          <p className="text-red-800">{error || 'Rule not found'}</p>
+        <div className="bg-error-bg border border-error/30 rounded-md p-4">
+          <p className="text-error">{error || 'Rule not found'}</p>
         </div>
       </div>
     )
@@ -247,7 +247,7 @@ export default function RuleDetailPage({ params }: Props) {
       <div className="flex items-center justify-between">
         <button
           onClick={() => router.back()}
-          className="inline-flex items-center gap-2 text-slate-600 hover:text-slate-900 focus-ring rounded-md px-2 py-1"
+          className="inline-flex items-center gap-2 text-text-secondary hover:text-text-primary focus-ring rounded-md px-2 py-1 transition-colors cursor-pointer"
         >
           <FileText className="w-4 h-4" />
           <ArrowLeft className="w-4 h-4" />
@@ -269,7 +269,7 @@ export default function RuleDetailPage({ params }: Props) {
                 toast.showInfo('Delete not implemented yet')
               }
             }}
-            className="inline-flex items-center gap-2 px-4 py-2 text-sm bg-red-600 text-white rounded-md hover:bg-red-700 focus-ring"
+            className="inline-flex items-center gap-2 px-4 py-2 text-sm bg-error text-white rounded-md hover:bg-error-light focus-ring transition-colors cursor-pointer"
           >
             <Trash2 className="w-4 h-4" />
             Delete
@@ -278,38 +278,40 @@ export default function RuleDetailPage({ params }: Props) {
       </div>
 
       {/* Rule Details */}
-      <div className="bg-white rounded-md border border-outlineVariant p-6 space-y-6">
+      <div className="bg-surface rounded-md border border-outlineVariant p-6 space-y-6">
         {/* Title, Status & Version */}
-        <div className="flex items-start justify-between">
-          <div className="flex items-start gap-4">
-            <div>
-              <h1 className="page-title">{rule.label || rule.ruleName}</h1>
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-4 flex-1 min-w-0">
+            <div className="flex-1 min-w-0">
+              <h1 className="text-2xl font-semibold text-text-primary">{rule.label || rule.ruleName}</h1>
               <p className="text-body-sm text-text-tertiary mt-1">ID: {rule.id}</p>
             </div>
             
             {/* Version Dropdown */}
             {versions.length > 0 && (
-              <VersionDropdown
-                currentVersion={{
-                  id: rule.id,
-                  version: rule.version,
-                  isLatest: rule.isLatest,
-                  versionNotes: rule.versionNotes,
-                  updatedAt: rule.updatedAt || '',
-                  updatedBy: rule.updatedBy,
-                }}
-                versions={versions}
-              />
+              <div className="flex-shrink-0">
+                <VersionDropdown
+                  currentVersion={{
+                    id: rule.id,
+                    version: rule.version,
+                    isLatest: rule.isLatest,
+                    versionNotes: rule.versionNotes,
+                    updatedAt: rule.updatedAt || '',
+                    updatedBy: rule.updatedBy,
+                  }}
+                  versions={versions}
+                />
+              </div>
             )}
           </div>
           
-          <div className="flex items-center gap-2">
-            <span className={`px-3 py-1 rounded-full text-sm font-medium ${
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <span className={`inline-flex items-center h-9 px-3 rounded-full text-sm font-medium ${
               rule.status === 'ACTIVE' 
-                ? 'bg-green-100 text-green-800' 
+                ? 'bg-success-bg text-success ring-1 ring-success/20' 
                 : rule.status === 'DRAFT'
-                ? 'bg-yellow-100 text-yellow-800'
-                : 'bg-gray-100 text-gray-800'
+                ? 'bg-warning-bg text-warning ring-1 ring-warning/20'
+                : 'bg-surfaceContainerHigh text-text-tertiary ring-1 ring-border'
             }`}>
               {rule.status === 'ACTIVE' ? 'Active' : rule.status === 'DRAFT' ? 'Draft' : 'Inactive'}
             </span>
@@ -318,11 +320,11 @@ export default function RuleDetailPage({ params }: Props) {
 
         {/* Old Version Warning */}
         {!rule.isLatest && (
-          <div className="bg-amber-50 border border-amber-200 rounded-md p-4 flex items-start gap-3">
-            <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+          <div className="bg-warning-bg border border-warning/30 rounded-md p-4 flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-warning flex-shrink-0 mt-0.5" />
             <div className="flex-1">
-              <p className="text-sm font-medium text-amber-900">Viewing old version</p>
-              <p className="text-sm text-amber-700 mt-1">
+              <p className="text-sm font-medium text-warning">Viewing old version</p>
+              <p className="text-sm text-warning/80 mt-1">
                 This is version {rule.version}. A newer version is available.
               </p>
               <button
@@ -330,7 +332,7 @@ export default function RuleDetailPage({ params }: Props) {
                   const latestVersion = versions.find(v => v.isLatest)
                   if (latestVersion) router.push(`/rules/${latestVersion.id}`)
                 }}
-                className="mt-2 text-sm text-amber-600 hover:text-amber-800 underline"
+                className="mt-2 text-sm text-warning hover:text-warning-light underline transition-colors cursor-pointer"
               >
                 View latest version
               </button>
@@ -339,29 +341,29 @@ export default function RuleDetailPage({ params }: Props) {
         )}
 
         {/* Tabs */}
-        <div className="border-b border-slate-200">
+        <div className="border-b border-border">
           <nav className="flex gap-6">
             <button
               onClick={() => setActiveTab('details')}
-              className={`pb-3 px-1 border-b-2 transition-colors ${
+              className={`pb-3 px-1 border-b-2 transition-colors cursor-pointer ${
                 activeTab === 'details'
-                  ? 'border-blue-600 text-blue-600 font-medium'
-                  : 'border-transparent text-slate-600 hover:text-slate-900'
+                  ? 'border-primary text-primary font-medium'
+                  : 'border-transparent text-text-secondary hover:text-text-primary'
               }`}
             >
               Details
             </button>
             <button
               onClick={() => setActiveTab('history')}
-              className={`pb-3 px-1 border-b-2 transition-colors ${
+              className={`pb-3 px-1 border-b-2 transition-colors cursor-pointer ${
                 activeTab === 'history'
-                  ? 'border-blue-600 text-blue-600 font-medium'
-                  : 'border-transparent text-slate-600 hover:text-slate-900'
+                  ? 'border-primary text-primary font-medium'
+                  : 'border-transparent text-text-secondary hover:text-text-primary'
               }`}
             >
               Version History
               {versions.length > 1 && (
-                <span className="ml-2 px-2 py-0.5 bg-slate-100 text-slate-600 text-xs rounded-full">
+                <span className="ml-2 px-2 py-0.5 bg-surfaceContainerHigh text-text-tertiary text-xs rounded-full">
                   {versions.length}
                 </span>
               )}
@@ -369,10 +371,10 @@ export default function RuleDetailPage({ params }: Props) {
             {versions.length > 1 && (
               <button
                 onClick={() => setActiveTab('compare')}
-                className={`pb-3 px-1 border-b-2 transition-colors ${
+                className={`pb-3 px-1 border-b-2 transition-colors cursor-pointer ${
                   activeTab === 'compare'
-                    ? 'border-blue-600 text-blue-600 font-medium'
-                    : 'border-transparent text-slate-600 hover:text-slate-900'
+                    ? 'border-primary text-primary font-medium'
+                    : 'border-transparent text-text-secondary hover:text-text-primary'
                 }`}
               >
                 Compare Versions
@@ -380,10 +382,10 @@ export default function RuleDetailPage({ params }: Props) {
             )}
             <button
               onClick={() => setActiveTab('drl')}
-              className={`pb-3 px-1 border-b-2 transition-colors ${
+              className={`pb-3 px-1 border-b-2 transition-colors cursor-pointer ${
                 activeTab === 'drl'
-                  ? 'border-blue-600 text-blue-600 font-medium'
-                  : 'border-transparent text-slate-600 hover:text-slate-900'
+                  ? 'border-primary text-primary font-medium'
+                  : 'border-transparent text-text-secondary hover:text-text-primary'
               }`}
             >
               DRL
@@ -416,7 +418,7 @@ export default function RuleDetailPage({ params }: Props) {
                           <select
                             value={conditions[idx - 1].logicalOp}
                             disabled
-                            className="px-2 py-2 border border-outlineVariant rounded-md text-sm w-20 bg-slate-50 cursor-not-allowed"
+                            className="px-2 py-2 border border-outlineVariant rounded-md text-sm w-20 bg-surfaceContainerHigh cursor-not-allowed text-text-secondary"
                           >
                             <option value="AND">AND</option>
                             <option value="OR">OR</option>
@@ -437,7 +439,7 @@ export default function RuleDetailPage({ params }: Props) {
                         <select
                           value={condition.operator}
                           disabled
-                          className="px-3 py-2 border border-outlineVariant rounded-md text-sm w-40 bg-slate-50 cursor-not-allowed"
+                          className="px-3 py-2 border border-outlineVariant rounded-md text-sm w-40 bg-surfaceContainerHigh cursor-not-allowed text-text-secondary"
                         >
                           {operators.map(op => (
                             <option key={op.operator} value={op.operator}>
@@ -450,7 +452,7 @@ export default function RuleDetailPage({ params }: Props) {
                           type="text"
                           value={condition.value}
                           disabled
-                          className="flex-1 px-3 py-2 border border-outlineVariant rounded-md text-sm bg-slate-50 cursor-not-allowed"
+                          className="flex-1 px-3 py-2 border border-outlineVariant rounded-md text-sm bg-surfaceContainerHigh cursor-not-allowed text-text-secondary"
                           placeholder="Value"
                         />
                       </div>
@@ -459,8 +461,8 @@ export default function RuleDetailPage({ params }: Props) {
                 </div>
               ) : (
                 /* Show message if no conditions */
-                <div className="bg-slate-50 rounded-md p-4 border border-slate-200">
-                  <div className="text-sm text-slate-600">No conditions configured</div>
+                <div className="bg-surfaceContainerHigh rounded-md p-4 border border-border">
+                  <div className="text-sm text-text-secondary">No conditions configured</div>
                 </div>
               )}
             </div>
@@ -479,28 +481,28 @@ export default function RuleDetailPage({ params }: Props) {
                     
                     return (
                       <div key={field.name}>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">
+                        <label className="block text-sm font-medium text-text-secondary mb-1">
                           {field.label}
                         </label>
-                        <div className="px-3 py-2 text-sm border border-outlineVariant rounded-md bg-slate-50 text-slate-800">
+                        <div className="px-3 py-2 text-sm border border-outlineVariant rounded-md bg-surfaceContainerHigh text-text-primary">
                           {displayValue}
                         </div>
                         {field.description && (
-                          <p className="text-xs text-slate-500 mt-1">{field.description}</p>
+                          <p className="text-xs text-text-tertiary mt-1">{field.description}</p>
                         )}
                       </div>
                     )
                   })}
                 </div>
               ) : (
-                <div className="bg-slate-50 rounded-md p-4 border border-slate-200">
-                  <div className="text-sm text-slate-600">No output configured</div>
+                <div className="bg-surfaceContainerHigh rounded-md p-4 border border-border">
+                  <div className="text-sm text-text-secondary">No output configured</div>
                 </div>
               )}
             </div>
 
             {/* Timestamps */}
-            <div className="grid grid-cols-1 gap-4 pt-6 text-sm text-slate-600 border-t border-outlineVariant md:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 pt-6 text-sm text-text-secondary border-t border-outlineVariant md:grid-cols-2">
               <UserTimeMeta
                 label="Created"
                 user={rule.createdBy}
@@ -527,11 +529,11 @@ export default function RuleDetailPage({ params }: Props) {
         ) : activeTab === 'compare' ? (
           /* Compare Versions Tab */
           <div className="py-4 space-y-6">
-            <div className="bg-slate-50 rounded-md p-4 border border-slate-200">
-              <h3 className="text-sm font-semibold text-slate-900 mb-4">Select Versions to Compare</h3>
+            <div className="bg-surfaceContainerHigh rounded-md p-4 border border-border">
+              <h3 className="text-sm font-semibold text-text-primary mb-4">Select Versions to Compare</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                  <label className="block text-sm font-medium text-text-secondary mb-2">
                     Version 1 (Old)
                   </label>
                   <select
@@ -569,7 +571,7 @@ export default function RuleDetailPage({ params }: Props) {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                  <label className="block text-sm font-medium text-text-secondary mb-2">
                     Version 2 (New)
                   </label>
                   <select
@@ -648,13 +650,13 @@ export default function RuleDetailPage({ params }: Props) {
             )}
 
             {compareVersion1 && compareVersion2 && compareVersion1 === compareVersion2 && (
-              <div className="bg-amber-50 border border-amber-200 rounded-md p-4 text-center text-amber-800">
+              <div className="bg-warning-bg border border-warning/30 rounded-md p-4 text-center text-warning">
                 Please select two different versions to compare.
               </div>
             )}
 
             {versions.length === 1 && (
-              <div className="bg-slate-50 border border-slate-200 rounded-md p-4 text-center text-slate-600">
+              <div className="bg-surfaceContainerHigh border border-border rounded-md p-4 text-center text-text-secondary">
                 Only one version available. Create a new version to compare.
               </div>
             )}
@@ -663,7 +665,7 @@ export default function RuleDetailPage({ params }: Props) {
           /* DRL Tab */
           <div className="py-4 space-y-4">
             <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-slate-900">Drools Rule Language (DRL)</h3>
+              <h3 className="text-lg font-semibold text-text-primary">Drools Rule Language (DRL)</h3>
               <button
                 onClick={() => {
                   if (rule.ruleContent) {
@@ -671,23 +673,23 @@ export default function RuleDetailPage({ params }: Props) {
                     toast.showSuccess('DRL content copied to clipboard!')
                   }
                 }}
-                className="px-3 py-1.5 text-sm bg-slate-100 text-slate-700 rounded-md hover:bg-slate-200 focus-ring"
+                className="px-3 py-1.5 text-sm bg-surfaceContainerHigh text-text-secondary rounded-md hover:bg-surfaceContainerHighest focus-ring transition-colors cursor-pointer"
               >
                 Copy DRL
               </button>
             </div>
             
             {rule.ruleContent ? (
-              <div className="bg-slate-900 rounded-md border border-slate-700 overflow-hidden">
-                <pre className="p-4 text-sm text-slate-100 overflow-x-auto">
+              <div className="bg-slate-900 dark:bg-slate-950 rounded-md border border-slate-700 dark:border-slate-800 overflow-hidden">
+                <pre className="p-4 text-sm text-slate-100 dark:text-slate-50 overflow-x-auto">
                   <code className="font-mono whitespace-pre-wrap break-words">
                     {rule.ruleContent}
                   </code>
                 </pre>
               </div>
             ) : (
-              <div className="bg-slate-50 border border-slate-200 rounded-md p-4">
-                <div className="text-sm text-slate-600">DRL content not available for this rule.</div>
+              <div className="bg-surfaceContainerHigh border border-border rounded-md p-4">
+                <div className="text-sm text-text-secondary">DRL content not available for this rule.</div>
               </div>
             )}
           </div>

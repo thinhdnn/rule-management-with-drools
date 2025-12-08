@@ -4,6 +4,7 @@ import { use, useEffect, useState, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, Save, Loader2, Plus, Trash2, Edit } from 'lucide-react'
 import { SearchableSelect } from '@/components/SearchableSelect'
+import { Select } from '@/components/Select'
 import { api, fetchApi } from '@/lib/api'
 import { transformRule } from '@/app/api/rules/transform'
 import { useKeyboardShortcuts } from '@/lib/useKeyboardShortcuts'
@@ -391,6 +392,7 @@ export default function EditRulePage({ params }: Props) {
       }
     },
     enabled: !loadingData && !loadingMetadata,
+    allowInInputs: true,
   })
 
   const addCondition = () => {
@@ -444,13 +446,13 @@ export default function EditRulePage({ params }: Props) {
       <div className="space-y-4">
         <button
           onClick={() => router.back()}
-          className="inline-flex items-center gap-2 text-slate-600 hover:text-slate-900"
+          className="inline-flex items-center gap-2 text-text-secondary hover:text-text-primary transition-colors cursor-pointer"
         >
           <ArrowLeft className="w-4 h-4" />
           Back
         </button>
-        <div className="bg-red-50 border border-red-200 rounded-md p-4">
-          <p className="text-red-800">{error}</p>
+        <div className="bg-error-bg border border-error/30 rounded-md p-4">
+          <p className="text-error">{error}</p>
         </div>
       </div>
     )
@@ -461,13 +463,13 @@ export default function EditRulePage({ params }: Props) {
       <div className="space-y-4">
         <button
           onClick={() => router.back()}
-          className="inline-flex items-center gap-2 text-slate-600 hover:text-slate-900"
+          className="inline-flex items-center gap-2 text-text-secondary hover:text-text-primary transition-colors cursor-pointer"
         >
           <ArrowLeft className="w-4 h-4" />
           Back
         </button>
-        <div className="bg-red-50 border border-red-200 rounded-md p-4">
-          <p className="text-red-800">Failed to load field metadata</p>
+        <div className="bg-error-bg border border-error/30 rounded-md p-4">
+          <p className="text-error">Failed to load field metadata</p>
         </div>
       </div>
     )
@@ -479,7 +481,7 @@ export default function EditRulePage({ params }: Props) {
       <div className="flex items-center justify-between">
         <button
           onClick={() => router.back()}
-          className="inline-flex items-center gap-2 text-slate-600 hover:text-slate-900 focus-ring rounded-md px-2 py-1"
+          className="inline-flex items-center gap-2 text-text-secondary hover:text-text-primary focus-ring rounded-md px-2 py-1 transition-colors cursor-pointer"
         >
           <Edit className="w-4 h-4" />
           <ArrowLeft className="w-4 h-4" />
@@ -489,17 +491,17 @@ export default function EditRulePage({ params }: Props) {
       </div>
 
       {error && (
-        <div className="bg-red-50 border border-red-200 rounded-md p-4">
-          <p className="text-red-800">{error}</p>
+        <div className="bg-error-bg border border-error/30 rounded-md p-4">
+          <p className="text-error">{error}</p>
         </div>
       )}
 
       <form onSubmit={handleSubmit} className="space-y-6">
         {/* Basic Information */}
-        <div className="bg-white rounded-md border border-outlineVariant p-6">
+        <div className="bg-surface rounded-md border border-outlineVariant p-6">
           <div>
-            <label htmlFor="ruleName" className="block text-sm font-medium text-slate-700 mb-1">
-              Rule Name <span className="text-red-600">*</span>
+            <label htmlFor="ruleName" className="block text-sm font-medium text-text-secondary mb-1">
+              Rule Name <span className="text-error">*</span>
             </label>
             <input
               id="ruleName"
@@ -510,7 +512,7 @@ export default function EditRulePage({ params }: Props) {
               className="w-full px-3 py-1.5 text-sm border border-outlineVariant rounded-md focus-ring"
               placeholder="e.g., high_value_import_flag"
             />
-            <p className="text-xs text-slate-500 mt-1">Internal identifier for the rule (use lowercase with underscores)</p>
+            <p className="text-xs text-text-tertiary mt-1">Internal identifier for the rule (use lowercase with underscores)</p>
           </div>
         </div>
 
@@ -540,17 +542,17 @@ export default function EditRulePage({ params }: Props) {
                                    hasSameObjectPath(prevCondition.field, condition.field)
 
               return (
-                <div key={condition.id} className="flex items-start gap-2 bg-slate-50 p-3 rounded-md">
+                <div key={condition.id} className="flex items-start gap-2 bg-surfaceContainerHigh p-3 rounded-md">
                   <div className="flex-1 grid grid-cols-12 gap-2">
                     {idx > 0 && showLogicalOp && (
-                      <select
+                      <Select
                         value={prevCondition?.logicalOp || 'AND'}
                         onChange={(e) => updateCondition(prevCondition.id, { logicalOp: e.target.value as LogicalOperator })}
-                        className="col-span-2 h-9 px-2 text-sm rounded-md border border-outlineVariant focus-ring"
+                        className="col-span-2 text-sm"
                       >
                         <option value="AND">AND</option>
                         <option value="OR">OR</option>
-                      </select>
+                      </Select>
                     )}
                     
                     <SearchableSelect
@@ -580,12 +582,12 @@ export default function EditRulePage({ params }: Props) {
                       className={idx > 0 && showLogicalOp ? 'col-span-4' : 'col-span-6'}
                     />
 
-                    <select
+                    <Select
                       value={condition.operator && operators.some(op => op.operator === condition.operator) 
                         ? condition.operator 
                         : (operators.length > 0 ? operators[0].operator : '')}
                       onChange={(e) => updateCondition(condition.id, { operator: e.target.value })}
-                      className="col-span-3 h-9 px-2 text-sm rounded-md border border-outlineVariant focus-ring"
+                      className="col-span-3 text-sm"
                       disabled={!condition.field || operators.length === 0}
                       title={operators.find(op => op.operator === condition.operator)?.description}
                     >
@@ -594,7 +596,7 @@ export default function EditRulePage({ params }: Props) {
                           {op.label}
                         </option>
                       ))}
-                    </select>
+                    </Select>
 
                     <input
                       type={selectedField?.type === 'integer' || selectedField?.type === 'decimal' ? 'number' : 'text'}
@@ -612,7 +614,7 @@ export default function EditRulePage({ params }: Props) {
                     <button
                       type="button"
                       onClick={() => removeCondition(condition.id)}
-                      className="p-2 text-red-600 hover:bg-red-50 rounded-md focus-ring"
+                      className="p-2 text-error hover:bg-error-bg rounded-md focus-ring transition-colors cursor-pointer"
                       aria-label="Remove condition"
                     >
                       <Trash2 size={16} />
@@ -627,7 +629,7 @@ export default function EditRulePage({ params }: Props) {
         {/* Outputs (Then) */}
         <section className="bg-surface rounded-md border border-outlineVariant p-6">
           <h2 className="text-lg font-semibold mb-4">Outputs (Then)</h2>
-          <p className="text-sm text-slate-600 mb-4">
+          <p className="text-sm text-text-secondary mb-4">
             Define what happens when this rule matches
           </p>
 
@@ -650,16 +652,16 @@ export default function EditRulePage({ params }: Props) {
                 if (field.name === 'action') {
                   return (
                     <div key={field.name}>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">
-                        {field.label} {isRequired && <span className="text-red-600">*</span>}
+                      <label className="block text-sm font-medium text-text-secondary mb-1">
+                        {field.label} {isRequired && <span className="text-error">*</span>}
                       </label>
-                      <select
+                      <Select
                         value={fieldValue}
                         onChange={(e) => setFormData(prev => ({
                           ...prev,
                           output: { ...prev.output, [field.name]: e.target.value }
                         }))}
-                        className="w-full px-3 py-1.5 text-sm border border-outlineVariant rounded-md focus-ring"
+                        className="w-full text-sm"
                         required={isRequired}
                       >
                         <option value="">-- Select {field.label} --</option>
@@ -668,9 +670,9 @@ export default function EditRulePage({ params }: Props) {
                         <option value="REJECT">REJECT</option>
                         <option value="REVIEW">REVIEW</option>
                         <option value="HOLD">HOLD</option>
-                      </select>
+                      </Select>
                       {field.description && (
-                        <p className="text-xs text-slate-500 mt-1">{field.description}</p>
+                        <p className="text-xs text-text-tertiary mt-1">{field.description}</p>
                       )}
                     </div>
                   )
@@ -680,8 +682,8 @@ export default function EditRulePage({ params }: Props) {
                 if (isTextarea) {
                   return (
                     <div key={field.name} className={field.name === 'result' || field.name === 'description' ? 'md:col-span-2' : ''}>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">
-                        {field.label} {isRequired && <span className="text-red-600">*</span>}
+                      <label className="block text-sm font-medium text-text-secondary mb-1">
+                        {field.label} {isRequired && <span className="text-error">*</span>}
                       </label>
                       <textarea
                         value={fieldValue}
@@ -694,7 +696,7 @@ export default function EditRulePage({ params }: Props) {
                         placeholder={field.description || `Enter ${field.label.toLowerCase()}`}
                       />
                       {field.description && (
-                        <p className="text-xs text-slate-500 mt-1">{field.description}</p>
+                        <p className="text-xs text-text-tertiary mt-1">{field.description}</p>
                       )}
                     </div>
                   )
@@ -704,8 +706,8 @@ export default function EditRulePage({ params }: Props) {
                 if (isNumber) {
                   return (
                     <div key={field.name}>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">
-                        {field.label} {isRequired && <span className="text-red-600">*</span>}
+                      <label className="block text-sm font-medium text-text-secondary mb-1">
+                        {field.label} {isRequired && <span className="text-error">*</span>}
                       </label>
                       <input
                         type="number"
@@ -721,7 +723,7 @@ export default function EditRulePage({ params }: Props) {
                         placeholder={field.description || `Enter ${field.label.toLowerCase()}`}
                       />
                       {field.description && (
-                        <p className="text-xs text-slate-500 mt-1">{field.description}</p>
+                        <p className="text-xs text-text-tertiary mt-1">{field.description}</p>
                       )}
                     </div>
                   )
@@ -730,8 +732,8 @@ export default function EditRulePage({ params }: Props) {
                 // Default text input
                 return (
                   <div key={field.name}>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">
-                      {field.label} {isRequired && <span className="text-red-600">*</span>}
+                    <label className="block text-sm font-medium text-text-secondary mb-1">
+                      {field.label} {isRequired && <span className="text-error">*</span>}
                     </label>
                     <input
                       type="text"
@@ -744,30 +746,30 @@ export default function EditRulePage({ params }: Props) {
                       placeholder={field.description || `Enter ${field.label.toLowerCase()}`}
                     />
                     {field.description && (
-                      <p className="text-xs text-slate-500 mt-1">{field.description}</p>
+                      <p className="text-xs text-text-tertiary mt-1">{field.description}</p>
                     )}
                   </div>
                 )
               })}
             </div>
           ) : (
-            <p className="text-sm text-slate-500">Loading output fields...</p>
+            <p className="text-sm text-text-tertiary">Loading output fields...</p>
           )}
         </section>
 
         {/* Version Notes */}
-        <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
-          <label className="block text-sm font-medium text-blue-900 mb-2">
+        <div className="bg-primary-bg border border-primary/30 rounded-md p-4">
+          <label className="block text-sm font-medium text-primary mb-2">
             Version Notes (Optional)
           </label>
           <textarea
             value={formData.versionNotes}
             onChange={(e) => setFormData(prev => ({ ...prev, versionNotes: e.target.value }))}
-            className="w-full px-3 py-2 text-sm border border-blue-200 rounded-md focus-ring bg-white"
+            className="w-full px-3 py-2 text-sm border border-primary/30 rounded-md focus-ring bg-surface"
             rows={2}
             placeholder="Describe what changed in this version (e.g., Updated threshold values, Fixed condition logic)"
           />
-          <p className="text-xs text-blue-700 mt-2">
+          <p className="text-xs text-primary/80 mt-2">
             💡 Saving will create a new version of this rule. Add notes to help track changes.
           </p>
         </div>
@@ -794,7 +796,7 @@ export default function EditRulePage({ params }: Props) {
           <button
             type="button"
             onClick={() => router.back()}
-            className="px-4 py-2 text-sm border border-outlineVariant rounded-md hover:bg-slate-50 focus-ring"
+            className="px-4 py-2 text-sm border border-outlineVariant rounded-md hover:bg-surfaceContainerHigh focus-ring transition-colors cursor-pointer"
           >
             Cancel
           </button>

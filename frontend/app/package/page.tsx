@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { fetchApi, api } from '@/lib/api'
 import { Package, RefreshCw, Clock, User, Hash, FileText, Play, X, Server } from 'lucide-react'
 import { UserTimeMeta } from '@/components/UserTimeMeta'
+import { Select } from '@/components/Select'
 import { useToast } from '@/components/Toast'
 
 interface PackageInfo {
@@ -304,7 +305,7 @@ export default function PackagePage() {
   if (error) {
     return (
       <div className="p-6">
-        <div className="bg-red-50 border border-red-200 rounded-md p-4 text-red-700">
+        <div className="bg-error-bg dark:bg-error/10 border border-error/30 rounded-md p-4 text-error dark:text-error-light">
           Error: {error}
         </div>
       </div>
@@ -424,10 +425,10 @@ export default function PackagePage() {
             />
             {packageInfo.changesDescription && (
               <div className="flex items-start gap-2">
-                <FileText size={16} className="text-slate-400 mt-1" />
+                <FileText size={16} className="text-text-muted mt-1" />
                 <div>
-                  <div className="text-sm text-slate-500 mb-1">Changes</div>
-                  <div className="text-sm">{packageInfo.changesDescription}</div>
+                  <div className="text-sm text-text-tertiary mb-1">Changes</div>
+                  <div className="text-sm text-text-primary">{packageInfo.changesDescription}</div>
                 </div>
               </div>
             )}
@@ -436,10 +437,10 @@ export default function PackagePage() {
         {packageInfo.rulesHash && (
           <div className="mt-4 pt-4 border-t border-outlineVariant">
             <div className="flex items-start gap-2">
-              <Hash size={16} className="text-slate-400 mt-1" />
+              <Hash size={16} className="text-text-muted mt-1" />
               <div>
-                <div className="text-sm text-slate-500 mb-1">Rules Hash</div>
-                <div className="text-xs font-mono bg-slate-50 p-2 rounded border">
+                <div className="text-sm text-text-tertiary mb-1">Rules Hash</div>
+                <div className="text-xs font-mono bg-surfaceContainerHigh dark:bg-surfaceContainerHighest p-2 rounded border border-outlineVariant text-text-primary">
                   {packageInfo.rulesHash.substring(0, 16)}...
                 </div>
               </div>
@@ -533,54 +534,54 @@ export default function PackagePage() {
 
       {/* Version History */}
       {packageInfo.versionHistory && packageInfo.versionHistory.length > 0 && (
-        <div className="bg-white border border-outlineVariant rounded-lg p-6">
-          <h2 className="text-lg font-semibold mb-4">Version History</h2>
+        <div className="bg-surface border border-outlineVariant rounded-lg p-6 shadow-card">
+          <h2 className="section-title mb-4">Version History</h2>
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
-                <tr className="border-b border-outlineVariant">
-                  <th className="text-left py-2 px-4 text-sm font-semibold text-slate-700">Version</th>
-                  <th className="text-left py-2 px-4 text-sm font-semibold text-slate-700">Rules</th>
-                  <th className="text-left py-2 px-4 text-sm font-semibold text-slate-700">Release ID</th>
-                  <th className="text-left py-2 px-4 text-sm font-semibold text-slate-700">Changes</th>
-                  <th className="text-left py-2 px-4 text-sm font-semibold text-slate-700">Rule Details</th>
-                  <th className="text-left py-2 px-4 text-sm font-semibold text-slate-700">Deployed</th>
-                  <th className="text-right py-2 px-4 text-sm font-semibold text-slate-700">Actions</th>
+                <tr className="border-b border-outlineVariant bg-surfaceContainerHigh dark:bg-surfaceContainerHighest">
+                  <th className="text-left py-2 px-4 text-sm font-semibold text-text-primary">Version</th>
+                  <th className="text-left py-2 px-4 text-sm font-semibold text-text-primary">Rules</th>
+                  <th className="text-left py-2 px-4 text-sm font-semibold text-text-primary">Release ID</th>
+                  <th className="text-left py-2 px-4 text-sm font-semibold text-text-primary">Changes</th>
+                  <th className="text-left py-2 px-4 text-sm font-semibold text-text-primary">Rule Details</th>
+                  <th className="text-left py-2 px-4 text-sm font-semibold text-text-primary">Deployed</th>
+                  <th className="text-right py-2 px-4 text-sm font-semibold text-text-primary">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {packageInfo.versionHistory.map((version, idx) => (
                   <tr
                     key={version.version}
-                    className={`border-b border-outlineVariant ${
-                      idx === 0 ? 'bg-indigo-50' : ''
+                    className={`border-b border-outlineVariant hover:bg-surfaceContainerHigh dark:hover:bg-surfaceContainerHighest transition-colors ${
+                      idx === 0 ? 'bg-primary-bg dark:bg-primary/10' : ''
                     }`}
                   >
                     <td className="py-3 px-4">
-                      <span className="font-semibold">v{version.version}</span>
+                      <span className="font-semibold text-text-primary">v{version.version}</span>
                       {idx === 0 && (
-                        <span className="ml-2 text-xs bg-indigo-600 text-white px-2 py-0.5 rounded">
+                        <span className="ml-2 text-xs bg-primary text-white px-2 py-0.5 rounded">
                           Current
                         </span>
                       )}
                     </td>
-                    <td className="py-3 px-4">{version.rulesCount}</td>
+                    <td className="py-3 px-4 text-text-primary">{version.rulesCount}</td>
                     <td className="py-3 px-4">
                       {version.releaseId ? (
-                        <span className="text-xs font-mono bg-slate-50 p-1 rounded">
+                        <span className="text-xs font-mono bg-surfaceContainerHigh dark:bg-surfaceContainerHighest p-1 rounded text-text-primary border border-outlineVariant">
                           {version.releaseId.length > 30
                             ? version.releaseId.substring(0, 30) + '...'
                             : version.releaseId}
                         </span>
                       ) : (
-                        <span className="text-slate-400">-</span>
+                        <span className="text-text-muted">-</span>
                       )}
                     </td>
                     <td className="py-3 px-4">
                       {version.changesDescription ? (
-                        <span className="text-sm">{version.changesDescription}</span>
+                        <span className="text-sm text-text-primary">{version.changesDescription}</span>
                       ) : (
-                        <span className="text-slate-400">-</span>
+                        <span className="text-text-muted">-</span>
                       )}
                     </td>
                     <td className="py-3 px-4">
@@ -588,15 +589,15 @@ export default function PackagePage() {
                         <div className="text-xs space-y-2">
                           {version.ruleChanges.added && version.ruleChanges.added.length > 0 && (
                             <div>
-                              <div className="text-green-600 font-semibold mb-1">
+                              <div className="text-success dark:text-success-light font-semibold mb-1">
                                 +{version.ruleChanges.added.length} Added:
                               </div>
                               <div className="pl-2 space-y-1">
                                 {version.ruleChanges.added.map((rule) => (
-                                  <div key={rule.id} className="text-green-700">
+                                  <div key={rule.id} className="text-success dark:text-success-light">
                                     <a 
                                       href={`/rules/${rule.id}`}
-                                      className="hover:underline"
+                                      className="hover:underline cursor-pointer"
                                     >
                                       {rule.name} (ID: {rule.id})
                                     </a>
@@ -607,12 +608,12 @@ export default function PackagePage() {
                           )}
                           {version.ruleChanges.removed && version.ruleChanges.removed.length > 0 && (
                             <div>
-                              <div className="text-red-600 font-semibold mb-1">
+                              <div className="text-error dark:text-error-light font-semibold mb-1">
                                 -{version.ruleChanges.removed.length} Removed:
                               </div>
                               <div className="pl-2 space-y-1">
                                 {version.ruleChanges.removed.map((rule) => (
-                                  <div key={rule.id} className="text-red-700">
+                                  <div key={rule.id} className="text-error dark:text-error-light">
                                     {rule.name} (ID: {rule.id})
                                   </div>
                                 ))}
@@ -621,15 +622,15 @@ export default function PackagePage() {
                           )}
                           {version.ruleChanges.updated && version.ruleChanges.updated.length > 0 && (
                             <div>
-                              <div className="text-blue-600 font-semibold mb-1">
+                              <div className="text-accent dark:text-accent-light font-semibold mb-1">
                                 ~{version.ruleChanges.updated.length} Updated:
                               </div>
                               <div className="pl-2 space-y-1">
                                 {version.ruleChanges.updated.map((rule) => (
-                                  <div key={rule.id} className="text-blue-700">
+                                  <div key={rule.id} className="text-accent dark:text-accent-light">
                                     <a 
                                       href={`/rules/${rule.id}`}
-                                      className="hover:underline"
+                                      className="hover:underline cursor-pointer"
                                     >
                                       {rule.name} (ID: {rule.id})
                                     </a>
@@ -641,11 +642,11 @@ export default function PackagePage() {
                           {(!version.ruleChanges.added || version.ruleChanges.added.length === 0) &&
                            (!version.ruleChanges.removed || version.ruleChanges.removed.length === 0) &&
                            (!version.ruleChanges.updated || version.ruleChanges.updated.length === 0) && (
-                            <span className="text-slate-400">No changes</span>
+                            <span className="text-text-muted">No changes</span>
                           )}
                         </div>
                       ) : (
-                        <span className="text-slate-400">-</span>
+                        <span className="text-text-muted">-</span>
                       )}
                     </td>
                     <td className="py-3 px-4">
@@ -657,7 +658,7 @@ export default function PackagePage() {
                     </td>
                     <td className="py-3 px-4 text-right">
                       {idx === 0 ? (
-                        <span className="text-xs text-slate-500 italic">Active</span>
+                        <span className="text-xs text-text-tertiary italic">Active</span>
                       ) : (
                         <button
                           onClick={() => {
@@ -666,7 +667,7 @@ export default function PackagePage() {
                             setActivationNotes('')
                             setShowActivateModal(true)
                           }}
-                          className="text-sm px-3 py-1 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition-colors"
+                          className="text-sm px-3 py-1 bg-primary text-white rounded hover:bg-primary-light transition-colors cursor-pointer"
                         >
                           Activate
                         </button>
@@ -682,11 +683,11 @@ export default function PackagePage() {
 
       {/* Test Modal */}
       {showTestModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-black/50 dark:bg-black/60 flex items-center justify-center z-50">
+          <div className="bg-surface rounded-lg p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto border border-outlineVariant shadow-lg">
             <div className="flex items-center justify-between mb-4">
               <h2 className="section-title flex items-center gap-2">
-                <Play size={20} className="text-green-600" />
+                <Play size={20} className="text-success" />
                 Test KieContainer
               </h2>
               <button
@@ -697,7 +698,7 @@ export default function PackagePage() {
                   setError(null)
                   setSelectedTestVersion(null)
                 }}
-                className="text-slate-400 hover:text-slate-600"
+                className="text-text-tertiary hover:text-text-primary transition-colors cursor-pointer"
               >
                 <X size={20} />
               </button>
@@ -706,13 +707,13 @@ export default function PackagePage() {
             <div className="space-y-4">
               {/* Version Selector */}
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">
+                <label className="block text-sm font-medium text-text-primary mb-2">
                   Test Version
                 </label>
-                <select
+                <Select
                   value={selectedTestVersion || ''}
                   onChange={(e) => setSelectedTestVersion(e.target.value ? Number(e.target.value) : null)}
-                  className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                  className="w-full"
                 >
                   <option value="">Current Version (v{packageInfo?.version || 'N/A'})</option>
                   {packageInfo?.versionHistory && packageInfo.versionHistory.length > 0 && 
@@ -723,25 +724,25 @@ export default function PackagePage() {
                       </option>
                     ))
                   }
-                </select>
-                <p className="text-xs text-slate-500 mt-1">
+                </Select>
+                <p className="text-xs text-text-tertiary mt-1">
                   {selectedTestVersion ? `Testing with version ${selectedTestVersion}` : 'Testing with current deployed version'}
                 </p>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">
+                <label className="block text-sm font-medium text-text-primary mb-2">
                   Declaration Data (JSON)
                 </label>
                 <textarea
                   value={testData}
                   onChange={(e) => setTestData(e.target.value)}
-                  className="w-full h-80 p-3 border border-slate-300 rounded font-mono text-sm"
+                  className="w-full h-80 p-3 border border-outlineVariant rounded font-mono text-sm bg-surface text-text-primary focus-ring"
                 />
               </div>
 
               {error && (
-                <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
+                <div className="p-3 bg-error-bg dark:bg-error/10 border border-error/30 rounded text-error dark:text-error-light text-sm">
                   {error}
                 </div>
               )}
@@ -750,7 +751,7 @@ export default function PackagePage() {
                 <button
                   onClick={handleTest}
                   disabled={testing || !testData.trim()}
-                  className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex items-center gap-2 px-4 py-2 bg-success text-white rounded hover:bg-success-light disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
                 >
                   <Play size={16} className={testing ? 'animate-pulse' : ''} />
                   {testing ? 'Testing...' : 'Run Test'}
@@ -763,78 +764,78 @@ export default function PackagePage() {
                     setError(null)
                     setSelectedTestVersion(null)
                   }}
-                  className="px-4 py-2 bg-slate-200 text-slate-700 rounded hover:bg-slate-300"
+                  className="px-4 py-2 bg-surfaceContainerHigh dark:bg-surfaceContainerHighest text-text-primary rounded hover:bg-surfaceContainerHighest dark:hover:bg-surfaceContainerHigh transition-colors cursor-pointer border border-outlineVariant"
                 >
                   Cancel
                 </button>
               </div>
 
               {testResult && (
-                <div className="mt-4 p-4 bg-slate-50 border border-slate-200 rounded">
-                  <h3 className="font-semibold mb-2 text-green-700">✓ Test Results</h3>
+                <div className="mt-4 p-4 bg-surfaceContainerHigh dark:bg-surfaceContainerHighest border border-outlineVariant rounded">
+                  <h3 className="font-semibold mb-2 text-success dark:text-success-light">✓ Test Results</h3>
                   <div className="space-y-2 text-sm">
                     <div>
-                      <span className="font-medium">Success:</span>{' '}
-                      <span className={testResult.success ? 'text-green-600' : 'text-red-600'}>
+                      <span className="font-medium text-text-primary">Success:</span>{' '}
+                      <span className={testResult.success ? 'text-success' : 'text-error'}>
                         {testResult.success ? 'Yes' : 'No'}
                       </span>
                     </div>
                     {testResult.declarationId && (
-                      <div>
+                      <div className="text-text-primary">
                         <span className="font-medium">Declaration ID:</span> {testResult.declarationId}
                       </div>
                     )}
                     {testResult.totalScore !== undefined && (
-                      <div>
+                      <div className="text-text-primary">
                         <span className="font-medium">Total Score:</span> {testResult.totalScore}
                       </div>
                     )}
                     {testResult.finalAction && (
                       <div>
-                        <span className="font-medium">Final Action:</span>{' '}
-                        <span className="px-2 py-1 bg-indigo-100 text-indigo-800 rounded text-xs">
+                        <span className="font-medium text-text-primary">Final Action:</span>{' '}
+                        <span className="px-2 py-1 bg-primary-bg dark:bg-primary/20 text-primary dark:text-primary-light rounded text-xs">
                           {testResult.finalAction}
                         </span>
                       </div>
                     )}
                     {testResult.finalFlag && (
                       <div>
-                        <span className="font-medium">Final Flag:</span>{' '}
-                        <span className="px-2 py-1 bg-yellow-100 text-yellow-800 rounded text-xs">
+                        <span className="font-medium text-text-primary">Final Flag:</span>{' '}
+                        <span className="px-2 py-1 bg-warning-bg dark:bg-warning/20 text-warning dark:text-warning-light rounded text-xs">
                           {testResult.finalFlag}
                         </span>
                       </div>
                     )}
                     {testResult.hitsCount !== undefined && (
-                      <div>
+                      <div className="text-text-primary">
                         <span className="font-medium">Rules Matched:</span> {testResult.hitsCount}
                       </div>
                     )}
                     {testResult.hits && testResult.hits.length > 0 && (
                       <div className="mt-4">
-                        <span className="font-medium">Rule Hits:</span>
+                        <span className="font-medium text-text-primary">Rule Hits:</span>
                         <div className="mt-2 space-y-2">
                           {testResult.hits.map((hit: any, index: number) => (
-                            <div key={index} className="p-2 bg-white border border-slate-200 rounded text-xs">
+                            <div key={index} className="p-2 bg-surface border border-outlineVariant rounded text-xs">
                               <div className="flex items-center gap-2 mb-1">
-                                <span className="font-medium">Action:</span>
-                                <span className="px-2 py-0.5 bg-blue-100 text-blue-800 rounded">
+                                <span className="font-medium text-text-primary">Action:</span>
+                                <span className="px-2 py-0.5 bg-accent-bg dark:bg-accent/20 text-accent dark:text-accent-light rounded">
                                   {hit.action || 'N/A'}
                                 </span>
                                 {hit.score !== undefined && (
                                   <>
-                                    <span className="font-medium ml-2">Score:</span>
-                                    <span>{hit.score}</span>
+                                    <span className="font-medium ml-2 text-text-primary">Score:</span>
+                                    <span className="text-text-primary">{hit.score}</span>
                                   </>
                                 )}
                               </div>
                               {hit.result && (
-                                <div className="text-slate-600 mt-1">{hit.result}</div>
+                                <div className="text-text-secondary mt-1">{hit.result}</div>
                               )}
                               {hit.flag && (
                                 <div className="mt-1">
-                                  <span className="text-slate-500">Flag:</span>{' '}
-                                  <span className="px-2 py-0.5 bg-yellow-100 text-yellow-800 rounded">
+                                  <span className="text-text-tertiary">Flag:</span>{' '}
+                                  <span className="px-2 py-0.5 bg-warning-bg dark:bg-warning/20 text-warning dark:text-warning-light rounded">
                                     {hit.flag}
                                   </span>
                                 </div>
@@ -844,10 +845,10 @@ export default function PackagePage() {
                         </div>
                       </div>
                     )}
-                    <div className="mt-4 pt-4 border-t border-slate-200">
+                    <div className="mt-4 pt-4 border-t border-outlineVariant">
                       <details className="cursor-pointer">
-                        <summary className="font-medium text-slate-700">View Raw JSON</summary>
-                        <pre className="mt-2 p-3 bg-slate-800 text-green-400 rounded text-xs overflow-x-auto">
+                        <summary className="font-medium text-text-primary">View Raw JSON</summary>
+                        <pre className="mt-2 p-3 bg-surfaceContainerHighest dark:bg-surfaceContainerHigh border border-outlineVariant text-success dark:text-success-light rounded text-xs overflow-x-auto">
                           {JSON.stringify(testResult, null, 2)}
                         </pre>
                       </details>
@@ -862,9 +863,9 @@ export default function PackagePage() {
 
       {/* Activate Version Modal */}
       {showActivateModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-6 border-b border-slate-200">
+        <div className="fixed inset-0 bg-black/50 dark:bg-black/60 flex items-center justify-center z-50 p-4">
+          <div className="bg-surface rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto border border-outlineVariant">
+            <div className="p-6 border-b border-outlineVariant">
               <div className="flex items-center justify-between">
                 <h2 className="section-title">
                   Activate Version {selectedVersionToActivate}
@@ -875,7 +876,7 @@ export default function PackagePage() {
                     setSelectedVersionToActivate(null)
                     setActivationNotes('')
                   }}
-                  className="text-slate-400 hover:text-slate-600"
+                  className="text-text-tertiary hover:text-text-primary transition-colors cursor-pointer"
                 >
                   <X size={24} />
                 </button>
@@ -884,12 +885,12 @@ export default function PackagePage() {
 
             <div className="p-6 space-y-6">
               {/* Warning Message */}
-              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+              <div className="bg-warning-bg dark:bg-warning/10 border border-warning/30 rounded-lg p-4">
                 <div className="flex items-start gap-3">
-                  <div className="text-amber-600 mt-0.5">⚠️</div>
+                  <div className="text-warning dark:text-warning-light mt-0.5">⚠️</div>
                   <div>
-                    <h3 className="font-semibold text-amber-900 mb-1">Version Activation</h3>
-                    <p className="text-sm text-amber-800">
+                    <h3 className="font-semibold text-warning dark:text-warning-light mb-1">Version Activation</h3>
+                    <p className="text-sm text-warning dark:text-warning-light">
                       This will activate all rules from version <strong>v{selectedVersionToActivate}</strong> for{' '}
                       <strong>{selectedFactType}</strong>. Current active rules will be deactivated.
                     </p>
@@ -899,11 +900,11 @@ export default function PackagePage() {
 
               {/* Activation Mode */}
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-3">
+                <label className="block text-sm font-medium text-text-primary mb-3">
                   Activation Mode
                 </label>
                 <div className="space-y-3">
-                  <label className="flex items-start gap-3 p-4 border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-50 transition-colors">
+                  <label className="flex items-start gap-3 p-4 border border-outlineVariant rounded-lg cursor-pointer hover:bg-surfaceContainerHigh dark:hover:bg-surfaceContainerHighest transition-colors">
                     <input
                       type="radio"
                       name="activationMode"
@@ -913,15 +914,15 @@ export default function PackagePage() {
                       className="mt-0.5"
                     />
                     <div>
-                      <div className="font-medium text-slate-900">Create New Version (Recommended)</div>
-                      <div className="text-sm text-slate-600 mt-1">
+                      <div className="font-medium text-text-primary">Create New Version (Recommended)</div>
+                      <div className="text-sm text-text-secondary mt-1">
                         Creates a new KieContainer version (e.g., v{(packageInfo?.version || 0) + 1}) with rules from v{selectedVersionToActivate}.
                         Preserves full history and allows easy rollback.
                       </div>
                     </div>
                   </label>
 
-                  <label className="flex items-start gap-3 p-4 border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-50 transition-colors">
+                  <label className="flex items-start gap-3 p-4 border border-outlineVariant rounded-lg cursor-pointer hover:bg-surfaceContainerHigh dark:hover:bg-surfaceContainerHighest transition-colors">
                     <input
                       type="radio"
                       name="activationMode"
@@ -931,8 +932,8 @@ export default function PackagePage() {
                       className="mt-0.5"
                     />
                     <div>
-                      <div className="font-medium text-slate-900">Rebuild Current Version</div>
-                      <div className="text-sm text-slate-600 mt-1">
+                      <div className="font-medium text-text-primary">Rebuild Current Version</div>
+                      <div className="text-sm text-text-secondary mt-1">
                         Replaces current version (v{packageInfo?.version || 0}) with rules from v{selectedVersionToActivate}.
                         Does not increment version number. Use only for testing or quick fixes.
                       </div>
@@ -943,7 +944,7 @@ export default function PackagePage() {
 
               {/* Activation Notes */}
               <div>
-                <label htmlFor="activationNotes" className="block text-sm font-medium text-slate-700 mb-2">
+                <label htmlFor="activationNotes" className="block text-sm font-medium text-text-primary mb-2">
                   Activation Notes (Optional)
                 </label>
                 <textarea
@@ -951,13 +952,13 @@ export default function PackagePage() {
                   value={activationNotes}
                   onChange={(e) => setActivationNotes(e.target.value)}
                   placeholder="e.g., 'Rollback due to production issue' or 'Reactivating stable version'"
-                  className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full px-3 py-2 border border-outlineVariant rounded-md focus-ring bg-surface text-text-primary placeholder:text-text-muted"
                   rows={3}
                 />
               </div>
             </div>
 
-            <div className="p-6 border-t border-slate-200 flex items-center justify-end gap-3">
+            <div className="p-6 border-t border-outlineVariant flex items-center justify-end gap-3">
               <button
                 onClick={() => {
                   setShowActivateModal(false)
@@ -965,14 +966,14 @@ export default function PackagePage() {
                   setActivationNotes('')
                 }}
                 disabled={activating}
-                className="px-4 py-2 border border-slate-300 rounded-md hover:bg-slate-50 disabled:opacity-50"
+                className="px-4 py-2 border border-outlineVariant rounded-md hover:bg-surfaceContainerHigh dark:hover:bg-surfaceContainerHighest disabled:opacity-50 transition-colors cursor-pointer text-text-primary"
               >
                 Cancel
               </button>
               <button
                 onClick={handleActivateVersion}
                 disabled={activating}
-                className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                className="px-4 py-2 bg-primary text-white rounded-md hover:bg-primary-light disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 transition-colors cursor-pointer"
               >
                 {activating && <RefreshCw size={16} className="animate-spin" />}
                 {activating ? 'Activating...' : 'Confirm Activation'}

@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { DataTable } from '@/components/DataTable'
 import { PaginationBar } from '@/components/Pagination'
+import { Select } from '@/components/Select'
 import { api, fetchApi } from '@/lib/api'
 import { FileText, Package, Search } from 'lucide-react'
 
@@ -98,6 +99,77 @@ export default function RulesPage() {
     staleTime: 10_000,
   })
 
+  // Apply filters, sorting, and pagination
+  const filteredAndSortedItems = useMemo(() => {
+    if (!data?.items) return []
+    
+    let result = [...data.items]
+    
+    // Apply text search filter
+    if (filters.query) {
+      const query = filters.query.toLowerCase()
+      result = result.filter(rule => 
+        rule.name.toLowerCase().includes(query) ||
+        rule.ruleType.toLowerCase().includes(query) ||
+        rule.outputType.toLowerCase().includes(query)
+      )
+    }
+    
+    // Apply document type filter
+    if (filters.docType) {
+      result = result.filter(rule => rule.documentType === filters.docType)
+    }
+    
+    // Apply rule type filter
+    if (filters.ruleType) {
+      result = result.filter(rule => rule.ruleType === filters.ruleType)
+    }
+    
+    // Apply status filter
+    if (filters.status) {
+      result = result.filter(rule => rule.status === filters.status)
+    }
+    
+    // Apply sorting
+    result.sort((a, b) => {
+      let aVal: string | number
+      let bVal: string | number
+      
+      if (sort === 'name') {
+        aVal = a.name.toLowerCase()
+        bVal = b.name.toLowerCase()
+      } else {
+        aVal = new Date(a.updatedAt).getTime()
+        bVal = new Date(b.updatedAt).getTime()
+      }
+      
+      if (dir === 'asc') {
+        return aVal > bVal ? 1 : aVal < bVal ? -1 : 0
+      } else {
+        return aVal < bVal ? 1 : aVal > bVal ? -1 : 0
+      }
+    })
+    
+    return result
+  }, [data?.items, filters, sort, dir])
+
+  // Apply pagination
+  const paginatedItems = useMemo(() => {
+    const start = (page - 1) * pageSize
+    const end = start + pageSize
+    return filteredAndSortedItems.slice(start, end)
+  }, [filteredAndSortedItems, page, pageSize])
+
+  const totalFiltered = filteredAndSortedItems.length
+
+  // Reset to page 1 if current page is out of bounds after filtering
+  useEffect(() => {
+    const maxPage = Math.max(1, Math.ceil(totalFiltered / pageSize))
+    if (page > maxPage && maxPage > 0) {
+      setPage(1)
+    }
+  }, [totalFiltered, pageSize, page])
+
   // Infer rule type from rule condition content
   function inferRuleTypeFromExpression(ruleCondition: string): Rule['ruleType'] {
     if (!ruleCondition) return 'Compliance'
@@ -192,8 +264,8 @@ export default function RulesPage() {
               />
             </div>
 
-            <select 
-              className="h-9 px-2.5 rounded-lg bg-surface border border-border focus-ring transition-smooth text-body-sm text-text-primary hover:border-primary/30 focus:border-primary focus:ring-2 focus:ring-primary/10 cursor-pointer flex-shrink-0" 
+            <Select 
+              className="flex-shrink-0 text-body-sm" 
               value={filters.docType} 
               onChange={(e) => { setPage(1); setFilters({...filters, docType: e.target.value}) }} 
               data-testid="filter-doc" 
@@ -203,10 +275,10 @@ export default function RulesPage() {
               <option>Import Declaration</option>
               <option>Valuation</option>
               <option>Container</option>
-            </select>
+            </Select>
 
-            <select 
-              className="h-9 px-2.5 rounded-lg bg-surface border border-border focus-ring transition-smooth text-body-sm text-text-primary hover:border-primary/30 focus:border-primary focus:ring-2 focus:ring-primary/10 cursor-pointer flex-shrink-0" 
+            <Select 
+              className="flex-shrink-0 text-body-sm" 
               value={filters.ruleType} 
               onChange={(e) => { setPage(1); setFilters({...filters, ruleType: e.target.value}) }} 
               data-testid="filter-type" 
@@ -217,10 +289,10 @@ export default function RulesPage() {
               <option>Classification</option>
               <option>Compliance</option>
               <option>Valuation</option>
-            </select>
+            </Select>
 
-            <select 
-              className="h-9 px-2.5 rounded-lg bg-surface border border-border focus-ring transition-smooth text-body-sm text-text-primary hover:border-primary/30 focus:border-primary focus:ring-2 focus:ring-primary/10 cursor-pointer flex-shrink-0" 
+            <Select 
+              className="flex-shrink-0 text-body-sm" 
               value={filters.status} 
               onChange={(e) => { setPage(1); setFilters({...filters, status: e.target.value}) }} 
               data-testid="filter-status" 
@@ -230,7 +302,7 @@ export default function RulesPage() {
               <option>Active</option>
               <option>Draft</option>
               <option>Inactive</option>
-            </select>
+            </Select>
 
             <a 
               href="/rules/new" 
@@ -245,7 +317,7 @@ export default function RulesPage() {
 
       <DataTable
         data-testid="table-rules"
-        items={data?.items ?? []}
+        items={paginatedItems}
         loading={isLoading || isFetching}
         error={isError}
         onRetry={() => refetch()}
@@ -261,7 +333,7 @@ export default function RulesPage() {
         data-testid="pagination-root"
         page={page}
         pageSize={pageSize}
-        total={data?.total ?? 0}
+        total={totalFiltered}
         onPageChange={setPage}
         onPageSizeChange={(n) => { setPage(1); setPageSize(n) }}
       />

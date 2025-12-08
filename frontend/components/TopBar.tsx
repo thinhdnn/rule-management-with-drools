@@ -1,9 +1,11 @@
-"use client"
-import { Menu } from 'lucide-react'
-import { useAuth } from '@/components/AuthProvider'
+'use client';
+import { Menu, Sun, Moon } from 'lucide-react';
+import { useAuth } from '@/components/AuthProvider';
+import { useTheme } from '@/components/ThemeProvider';
 
 export function TopBar() {
-  const { user, logout } = useAuth()
+  const { user, logout } = useAuth();
+  const { resolvedTheme, toggleTheme } = useTheme();
 
   return (
     <header className="h-16 bg-surface sticky top-0 z-40 elev-appbar border-b border-border flex items-center px-6 gap-4" role="banner">
@@ -19,6 +21,17 @@ export function TopBar() {
         <div className="text-body-xs text-text-tertiary">Worklist</div>
       </div>
       <div className="ml-auto flex items-center gap-4">
+        <button
+          onClick={toggleTheme}
+          className="p-2 rounded-lg hover:bg-surfaceContainerHigh focus-ring transition-smooth cursor-pointer text-text-secondary hover:text-text-primary"
+          aria-label={`Switch to ${resolvedTheme === 'dark' ? 'light' : 'dark'} mode`}
+        >
+          {resolvedTheme === 'dark' ? (
+            <Sun size={20} />
+          ) : (
+            <Moon size={20} />
+          )}
+        </button>
         <div className="text-right">
           <p className="text-sm font-medium text-text-primary">{user?.displayName}</p>
           <p className="text-xs text-text-tertiary">{user?.email}</p>
@@ -31,6 +44,6 @@ export function TopBar() {
         </button>
       </div>
     </header>
-  )
+  );
 }
 

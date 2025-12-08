@@ -55,66 +55,101 @@ export function VersionDropdown({ currentVersion, versions, onVersionChange }: P
     <div className="relative" ref={dropdownRef}>
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 px-3 py-1.5 bg-accent-bg text-accent rounded-lg hover:bg-accent-bg/80 transition-smooth focus:outline-none focus:ring-2 focus:ring-accent/20 cursor-pointer"
+        className={`inline-flex items-center gap-2 px-3 py-1.5 h-9 bg-surface border rounded-lg transition-all duration-200 cursor-pointer ${
+          isOpen
+            ? 'border-primary ring-2 ring-primary/20 shadow-sm'
+            : 'border-border hover:bg-surfaceContainerHigh hover:border-primary/40 hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/20'
+        }`}
+        aria-expanded={isOpen}
+        aria-haspopup="listbox"
       >
-        <Clock className="w-4 h-4" />
-        <span className="text-sm font-medium">Version {currentVersion.version}</span>
-        <ChevronDown className={`w-4 h-4 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+        <span className="text-sm font-medium text-text-primary">
+          v{currentVersion.version}
+        </span>
+        {currentVersion.isLatest && (
+          <span className="px-1.5 py-0.5 bg-success-bg text-success text-[10px] font-semibold uppercase tracking-wide rounded ring-1 ring-success/20">
+            Latest
+          </span>
+        )}
+        <ChevronDown 
+          className={`w-4 h-4 text-text-tertiary transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
+          aria-hidden="true"
+        />
       </button>
 
       {isOpen && (
-        <div className="absolute top-full left-0 mt-1 bg-surface border border-border rounded-lg shadow-card-hover w-96 z-50 max-h-96 overflow-hidden flex flex-col">
-          <div className="px-3 py-2 border-b border-border bg-surfaceContainerHigh">
-            <p className="text-xs font-semibold text-text-tertiary uppercase tracking-wide">
-              Version History
-            </p>
-          </div>
+        <>
+          {/* Backdrop */}
+          <div 
+            className="fixed inset-0 z-40" 
+            onClick={() => setIsOpen(false)}
+            aria-hidden="true"
+          />
           
-          <div className="overflow-y-auto flex-1">
-            {versions.map((v) => (
-              <button
-                key={v.id}
-                onClick={() => handleVersionSelect(v.id)}
-                className={`w-full text-left px-3 py-2.5 hover:bg-surfaceContainerHigh border-b border-border transition-smooth cursor-pointer ${
-                  v.id === currentVersion.id ? 'bg-accent-bg' : ''
-                }`}
-              >
-                <div className="flex justify-between items-start gap-2">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-medium text-text-primary">
-                        Version {v.version}
-                      </p>
-                      {v.isLatest && (
-                        <span className="px-2 py-0.5 bg-success-bg text-success text-xs font-medium rounded-lg ring-1 ring-success/20">
-                          Latest
+          {/* Dropdown */}
+          <div 
+            role="listbox"
+            className="absolute top-full left-0 mt-1.5 bg-surface border border-border rounded-lg shadow-lg backdrop-blur-sm bg-surface/95 w-72 z-50 max-h-[24rem] overflow-hidden flex flex-col animate-in fade-in slide-in-from-top-1 duration-200"
+          >
+            <div className="px-3 py-2.5 border-b border-border bg-surfaceContainerHigh/50">
+              <p className="text-xs font-semibold text-text-secondary uppercase tracking-wider">
+                Select Version
+              </p>
+            </div>
+            
+            <div className="overflow-y-auto flex-1 custom-scrollbar">
+              {versions.map((v, idx) => {
+                const isSelected = v.id === currentVersion.id
+                
+                return (
+                  <button
+                    key={v.id}
+                    role="option"
+                    aria-selected={isSelected}
+                    onClick={() => handleVersionSelect(v.id)}
+                    className={`w-full text-left px-3 py-3 transition-all duration-150 cursor-pointer ${
+                      isSelected
+                        ? 'bg-primary-bg text-primary'
+                        : 'text-text-primary hover:bg-surfaceContainerHigh'
+                    } ${idx < versions.length - 1 ? 'border-b border-border/50' : ''}`}
+                  >
+                    <div className="flex items-center justify-between gap-2 mb-1.5">
+                      <div className="flex items-center gap-2 min-w-0 flex-1">
+                        <span className="text-sm font-semibold">
+                          v{v.version}
                         </span>
-                      )}
-                      {v.id === currentVersion.id && (
-                        <Check className="w-4 h-4 text-accent" />
+                        {v.isLatest && (
+                          <span className="px-1.5 py-0.5 bg-success-bg text-success text-[10px] font-semibold uppercase tracking-wide rounded ring-1 ring-success/20 flex-shrink-0">
+                            Latest
+                          </span>
+                        )}
+                      </div>
+                      {isSelected && (
+                        <Check className="w-4 h-4 text-primary flex-shrink-0" aria-hidden="true" />
                       )}
                     </div>
                     
                     {v.versionNotes && (
-                      <p className="text-xs text-text-tertiary mt-1 line-clamp-2">
+                      <p className="text-xs text-text-tertiary line-clamp-1 mb-1.5">
                         {v.versionNotes}
                       </p>
                     )}
                     
-                    <UserTimeMeta
-                      user={v.updatedBy}
-                      timestamp={v.updatedAt}
-                      relative
-                      className="mt-1"
-                      fallbackUser={null}
-                    />
-                  </div>
-                  
-                </div>
-              </button>
-            ))}
+                    <div>
+                      <UserTimeMeta
+                        user={v.updatedBy}
+                        timestamp={v.updatedAt}
+                        relative
+                        className="text-[11px]"
+                        fallbackUser={null}
+                      />
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
           </div>
-        </div>
+        </>
       )}
     </div>
   )

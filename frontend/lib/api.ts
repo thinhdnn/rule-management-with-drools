@@ -15,6 +15,7 @@ export const api = {
     list: () => `${API_BASE}/rules`,
     get: (id: string | number) => `${API_BASE}/rules/${id}`,
     create: () => `${API_BASE}/rules`,
+    batchCreate: () => `${API_BASE}/rules/batch`,
     update: (id: string | number) => `${API_BASE}/rules/${id}`,
     delete: (id: string | number) => `${API_BASE}/rules/${id}`,
     metadata: (factType?: string) => {
@@ -44,6 +45,7 @@ export const api = {
     containersStatus: () => `${API_BASE}/rules/containers/status`,
     containerStatus: (factType: string) => `${API_BASE}/rules/containers/status/${encodeURIComponent(factType)}`,
     aiGenerate: () => `${API_BASE}/rules/ai-generate`,
+    aiGenerateBatch: () => `${API_BASE}/rules/ai-generate/batch`,
     // Version snapshot tracking and activation
     allVersions: (factType?: string) => {
       const url = `${API_BASE}/rules/versions`

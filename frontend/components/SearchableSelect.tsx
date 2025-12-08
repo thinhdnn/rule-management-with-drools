@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { ChevronDown, X } from 'lucide-react'
+import { ChevronDown, X, Check } from 'lucide-react'
 
 type Option = {
   name: string
@@ -93,7 +93,16 @@ export function SearchableSelect({ value, onChange, options, placeholder = 'Sele
       {/* Trigger */}
       <div
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center justify-between w-full h-9 px-3 text-sm border border-border rounded-lg focus-within:ring-2 focus-within:ring-primary/10 focus-within:border-primary transition-smooth cursor-pointer bg-surface hover:border-primary/30"
+        onKeyDown={handleKeyDown}
+        role="combobox"
+        aria-expanded={isOpen}
+        aria-haspopup="listbox"
+        tabIndex={0}
+        className={`flex items-center justify-between w-full h-9 px-3 text-sm border rounded-lg transition-all duration-200 cursor-pointer bg-surface ${
+          isOpen
+            ? 'border-primary ring-2 ring-primary/20 shadow-sm'
+            : 'border-border hover:border-primary/40 hover:shadow-sm focus-within:ring-2 focus-within:ring-primary/10 focus-within:border-primary'
+        }`}
       >
         {isOpen ? (
           <input
@@ -104,6 +113,7 @@ export function SearchableSelect({ value, onChange, options, placeholder = 'Sele
             onKeyDown={handleKeyDown}
             className="flex-1 outline-none bg-transparent text-sm text-text-primary placeholder:text-text-muted"
             placeholder={placeholder}
+            aria-label="Search options"
           />
         ) : (
           <span className={`flex-1 truncate ${!selectedOption ? 'text-text-muted' : 'text-text-primary'}`}>
@@ -111,51 +121,87 @@ export function SearchableSelect({ value, onChange, options, placeholder = 'Sele
           </span>
         )}
         
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1.5 ml-2">
           {value && !isOpen && (
             <button
               onClick={handleClear}
-              className="p-0.5 hover:bg-surfaceContainerHigh rounded-lg transition-smooth"
+              className="p-1 hover:bg-surfaceContainerHigh rounded-md transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-primary/20"
               type="button"
+              aria-label="Clear selection"
             >
-              <X className="w-3.5 h-3.5 text-text-tertiary" />
+              <X className="w-3.5 h-3.5 text-text-tertiary hover:text-text-primary" />
             </button>
           )}
-          <ChevronDown className={`w-4 h-4 text-text-tertiary transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+          <ChevronDown 
+            className={`w-4 h-4 text-text-tertiary transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} 
+            aria-hidden="true"
+          />
         </div>
       </div>
 
       {/* Dropdown */}
       {isOpen && (
-        <div className="absolute z-50 w-full mt-1 bg-surface border border-border rounded-lg shadow-card-hover max-h-60 overflow-auto">
-          {filteredOptions.length === 0 ? (
-            <div className="px-3 py-2 text-sm text-text-tertiary">No options found</div>
-          ) : (
-            filteredOptions.map((option, idx) => (
-              <div
-                key={`${option.name}-${idx}`}
-                onClick={() => {
-                  onChange(option.name)
-                  setIsOpen(false)
-                  setSearchTerm('')
-                }}
-                onMouseEnter={() => setHighlightedIndex(idx)}
-                className={`px-3 py-2 text-sm cursor-pointer transition-smooth ${
-                  idx === highlightedIndex
-                    ? 'bg-primary-bg text-primary'
-                    : value === option.name
-                    ? 'bg-primary-bg text-primary'
-                    : 'text-text-primary hover:bg-surfaceContainerHigh'
-                }`}
-              >
-                <div className="font-medium">{option.label}</div>
-                {option.description && (
-                  <div className="text-xs text-text-tertiary mt-0.5">{option.description}</div>
-                )}
-              </div>
-            ))
-          )}
-        </div>
+        <>
+          {/* Backdrop for better focus */}
+          <div 
+            className="fixed inset-0 z-40" 
+            onClick={() => {
+              setIsOpen(false)
+              setSearchTerm('')
+            }}
+            aria-hidden="true"
+          />
+          
+          {/* Dropdown Menu */}
+          <div 
+            role="listbox"
+            className="absolute z-50 w-full mt-1.5 bg-surface border border-border rounded-lg shadow-lg backdrop-blur-sm bg-surface/95 max-h-60 overflow-hidden animate-in fade-in slide-in-from-top-1 duration-200"
+          >
+            <div className="overflow-y-auto max-h-60 custom-scrollbar">
+              {filteredOptions.length === 0 ? (
+                <div className="px-3 py-3 text-sm text-text-tertiary text-center">
+                  No options found
+                </div>
+              ) : (
+                filteredOptions.map((option, idx) => {
+                  const isSelected = value === option.name
+                  const isHighlighted = idx === highlightedIndex
+                  
+                  return (
+                    <div
+                      key={`${option.name}-${idx}`}
+                      role="option"
+                      aria-selected={isSelected}
+                      onClick={() => {
+                        onChange(option.name)
+                        setIsOpen(false)
+                        setSearchTerm('')
+                      }}
+                      onMouseEnter={() => setHighlightedIndex(idx)}
+                      className={`px-3 py-2.5 text-sm cursor-pointer transition-all duration-150 ${
+                        isHighlighted || isSelected
+                          ? 'bg-primary-bg text-primary'
+                          : 'text-text-primary hover:bg-surfaceContainerHigh'
+                      } ${idx < filteredOptions.length - 1 ? 'border-b border-border/50' : ''}`}
+                    >
+                      <div className="font-medium flex items-center gap-2">
+                        {option.label}
+                        {isSelected && (
+                          <Check className="w-3.5 h-3.5 text-primary ml-auto" aria-hidden="true" />
+                        )}
+                      </div>
+                      {option.description && (
+                        <div className="text-xs text-text-tertiary mt-1 leading-relaxed">
+                          {option.description}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })
+              )}
+            </div>
+          </div>
+        </>
       )}
     </div>
   )

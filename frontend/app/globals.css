@@ -57,6 +57,58 @@
   --radius-2xl: 20px;
 }
 
+/* Dark mode color palette */
+.dark {
+  /* Primary colors - slightly brighter for dark mode */
+  --color-primary: #818cf8; /* indigo-400 */
+  --color-primary-light: #a5b4fc; /* indigo-300 */
+  --color-primary-lighter: #c7d2fe; /* indigo-200 */
+  --color-primary-bg: rgba(99, 102, 241, 0.1); /* indigo-500 with opacity */
+  
+  /* Secondary colors */
+  --color-secondary: #a78bfa; /* violet-400 */
+  --color-secondary-light: #c4b5fd; /* violet-300 */
+  --color-secondary-bg: rgba(139, 92, 246, 0.1); /* violet-500 with opacity */
+  
+  /* Accent colors */
+  --color-accent: #22d3ee; /* cyan-400 */
+  --color-accent-light: #67e8f9; /* cyan-300 */
+  --color-accent-bg: rgba(6, 182, 212, 0.1); /* cyan-500 with opacity */
+  
+  /* Status colors - adjusted for dark mode */
+  --color-success: #34d399; /* emerald-400 */
+  --color-success-light: #6ee7b7; /* emerald-300 */
+  --color-success-bg: rgba(16, 185, 129, 0.1); /* emerald-500 with opacity */
+  
+  --color-warning: #fbbf24; /* amber-400 */
+  --color-warning-light: #fcd34d; /* amber-300 */
+  --color-warning-bg: rgba(245, 158, 11, 0.1); /* amber-500 with opacity */
+  
+  --color-error: #f87171; /* red-400 */
+  --color-error-light: #fca5a5; /* red-300 */
+  --color-error-bg: rgba(239, 68, 68, 0.1); /* red-500 with opacity */
+  
+  /* Surface colors - dark grays */
+  --color-surface: #1e293b; /* slate-800 */
+  --color-surface-container: #0f172a; /* slate-900 */
+  --color-surface-container-high: #1e293b; /* slate-800 */
+  --color-surface-container-highest: #334155; /* slate-700 */
+  
+  /* Text colors - light for dark backgrounds */
+  --color-text-primary: #f1f5f9; /* slate-100 */
+  --color-text-secondary: #cbd5e1; /* slate-300 */
+  --color-text-tertiary: #94a3b8; /* slate-400 */
+  --color-text-muted: #64748b; /* slate-500 */
+  
+  /* Border colors - subtle dark borders */
+  --color-border: #334155; /* slate-700 */
+  --color-border-light: #475569; /* slate-600 */
+  --color-outline-variant: #475569; /* slate-600 */
+  
+  /* Focus ring - brighter for dark mode */
+  --focus-ring: rgba(129, 140, 248, 0.4);
+}
+
 * { 
   box-sizing: border-box; 
 }
@@ -186,13 +238,25 @@ h6, .h6 {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.1); 
 }
 
+.dark .elev-appbar {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3), 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+
 .elev-card { 
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.06); 
+}
+
+.dark .elev-card {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 1px 3px rgba(0, 0, 0, 0.4);
 }
 
 .elev-card-hover {
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05), 0 2px 4px rgba(0, 0, 0, 0.06);
   transition: box-shadow 0.2s ease-in-out;
+}
+
+.dark .elev-card-hover {
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3), 0 2px 4px rgba(0, 0, 0, 0.4);
 }
 
 /* Data table overflow tooltip */
@@ -207,10 +271,134 @@ h6, .h6 {
   transition: all 0.2s ease-in-out;
 }
 
+/* Dropdown animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideInFromTop {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-in {
+  animation: fadeIn 0.2s ease-out;
+}
+
+.fade-in {
+  animation: fadeIn 0.2s ease-out;
+}
+
+.slide-in-from-top-1 {
+  animation: slideInFromTop 0.2s ease-out;
+}
+
+/* Custom scrollbar for dropdowns */
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border) transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background-color: var(--color-border);
+  border-radius: 3px;
+  transition: background-color 0.2s ease;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-outline-variant);
+}
+
+.dark .custom-scrollbar {
+  scrollbar-color: var(--color-outline-variant) transparent;
+}
+
+.dark .custom-scrollbar::-webkit-scrollbar-thumb {
+  background-color: var(--color-outline-variant);
+}
+
+.dark .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-text-tertiary);
+}
+
 /* Glass effect for cards */
 .glass-card {
   background: rgba(255, 255, 255, 0.8);
   backdrop-filter: blur(10px);
   border: 1px solid rgba(226, 232, 240, 0.8);
+}
+
+.dark .glass-card {
+  background: rgba(30, 41, 59, 0.8); /* slate-800 with opacity */
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(51, 65, 85, 0.8); /* slate-700 with opacity */
+}
+
+/* Form inputs - consistent styling across all inputs */
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="number"],
+input[type="date"],
+input[type="datetime-local"],
+input[type="time"],
+input[type="search"],
+input[type="tel"],
+input[type="url"],
+textarea,
+select {
+  background-color: var(--color-surface);
+  color: var(--color-text-primary);
+  border-color: var(--color-outline-variant);
+}
+
+input[type="text"]:focus,
+input[type="email"]:focus,
+input[type="password"]:focus,
+input[type="number"]:focus,
+input[type="date"]:focus,
+input[type="datetime-local"]:focus,
+input[type="time"]:focus,
+input[type="search"]:focus,
+input[type="tel"]:focus,
+input[type="url"]:focus,
+textarea:focus,
+select:focus {
+  border-color: var(--color-primary);
+  outline: none;
+}
+
+input[type="text"]::placeholder,
+input[type="email"]::placeholder,
+input[type="password"]::placeholder,
+input[type="number"]::placeholder,
+input[type="date"]::placeholder,
+input[type="datetime-local"]::placeholder,
+input[type="time"]::placeholder,
+input[type="search"]::placeholder,
+input[type="tel"]::placeholder,
+input[type="url"]::placeholder,
+textarea::placeholder {
+  color: var(--color-text-muted);
 }
 
