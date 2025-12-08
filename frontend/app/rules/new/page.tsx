@@ -117,8 +117,8 @@ export default function NewRulePage() {
     }
   }, [formData.factType])
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleSubmit = async (e?: React.FormEvent<HTMLFormElement>) => {
+    e?.preventDefault()
     setLoading(true)
     setError(null)
 
@@ -292,7 +292,7 @@ export default function NewRulePage() {
   }
 
   const formRef = useRef<HTMLFormElement>(null)
-  const handleSubmitRef = useRef<((e?: React.FormEvent) => Promise<void>) | null>(null)
+  const handleSubmitRef = useRef<((e?: React.FormEvent<HTMLFormElement>) => Promise<void>) | null>(null)
 
   // Update ref when handleSubmit changes
   useEffect(() => {

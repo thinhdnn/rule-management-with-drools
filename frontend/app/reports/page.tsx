@@ -16,6 +16,7 @@ import {
   Filter,
   FileCheck,
 } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import { api, fetchApi } from '@/lib/api'
 import { useAuth } from '@/components/AuthProvider'
 import type { Execution } from '@/app/executions/page'
@@ -455,7 +456,7 @@ export default function ReportsPage() {
 interface MetricCardProps {
   title: string
   value: string
-  icon: React.ComponentType<{ className?: string; size?: number }>
+  icon: LucideIcon
   color: 'indigo' | 'blue' | 'green' | 'purple' | 'orange' | 'red'
   trend?: { value: string; positive: boolean }
 }
@@ -491,7 +492,7 @@ function MetricCard({ title, value, icon: Icon, color, trend }: MetricCardProps)
 
 interface ChartCardProps {
   title: string
-  icon: React.ComponentType<{ className?: string; size?: number }>
+  icon: LucideIcon
   children: React.ReactNode
   fullWidth?: boolean
 }
