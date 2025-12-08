@@ -168,7 +168,8 @@ jobs:
         AI_PROVIDER="$AI_PROVIDER_VALUE" \
         AI_BASE_URL="$AI_BASE_URL_VALUE" \
         AI_MODEL="$AI_MODEL_VALUE" \
-        $COMPOSE_CMD up -d --build 2>&1 | tee docker-compose.log
+        $COMPOSE_CMD build --no-cache backend 2>&1 | tee docker-compose.log
+        $COMPOSE_CMD up -d --build --no-cache 2>&1 | tee -a docker-compose.log
         
         echo "⏳ Waiting for services to be healthy..."
         
