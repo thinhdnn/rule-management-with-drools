@@ -1,5 +1,6 @@
 "use client"
 import { useMemo, useState, useEffect, useRef } from 'react'
+import { useRouter } from 'next/navigation'
 import type { Rule } from '@/app/rules/page'
 import { MoreVertical } from 'lucide-react'
 import { api, fetchApi } from '@/lib/api'
@@ -34,6 +35,7 @@ const FactTypeColor: Record<string, string> = {
 }
 
 export function DataTable({ items, loading, error, onRetry, sortField, sortDir, onSortChange }: Props) {
+  const router = useRouter()
   const [menuIndex, setMenuIndex] = useState<number | null>(null)
   const menuRefs = useRef<(HTMLDivElement | null)[]>([])
 
@@ -114,7 +116,11 @@ export function DataTable({ items, loading, error, onRetry, sortField, sortDir, 
             )}
 
             {!loading && items.map((r, idx) => (
-              <tr key={r.id} className="h-13 hover:bg-surfaceContainerHigh transition-smooth border-b border-border cursor-pointer">
+              <tr 
+                key={r.id} 
+                className="h-13 hover:bg-surfaceContainerHigh transition-smooth border-b border-border cursor-pointer"
+                onDoubleClick={() => router.push(`/rules/${r.id}`)}
+              >
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2">
                     <div className="font-semibold truncate-tooltip text-text-primary" title={r.name}>{r.name}</div>
@@ -156,7 +162,11 @@ export function DataTable({ items, loading, error, onRetry, sortField, sortDir, 
                     <button
                       aria-haspopup="menu"
                       aria-expanded={menuIndex===idx}
-                      onClick={() => setMenuIndex(menuIndex === idx ? null : idx)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setMenuIndex(menuIndex === idx ? null : idx);
+                      }}
+                      onDoubleClick={(e) => e.stopPropagation()}
                       onKeyDown={(e) => { if (e.key === 'Escape') setMenuIndex(null) }}
                       className="p-2 rounded-lg hover:bg-surfaceContainerHigh focus-ring transition-smooth text-text-tertiary hover:text-text-primary cursor-pointer"
                       data-testid="menu-row-actions"
@@ -169,6 +179,7 @@ export function DataTable({ items, loading, error, onRetry, sortField, sortDir, 
                         className={`absolute right-0 w-40 bg-surface border border-border rounded-lg shadow-card-hover z-[100] overflow-hidden ${
                           idx === 0 ? 'top-full mt-1' : idx >= items.length - 2 ? 'bottom-full mb-1' : 'top-full mt-1'
                         }`}
+                        onDoubleClick={(e) => e.stopPropagation()}
                       >
                         <div className="py-1">
                           <a 
