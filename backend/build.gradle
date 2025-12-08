@@ -30,9 +30,10 @@ dependencies {
 	implementation 'org.flywaydb:flyway-core'
 	implementation 'org.flywaydb:flyway-database-postgresql'
 
-	// Drools 10.0.0
+	// Drools 10.1.0
 	implementation 'org.drools:drools-engine:10.1.0'
 	implementation 'org.drools:drools-xml-support:10.1.0'
+	implementation 'org.drools:drools-mvel:10.1.0'
 
 	// MapStruct for DTO <-> entity mappings
 	implementation 'org.mapstruct:mapstruct:1.6.2'
