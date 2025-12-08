@@ -168,8 +168,10 @@ jobs:
         AI_PROVIDER="$AI_PROVIDER_VALUE" \
         AI_BASE_URL="$AI_BASE_URL_VALUE" \
         AI_MODEL="$AI_MODEL_VALUE" \
+        # Force rebuild backend without cache to include latest deps
         $COMPOSE_CMD build --no-cache backend 2>&1 | tee docker-compose.log
-        $COMPOSE_CMD up -d --build --no-cache 2>&1 | tee -a docker-compose.log
+        # Bring up services (up --no-cache is not supported; rebuild is handled above)
+        $COMPOSE_CMD up -d --build 2>&1 | tee -a docker-compose.log
         
         echo "⏳ Waiting for services to be healthy..."
         
