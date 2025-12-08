@@ -38,6 +38,12 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
+    - name: Build backend JAR
+      run: |
+        echo "🧱 Building backend jar with Gradle..."
+        cd backend
+        ./gradlew clean bootJar
+
     - name: Check Prerequisites
       run: |
         echo "🔍 Checking prerequisites..."
