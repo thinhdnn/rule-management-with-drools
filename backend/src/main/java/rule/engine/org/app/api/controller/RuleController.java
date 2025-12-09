@@ -122,15 +122,15 @@ public class RuleController {
     }
 
     /**
-     * Execute rules with Declaration data
-     * This endpoint accepts Declaration data and fires all matching rules
+     * Execute rules with entity data (Declaration, CargoReport, Traveler, etc.)
+     * This endpoint accepts entity data and fires all matching rules
      * Supports testing with a specific version by passing "version" parameter
      * IMPORTANT: This endpoint must be placed BEFORE endpoints with path variables like /{id} or /{ruleId}/executions
      * to avoid path matching conflicts (Spring may match /execute with /{ruleId}/executions)
      */
     @PostMapping(value = "/execute", consumes = org.springframework.http.MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<?> executeRules(
-            @RequestBody Map<String, Object> declarationData,
+            @RequestBody Map<String, Object> entityData,
             @RequestParam(required = false) Long version,
             @RequestHeader(value = "X-Execution-Source", required = false, defaultValue = "API") String executionSource) {
         try {
@@ -139,30 +139,32 @@ public class RuleController {
                 executionSource = "API"; // Default to API if invalid
             }
             
-            // Convert map to Declaration entity
-            rule.engine.org.app.domain.entity.execution.declaration.Declaration declaration = 
-                buildDeclarationFromMap(declarationData);
-            
-            // Get fact type from declaration data or default to "Declaration"
-            String factTypeStr = (String) declarationData.getOrDefault("factType", "Declaration");
+            // Get fact type from entity data or default to "Declaration"
+            String factTypeStr = (String) entityData.getOrDefault("factType", "Declaration");
             FactType factType = FactType.fromValue(factTypeStr);
+            
+            // Convert map to entity using generic builder
+            Object entity = buildEntityFromMap(entityData, factType);
+            
+            // Extract identifier from entity
+            String entityId = extractEntityIdentifier(entity, factType);
             
             // Fire rules using RuleEngineManager
             rule.engine.org.app.domain.entity.execution.TotalRuleResults results;
             
             if (version != null && version > 0) {
                 // Execute with specific version
-                results = ruleEngineManager.fireRulesWithVersion(factType.getValue(), declaration, version);
+                results = ruleEngineManager.fireRulesWithVersion(factType.getValue(), entity, version);
             } else {
                 // Execute with current version
-                results = ruleEngineManager.fireRules(factType.getValue(), declaration);
+                results = ruleEngineManager.fireRules(factType.getValue(), entity);
             }
             
             // Save execution results with source tracking
-            saveExecutionResults(declaration.getDeclarationId(), factType, results, executionSource);
+            saveExecutionResults(entityId, factType, results, executionSource);
             
             // Build response using DTO factory method
-            RuleExecuteResponse response = RuleExecuteResponse.from(results, declaration.getDeclarationId());
+            RuleExecuteResponse response = RuleExecuteResponse.from(results, entityId);
             
             return ResponseEntity.ok(response);
         } catch (Exception e) {
@@ -898,7 +900,7 @@ public class RuleController {
         List<FactType> factTypesFromDb = decisionRuleRepository.findDistinctFactTypes();
         
         // Default fact types that are always available (even if no rules exist yet)
-        java.util.Set<FactType> defaultFactTypes = new java.util.HashSet<>(java.util.Arrays.asList(FactType.DECLARATION, FactType.CARGO_REPORT));
+        java.util.Set<FactType> defaultFactTypes = new java.util.HashSet<>(java.util.Arrays.asList(FactType.DECLARATION, FactType.CARGO_REPORT, FactType.TRAVELER));
         
         // Merge: combine fact types from database with default fact types
         java.util.Set<FactType> allFactTypes = new java.util.HashSet<>(defaultFactTypes);
@@ -927,7 +929,7 @@ public class RuleController {
         List<FactType> factTypesFromDb = decisionRuleRepository.findDistinctFactTypes();
         
         // Default fact types that are always available (even if no rules exist yet)
-        java.util.Set<FactType> defaultFactTypes = new java.util.HashSet<>(java.util.Arrays.asList(FactType.DECLARATION, FactType.CARGO_REPORT));
+        java.util.Set<FactType> defaultFactTypes = new java.util.HashSet<>(java.util.Arrays.asList(FactType.DECLARATION, FactType.CARGO_REPORT, FactType.TRAVELER));
         
         // Merge: combine fact types from database with default fact types
         java.util.Set<FactType> allFactTypes = new java.util.HashSet<>(defaultFactTypes);
@@ -1074,10 +1076,128 @@ public class RuleController {
     }
     
     /**
+     * Build entity from map data using Jackson ObjectMapper (generic method)
+     * This automatically maps all fields from Map to the appropriate entity class
+     * Unknown properties (like factType) are automatically ignored
+     */
+    private Object buildEntityFromMap(Map<String, Object> data, FactType factType) {
+        try {
+            // Get the main entity class for this fact type
+            Class<?> entityClass = entityScannerService.getMainEntityClass(factType);
+            if (entityClass == null) {
+                throw new IllegalArgumentException("No entity class found for FactType: " + factType);
+            }
+            
+            // Pre-process data: convert array fields to JSON strings and normalize field names for Traveler entity
+            if (factType == FactType.TRAVELER) {
+                Map<String, Object> processedData = new java.util.HashMap<>();
+                
+                // Normalize field names: convert "ID" to "Id" (camelCase) and handle arrays
+                for (Map.Entry<String, Object> entry : data.entrySet()) {
+                    String key = entry.getKey();
+                    Object value = entry.getValue();
+                    
+                    // Normalize field names ending with "ID" to "Id" for camelCase compatibility
+                    if (key.endsWith("ID") && key.length() > 2) {
+                        key = key.substring(0, key.length() - 2) + "Id";
+                    }
+                    
+                    // Convert array fields to JSON strings
+                    if (value instanceof java.util.List) {
+                        if (key.equals("otherGivenNames") || key.equals("baggageTagIds")) {
+                            try {
+                                com.fasterxml.jackson.databind.ObjectMapper tempMapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                                String jsonString = tempMapper.writeValueAsString(value);
+                                processedData.put(key, jsonString);
+                            } catch (Exception e) {
+                                log.warn("Failed to convert {} to JSON string: {}", key, e.getMessage());
+                                processedData.put(key, "[]");
+                            }
+                        } else {
+                            // For other arrays (like itineraryLegs), keep as is for Jackson to handle
+                            processedData.put(key, value);
+                        }
+                    } else {
+                        processedData.put(key, value);
+                    }
+                }
+                
+                data = processedData;
+            }
+            
+            // Use Jackson ObjectMapper to automatically convert Map to entity
+            // Configure to ignore unknown properties (like factType which is not a field of entity)
+            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            mapper.configure(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+            // Support Java 8 date/time (LocalDate, LocalDateTime)
+            mapper.registerModule(new com.fasterxml.jackson.datatype.jsr310.JavaTimeModule());
+            mapper.configure(com.fasterxml.jackson.databind.SerializationFeature.WRITE_DATES_AS_TIMESTAMPS, false);
+            
+            Object entity = mapper.convertValue(data, entityClass);
+            
+            return entity;
+        } catch (Exception e) {
+            log.error("Error converting Map to entity for FactType {}: {}", factType, e.getMessage(), e);
+            throw new IllegalArgumentException("Invalid entity data for " + factType + ": " + e.getMessage(), e);
+        }
+    }
+    
+    /**
+     * Extract identifier from entity based on fact type
+     * Uses reflection to get the appropriate ID field (declarationId, reportId, travelerId, etc.)
+     */
+    private String extractEntityIdentifier(Object entity, FactType factType) {
+        try {
+            // Try common identifier field names based on fact type
+            String[] identifierFieldNames = getIdentifierFieldNames(factType);
+            
+            for (String fieldName : identifierFieldNames) {
+                try {
+                    Field field = entity.getClass().getDeclaredField(fieldName);
+                    field.setAccessible(true);
+                    Object value = field.get(entity);
+                    if (value != null) {
+                        return value.toString();
+                    }
+                } catch (NoSuchFieldException e) {
+                    // Try next field name
+                    continue;
+                }
+            }
+            
+            // Fallback: generate identifier from fact type and hash
+            String fallbackId = factType.getValue() + "-" + System.currentTimeMillis();
+            log.warn("Could not extract identifier from entity {}, using fallback: {}", factType, fallbackId);
+            return fallbackId;
+        } catch (Exception e) {
+            log.error("Error extracting identifier from entity: {}", e.getMessage(), e);
+            throw new IllegalArgumentException("Could not extract identifier from entity: " + e.getMessage(), e);
+        }
+    }
+    
+    /**
+     * Get identifier field names for a fact type
+     */
+    private String[] getIdentifierFieldNames(FactType factType) {
+        switch (factType) {
+            case DECLARATION:
+                return new String[]{"declarationId"};
+            case CARGO_REPORT:
+                return new String[]{"reportId"};
+            case TRAVELER:
+                return new String[]{"travelerId", "sequenceNumeric"};
+            default:
+                return new String[]{"id"};
+        }
+    }
+    
+    /**
      * Build Declaration entity from map data using Jackson ObjectMapper
      * This automatically maps all fields from Map to Declaration entity
      * Unknown properties (like factType) are automatically ignored
+     * @deprecated Use buildEntityFromMap instead
      */
+    @Deprecated
     private rule.engine.org.app.domain.entity.execution.declaration.Declaration buildDeclarationFromMap(
             Map<String, Object> data) {
         try {
@@ -1721,6 +1841,9 @@ public class RuleController {
         if (factTypeEnum == FactType.CARGO_REPORT) {
             factVariable = "$c";
             factClassName = "CargoReport";
+        } else if (factTypeEnum == FactType.TRAVELER) {
+            factVariable = "$t";
+            factClassName = "Traveler";
         } else {
             factVariable = "$d";
             factClassName = "Declaration";
@@ -1815,7 +1938,7 @@ public class RuleController {
     
     /**
      * Normalize field path to use proper fact variable prefix
-     * Handles fields that start with "declaration." or "cargoReport." or have no prefix
+     * Handles fields that start with "declaration.", "cargoReport.", "traveler." or have no prefix
      */
     private String normalizeFieldPath(String field, String factVariable)
     {
@@ -1826,6 +1949,10 @@ public class RuleController {
         else if (field.startsWith("cargoReport."))
         {
             return "$c." + field.substring("cargoReport.".length());
+        }
+        else if (field.startsWith("traveler."))
+        {
+            return "$t." + field.substring("traveler.".length());
         }
         else if (field.contains("."))
         {

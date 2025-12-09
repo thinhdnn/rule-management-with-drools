@@ -32,6 +32,7 @@ const StatusColor: Record<Rule['status'], string> = {
 const FactTypeColor: Record<string, string> = {
   Declaration: 'bg-accent-bg text-accent ring-1 ring-accent/20',
   CargoReport: 'bg-secondary-bg text-secondary ring-1 ring-secondary/20',
+  Traveler: 'bg-tertiary-bg text-tertiary ring-1 ring-tertiary/20',
 }
 
 export function DataTable({ items, loading, error, onRetry, sortField, sortDir, onSortChange }: Props) {

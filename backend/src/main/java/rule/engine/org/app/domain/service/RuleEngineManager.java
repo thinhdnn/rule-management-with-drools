@@ -1047,7 +1047,14 @@ public class RuleEngineManager {
                 drl.append("when\n");
                 // Use factType directly (e.g., "CargoReport") - must match imported class name
                 // Determine correct variable name based on fact type
-                String factVariable = (factTypeEnum == FactType.CARGO_REPORT) ? "$c" : "$d";
+                String factVariable;
+                if (factTypeEnum == FactType.CARGO_REPORT) {
+                    factVariable = "$c";
+                } else if (factTypeEnum == FactType.TRAVELER) {
+                    factVariable = "$t";
+                } else {
+                    factVariable = "$d";
+                }
                 drl.append("    ").append(factVariable).append(" : ").append(factType).append("()\n");
                 drl.append("then\n");
                 drl.append("end\n\n");

@@ -62,7 +62,81 @@ export default function PackagePage() {
   const [activationMode, setActivationMode] = useState<'new' | 'rebuild'>('new')
   const [activationNotes, setActivationNotes] = useState<string>('')
   const [activating, setActivating] = useState(false)
-  const getTestData = (factType: string) => `{
+  const getTestData = (factType: string) => {
+    if (factType === 'Traveler') {
+      return `{
+  "factType": "Traveler",
+  "travelerId": "TRAVELER-2025-0001",
+  "sequenceNumeric": 1,
+  "crewOrPassengerCode": "PAX",
+  "residenceStatusCode": "R",
+  "transitIndicatorCode": "N",
+  "inadmissibleIndicatorCode": "N",
+  "deathIndicatorCode": "N",
+  "deporteeIndicatorCode": "N",
+  "unaccompaniedMinorIndicatorCode": "N",
+  "familyName": "NGUYEN",
+  "givenName": "THINH",
+  "middleName": "VAN",
+  "otherGivenNames": [],
+  "genderCode": "M",
+  "birthDate": "1994-05-12",
+  "birthCountryID": "VN",
+  "nationalityCountryID": "VN",
+  "secondNationalityCountryID": null,
+  "residenceCountryID": "VN",
+  "addressInDestinationText": "123 Hai Phong Street, Haiphong",
+  "contactPhoneNumber": "+84901234567",
+  "emailAddressID": "thinh@example.com",
+  "travelDocumentTypeCode": "P",
+  "travelDocumentNumber": "B12345678",
+  "travelDocumentIssuingCountryID": "VN",
+  "travelDocumentIssueDate": "2024-05-12",
+  "travelDocumentExpiryDate": "2034-05-11",
+  "travelDocumentOtherID": null,
+  "visaID": "VISA-8899",
+  "visaExpiryDate": "2026-10-01",
+  "visaIssueCountryID": "VN",
+  "visaTypeCode": "T",
+  "embarkationLocationID": "CNSHA",
+  "disembarkationLocationID": "VNHPH",
+  "embarkationDateTime": "2025-10-28T02:00:00Z",
+  "disembarkationDateTime": "2025-10-30T08:00:00Z",
+  "transportationClassCode": "ECO",
+  "seatOrCabinID": "C-1203",
+  "baggageCount": 1,
+  "baggageWeightMeasure": 23.5,
+  "baggageTagIDs": ["AB123456"],
+  "pnrRecordLocatorID": "PNRXYZ1234",
+  "pnrCreationDateTime": "2025-10-20T11:20:00Z",
+  "carrierCode": "VT",
+  "carrierName": "Vietnam Marine Lines",
+  "itineraryLegs": [
+    {
+      "legSequenceNumeric": 1,
+      "departureLocationID": "CNSHA",
+      "arrivalLocationID": "VNSGN",
+      "departureDateTime": "2025-10-27T05:00:00Z",
+      "arrivalDateTime": "2025-10-27T12:00:00Z",
+      "transportMeansID": "IMO9876543"
+    },
+    {
+      "legSequenceNumeric": 2,
+      "departureLocationID": "VNSGN",
+      "arrivalLocationID": "VNHPH",
+      "departureDateTime": "2025-10-28T15:00:00Z",
+      "arrivalDateTime": "2025-10-28T21:30:00Z",
+      "transportMeansID": "IMO9876543"
+    }
+  ],
+  "emergencyContactName": "TRAN AN",
+  "emergencyContactPhoneNumber": "+84981111222",
+  "emergencyContactRelationshipCode": "FRIEND"
+}`
+    }
+    
+    // Default to Declaration
+    return `{
   "factType": "${factType}",
   "declarationId": "23IM123456",
   "functionCode": "1",
@@ -141,6 +215,7 @@ export default function PackagePage() {
     }
   ]
 }`
+  }
   const [testData, setTestData] = useState(getTestData('Declaration'))
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<any>(null)
@@ -248,7 +323,7 @@ export default function PackagePage() {
       try {
         declarationData = JSON.parse(testData)
       } catch (e) {
-        throw new Error('Invalid JSON format. Please check your Declaration data.')
+        throw new Error(`Invalid JSON format. Please check your ${selectedFactType} data.`)
       }
       
       // Add factType if not provided (default to "Declaration")
@@ -732,7 +807,7 @@ export default function PackagePage() {
 
               <div>
                 <label className="block text-sm font-medium text-text-primary mb-2">
-                  Declaration Data (JSON)
+                  {selectedFactType} Data (JSON)
                 </label>
                 <textarea
                   value={testData}
@@ -780,9 +855,14 @@ export default function PackagePage() {
                         {testResult.success ? 'Yes' : 'No'}
                       </span>
                     </div>
-                    {testResult.declarationId && (
+                    {(testResult.declarationId || testResult.travelerId || testResult.reportId) && (
                       <div className="text-text-primary">
-                        <span className="font-medium">Declaration ID:</span> {testResult.declarationId}
+                        <span className="font-medium">
+                          {testResult.declarationId ? 'Declaration ID' : 
+                           testResult.travelerId ? 'Traveler ID' : 
+                           testResult.reportId ? 'Report ID' : 'ID'}:
+                        </span>{' '}
+                        {testResult.declarationId || testResult.travelerId || testResult.reportId}
                       </div>
                     )}
                     {testResult.totalScore !== undefined && (

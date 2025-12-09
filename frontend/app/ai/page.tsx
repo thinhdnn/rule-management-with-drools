@@ -254,6 +254,52 @@ export default function AIBuilderPage() {
     ]
   }
 
+  // Generate example prompts for Traveler with random values
+  const generateTravelerExamplePrompts = () => {
+    const baggageWeight = randomFloat(20, 50, 1)
+    const age = randomInt(18, 65)
+    const score1 = randomInt(75, 95)
+    const score2 = randomInt(70, 90)
+    const score3 = randomInt(80, 95)
+    const score4 = randomInt(65, 85)
+    const score5 = randomInt(70, 90)
+
+    return [
+      {
+        prompt: `If baggageWeightMeasure is greater than ${baggageWeight}kg then set score to ${score1} and flag as EXCESS_BAGGAGE`,
+        description: 'Baggage weight validation'
+      },
+      {
+        prompt: `If inadmissibleIndicatorCode equals Y then set score to ${score2} and action is REJECT`,
+        description: 'Inadmissible passenger check'
+      },
+      {
+        prompt: `If transitIndicatorCode equals Y and nationalityCountryID not equals VN then set score to ${score3} and flag as TRANSIT_RISK`,
+        description: 'Transit passenger validation'
+      },
+      {
+        prompt: `If travelDocumentExpiryDate is less than 6 months from today then set score to ${score4} and action is REVIEW`,
+        description: 'Passport expiry validation'
+      },
+      {
+        prompt: `If visaExpiryDate is less than 30 days from today then set score to ${score5} and flag as VISA_EXPIRING`,
+        description: 'Visa expiry check'
+      },
+      {
+        prompt: 'If deporteeIndicatorCode equals Y then set score to 100 and action is REJECT',
+        description: 'Deportee check'
+      },
+      {
+        prompt: `If unaccompaniedMinorIndicatorCode equals Y and age is less than ${age} then set score to 85 and action is REVIEW`,
+        description: 'Unaccompanied minor validation'
+      },
+      {
+        prompt: 'If nationalityCountryID equals high-risk country and transitIndicatorCode equals Y then set score to 90 and flag as HIGH_RISK_TRANSIT',
+        description: 'High-risk transit passenger'
+      }
+    ]
+  }
+
   // Get example prompts for current fact type (with random values)
   // Use useMemo to ensure prompts are consistent during render but regenerate when fact type changes
   const examplePrompts = useMemo(() => {
@@ -262,6 +308,9 @@ export default function AIBuilderPage() {
     }
     if (selectedFactType === 'CargoReport') {
       return generateCargoReportExamplePrompts()
+    }
+    if (selectedFactType === 'Traveler') {
+      return generateTravelerExamplePrompts()
     }
     return []
   }, [selectedFactType])

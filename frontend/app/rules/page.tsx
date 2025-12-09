@@ -72,7 +72,14 @@ export default function RulesPage() {
       let items: Rule[] = rules.map((rule: any) => {
         // Map documentType based on factType
         const factType = rule.factType || 'Declaration'
-        const documentType = factType === 'CargoReport' ? 'Cargo Report' : 'Import Declaration'
+        let documentType: 'Import Declaration' | 'Valuation' | 'Container' | 'Cargo Report' | 'Traveler'
+        if (factType === 'CargoReport') {
+          documentType = 'Cargo Report'
+        } else if (factType === 'Traveler') {
+          documentType = 'Traveler'
+        } else {
+          documentType = 'Import Declaration'
+        }
         
         return {
           id: rule.id?.toString() || '',

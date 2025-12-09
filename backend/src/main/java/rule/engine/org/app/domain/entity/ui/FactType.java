@@ -9,7 +9,8 @@ import com.fasterxml.jackson.annotation.JsonValue;
  */
 public enum FactType {
     DECLARATION("Declaration"),
-    CARGO_REPORT("CargoReport");
+    CARGO_REPORT("CargoReport"),
+    TRAVELER("Traveler");
     
     private final String value;
     

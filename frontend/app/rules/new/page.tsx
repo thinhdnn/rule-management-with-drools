@@ -1,7 +1,7 @@
 "use client"
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Save, Loader2, Plus, Trash2, FileText, Package, FilePlus } from 'lucide-react'
+import { ArrowLeft, Save, Loader2, Plus, Trash2, FileText, Package, FilePlus, User } from 'lucide-react'
 import { SearchableSelect } from '@/components/SearchableSelect'
 import { Select } from '@/components/Select'
 import { api, fetchApi } from '@/lib/api'
@@ -403,7 +403,9 @@ export default function NewRulePage() {
                       : 'bg-surfaceContainerHigh text-text-secondary hover:bg-surfaceContainerHighest'
                   }`}
                 >
-                  {factType === 'Declaration' ? <FileText size={14} /> : <Package size={14} />}
+                  {factType === 'Declaration' ? <FileText size={14} /> : 
+                   factType === 'Traveler' ? <User size={14} /> : 
+                   <Package size={14} />}
                   {factType}
                 </button>
               ))}

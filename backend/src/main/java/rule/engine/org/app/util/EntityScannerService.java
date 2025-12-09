@@ -28,7 +28,8 @@ public class EntityScannerService {
     // Package mappings for each FactType
     private static final Map<FactType, String> FACT_TYPE_PACKAGES = Map.of(
             FactType.DECLARATION, EXECUTION_BASE_PACKAGE + ".declaration",
-            FactType.CARGO_REPORT, EXECUTION_BASE_PACKAGE + ".cargo"
+            FactType.CARGO_REPORT, EXECUTION_BASE_PACKAGE + ".cargo",
+            FactType.TRAVELER, EXECUTION_BASE_PACKAGE + ".traveler"
     );
 
     // Required execution entity imports (always needed, not in sub-packages)
