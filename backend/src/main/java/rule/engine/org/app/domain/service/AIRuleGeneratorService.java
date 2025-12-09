@@ -1,6 +1,7 @@
 package rule.engine.org.app.domain.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.openai.client.OpenAIClient;
 import com.openai.models.chat.completions.ChatCompletion;
@@ -137,6 +138,132 @@ public class AIRuleGeneratorService {
     }
     
     /**
+     * Generate multiple rules using a single AI call. All requests must share the same fact type.
+     * @param requests natural language requests (factType/additionalContext already normalized)
+     * @param factType fact type to use for metadata/prompt
+     * @param additionalContext optional shared context
+     * @return list of responses mapped to input order
+     */
+    public List<AIGenerateRuleResponse> generateRulesSingleCall(
+            List<AIGenerateRuleRequest> requests,
+            String factType,
+            String additionalContext) {
+        
+        List<AIGenerateRuleResponse> responses = new ArrayList<>();
+        
+        if (openAIClient == null || !openAIConfig.getEnabled()) {
+            for (int i = 0; i < requests.size(); i++) {
+                responses.add(AIGenerateRuleResponse.builder()
+                    .success(false)
+                    .errorMessage("AI features are disabled. Set AI_ENABLED=true and provide AI_API_KEY to use this feature.")
+                    .suggestions(List.of(
+                        "Set environment variable: AI_ENABLED=true",
+                        "Set environment variable: AI_API_KEY=your-api-key",
+                        "Optional: Set AI_PROVIDER=openrouter (default) or openai",
+                        "Restart the application after setting environment variables"
+                    ))
+                    .build());
+            }
+            return responses;
+        }
+        
+        try {
+            RuleFieldMetadata metadata = getMetadata(factType);
+            
+            String prompt = buildBatchPrompt(requests, metadata, factType, additionalContext);
+            log.info("AI batch prompt (factType={}, size={}): {}", factType, requests.size(), prompt);
+            
+            String aiResponse = callOpenAI(prompt);
+            
+            List<BatchRuleResult> batchResults = parseBatchAIResponse(aiResponse, factType);
+            
+            // Map results by index to preserve input order
+            Map<Integer, BatchRuleResult> resultByIndex = new HashMap<>();
+            for (BatchRuleResult r : batchResults) {
+                if (r.getIndex() != null) {
+                    resultByIndex.put(r.getIndex(), r);
+                }
+            }
+            
+            for (int i = 0; i < requests.size(); i++) {
+                int idx = i + 1; // 1-based in prompt
+                BatchRuleResult item = resultByIndex.get(idx);
+                
+                if (item == null) {
+                    responses.add(AIGenerateRuleResponse.builder()
+                        .success(false)
+                        .errorMessage("No AI response for request index " + idx)
+                        .build());
+                    continue;
+                }
+                
+                if (item.getError() != null && !item.getError().isBlank()) {
+                    responses.add(AIGenerateRuleResponse.builder()
+                        .success(false)
+                        .errorMessage(item.getError())
+                        .build());
+                    continue;
+                }
+                
+                if (item.getRule() == null) {
+                    responses.add(AIGenerateRuleResponse.builder()
+                        .success(false)
+                        .errorMessage("AI did not return rule content for request index " + idx)
+                        .build());
+                    continue;
+                }
+                
+                CreateRuleRequest generatedRule = item.getRule();
+                if (generatedRule.getFactType() == null) {
+                    generatedRule.setFactType(FactType.fromValue(factType));
+                }
+                
+                AIRuleValidationService.ValidationResult validation =
+                    validationService.validateRule(generatedRule, factType);
+                
+                List<String> drlWarnings = reviewDrlCompatibility(generatedRule, factType);
+                if (!drlWarnings.isEmpty()) {
+                    validation.getWarnings().addAll(drlWarnings);
+                    log.warn("DRL compatibility warnings detected (batch index {}): {}", idx, drlWarnings);
+                }
+                
+                AIGenerateRuleResponse.AIGenerateRuleResponseBuilder builder = AIGenerateRuleResponse.builder()
+                    .success(validation.isValid())
+                    .generatedRule(generatedRule)
+                    .aiExplanation(item.getExplanation())
+                    .validation(AIGenerateRuleResponse.ValidationStatus.builder()
+                        .valid(validation.isValid())
+                        .errors(validation.getErrors())
+                        .warnings(validation.getWarnings())
+                        .autoCorrected(validation.getAutoCorrected())
+                        .build());
+                
+                if (!validation.isValid()) {
+                    builder.suggestions(buildSuggestions(validation, metadata));
+                }
+                
+                responses.add(builder.build());
+            }
+            
+        } catch (Exception e) {
+            log.error("Error during AI batch single-call generation", e);
+            for (int i = 0; i < requests.size(); i++) {
+                responses.add(AIGenerateRuleResponse.builder()
+                    .success(false)
+                    .errorMessage("Failed to generate batch rules: " + e.getMessage())
+                    .suggestions(List.of(
+                        "Please try rephrasing your request",
+                        "Ensure your request clearly specifies conditions and outputs",
+                        "Check that field names match available metadata"
+                    ))
+                    .build());
+            }
+        }
+        
+        return responses;
+    }
+    
+    /**
      * Get metadata for specified fact type
      */
     private RuleFieldMetadata getMetadata(String factType) {
@@ -148,6 +275,84 @@ public class AIRuleGeneratorService {
     }
     
     /**
+     * Build batch prompt for multiple rules in one call.
+     */
+    private String buildBatchPrompt(
+        List<AIGenerateRuleRequest> requests,
+        RuleFieldMetadata metadata,
+        String factType,
+        String additionalContext
+    ) throws JsonProcessingException {
+        
+        // Reduce metadata footprint: only names and operator strings
+        Map<String, Object> metadataJson = new HashMap<>();
+        metadataJson.put("inputFields", metadata.getInputFields()
+            .stream()
+            .map(FieldDefinition::getName)
+            .toList());
+        metadataJson.put("outputFields", metadata.getOutputFields()
+            .stream()
+            .map(FieldDefinition::getName)
+            .toList());
+        Map<String, List<String>> operatorsByType = new HashMap<>();
+        metadata.getOperatorsByType().forEach((k, v) -> 
+            operatorsByType.put(k, v.stream().map(OperatorDefinition::getOperator).toList()));
+        metadataJson.put("operatorsByType", operatorsByType);
+        
+        String metadataJsonStr = objectMapper.writerWithDefaultPrettyPrinter()
+            .writeValueAsString(metadataJson);
+        
+        StringBuilder sb = new StringBuilder();
+        sb.append("You are an expert Drools DRL rule generator for a customs declaration and cargo inspection system.\n");
+        sb.append("Convert the following natural language rule descriptions into a JSON array of rules.\n");
+        sb.append("IMPORTANT: All rules use fact type '").append(factType).append("'.\n");
+        sb.append("Follow ALL constraints and output schema exactly. Return ONLY JSON, no markdown.\n\n");
+        sb.append("AVAILABLE METADATA FOR FACT TYPE '").append(factType).append("':\n");
+        sb.append(metadataJsonStr).append("\n\n");
+        if (additionalContext != null && !additionalContext.isBlank()) {
+            sb.append("ADDITIONAL CONTEXT (applies to ALL requests):\n");
+            sb.append(additionalContext).append("\n\n");
+        }
+        sb.append("USER REQUESTS (may be in Vietnamese or English):\n");
+        for (int i = 0; i < requests.size(); i++) {
+            AIGenerateRuleRequest req = requests.get(i);
+            sb.append(String.format("Request #%d: \"%s\"\n", i + 1, req.getNaturalLanguageInput()));
+        }
+        sb.append("\nOUTPUT FORMAT - Return ONLY this JSON structure:\n");
+        sb.append("{\n");
+        sb.append("  \"rules\": [\n");
+        sb.append("    {\n");
+        sb.append("      \"index\": 1,\n");
+        sb.append("      \"explanation\": \"Brief explanation for request #1\",\n");
+        sb.append("      \"rule\": {\n");
+        sb.append("        \"ruleName\": \"Clear name\",\n");
+        sb.append("        \"description\": \"Detailed description\",\n");
+        sb.append("        \"factType\": \"").append(factType).append("\",\n");
+        sb.append("        \"priority\": 100,\n");
+        sb.append("        \"active\": false,\n");
+        sb.append("        \"conditions\": {\"AND\": [{\"AND\": [{\"field\": \"...\", \"operator\": \"==\", \"value\": \"...\"}]}]},\n");
+        sb.append("        \"output\": {\n");
+        sb.append("          \"action\": \"FLAG|REVIEW|APPROVE|REJECT|HOLD\",\n");
+        sb.append("          \"result\": \"Result message\",\n");
+        sb.append("          \"score\": 50,\n");
+        sb.append("          \"flag\": \"Optional flag\",\n");
+        sb.append("          \"description\": \"Optional description\"\n");
+        sb.append("        }\n");
+        sb.append("      }\n");
+        sb.append("    }\n");
+        sb.append("  ]\n");
+        sb.append("}\n\n");
+        sb.append("CRITICAL RULES:\n");
+        sb.append("- Use ONLY fields/operators from metadata; field names are CASE-SENSITIVE with entity prefix.\n");
+        sb.append("- Conditions MUST be grouped by object path; never place conditions directly at top-level AND/OR.\n");
+        sb.append("- Preserve user language in descriptions and outputs.\n");
+        sb.append("- Always return one rule object per input request, with matching \"index\" (1-based).\n");
+        sb.append("- Never include markdown or extra text, only JSON.\n");
+        
+        return sb.toString();
+    }
+    
+    /**
      * Build OpenAI prompt with metadata constraints
      */
     private String buildPrompt(
@@ -156,11 +361,20 @@ public class AIRuleGeneratorService {
         String factType
     ) throws JsonProcessingException {
         
-        // Convert metadata to JSON for inclusion in prompt
+        // Reduce metadata footprint: only names and operator strings to save tokens
         Map<String, Object> metadataJson = new HashMap<>();
-        metadataJson.put("inputFields", metadata.getInputFields());
-        metadataJson.put("outputFields", metadata.getOutputFields());
-        metadataJson.put("operatorsByType", metadata.getOperatorsByType());
+        metadataJson.put("inputFields", metadata.getInputFields()
+            .stream()
+            .map(FieldDefinition::getName)
+            .toList());
+        metadataJson.put("outputFields", metadata.getOutputFields()
+            .stream()
+            .map(FieldDefinition::getName)
+            .toList());
+        Map<String, List<String>> operatorsByType = new HashMap<>();
+        metadata.getOperatorsByType().forEach((k, v) -> 
+            operatorsByType.put(k, v.stream().map(OperatorDefinition::getOperator).toList()));
+        metadataJson.put("operatorsByType", operatorsByType);
         
         String metadataJsonStr = objectMapper.writerWithDefaultPrettyPrinter()
             .writeValueAsString(metadataJson);
@@ -490,8 +704,122 @@ public class AIRuleGeneratorService {
             return response;
             
         } catch (Exception e) {
-            log.error("Error calling AI API (provider: {})", openAIConfig.getProvider(), e);
+            try {
+                // Log comprehensive error details
+                log.error("=== AI API CALL FAILED ===");
+                log.error("Provider: {}", openAIConfig != null ? openAIConfig.getProvider() : "null");
+                log.error("Model: {}", openAIConfig != null ? openAIConfig.getModel() : "null");
+                log.error("Timeout configured: {} seconds", openAIConfig != null ? openAIConfig.getTimeout() : "null");
+                log.error("Prompt length: {} chars", prompt != null ? prompt.length() : 0);
+                log.error("Temperature: {}", openAIConfig != null ? openAIConfig.getTemperature() : "null");
+                log.error("Max tokens: {}", openAIConfig != null ? openAIConfig.getMaxTokens() : "null");
+                log.error("Exception type: {}", e.getClass().getName());
+                log.error("Exception message: {}", e.getMessage());
+                
+                // Log exception chain in detail with stack traces
+                Throwable cause = e;
+                int depth = 0;
+                while (cause != null && depth < 5) {
+                    String className = cause.getClass().getName();
+                    log.error("Exception chain [depth {}]: {} - {}", depth, className, cause.getMessage());
+                    if (cause instanceof java.io.InterruptedIOException) {
+                        log.error("  -> This is a TIMEOUT exception - API call exceeded {} seconds", 
+                            openAIConfig != null ? openAIConfig.getTimeout() : "unknown");
+                    }
+                    if (className.contains("StreamResetException") || className.contains("http2")) {
+                        log.error("  -> HTTP/2 stream was reset (connection may have been cancelled)");
+                    }
+                    // Log stack trace for this level of exception
+                    if (cause.getStackTrace() != null && cause.getStackTrace().length > 0) {
+                        log.error("  Stack trace [depth {}]:", depth);
+                        StackTraceElement[] stackTrace = cause.getStackTrace();
+                        int maxLines = Math.min(10, stackTrace.length); // Log first 10 lines
+                        for (int i = 0; i < maxLines; i++) {
+                            log.error("    at {}", stackTrace[i]);
+                        }
+                        if (stackTrace.length > maxLines) {
+                            log.error("    ... ({} more lines)", stackTrace.length - maxLines);
+                        }
+                    }
+                    cause = cause.getCause();
+                    depth++;
+                }
+                
+                // Log prompt preview (first 500 chars) for debugging
+                if (prompt != null && prompt.length() > 0) {
+                    String promptPreview = prompt.length() > 500 
+                        ? prompt.substring(0, 500) + "..." 
+                        : prompt;
+                    log.error("Prompt preview (first 500 chars): {}", promptPreview);
+                }
+                
+                // Check if this is a timeout issue and suggest solution
+                if (e.getCause() instanceof java.io.InterruptedIOException) {
+                    log.error("=== TIMEOUT DETECTED ===");
+                    log.error("The API call timed out after {} seconds. Possible solutions:", 
+                        openAIConfig != null ? openAIConfig.getTimeout() : "unknown");
+                    log.error("1. Increase timeout in application.yml: ai.timeout=<higher_value> (e.g., 60 or 120)");
+                    log.error("2. Reduce batch size (fewer rules per request)");
+                    log.error("3. Use a faster model");
+                    log.error("4. Check network connectivity to {}", 
+                        openAIConfig != null && openAIConfig.getProvider() != null && openAIConfig.getProvider().equals("openrouter") 
+                            ? "openrouter.ai" : "api.openai.com");
+                }
+                
+                log.error("=== END ERROR DETAILS ===");
+                
+                // Log full stack trace - MUST be logged before throwing
+                log.error("=== FULL STACK TRACE ===");
+                log.error("Complete exception stack trace:", e);
+                
+            } catch (Exception logException) {
+                // If logging fails, at least try to log the original exception
+                System.err.println("CRITICAL: Failed to log exception details. Original exception:");
+                e.printStackTrace();
+                System.err.println("Logging exception:");
+                logException.printStackTrace();
+            }
+            
             throw new RuntimeException("Failed to call AI API: " + e.getMessage(), e);
+        }
+    }
+    
+    /**
+     * Parse AI batch response into individual rules.
+     */
+    private List<BatchRuleResult> parseBatchAIResponse(String aiResponse, String factType) {
+        List<BatchRuleResult> results = new ArrayList<>();
+        try {
+            JsonNode root = objectMapper.readTree(aiResponse);
+            JsonNode rulesNode = root.has("rules") ? root.get("rules") : root;
+            if (rulesNode == null || !rulesNode.isArray()) {
+                throw new IllegalArgumentException("Batch AI response missing 'rules' array");
+            }
+            
+            for (JsonNode node : rulesNode) {
+                BatchRuleResult result = new BatchRuleResult();
+                if (node.has("index") && node.get("index").canConvertToInt()) {
+                    result.setIndex(node.get("index").asInt());
+                }
+                if (node.has("explanation")) {
+                    result.setExplanation(node.get("explanation").asText());
+                }
+                if (node.has("error")) {
+                    result.setError(node.get("error").asText());
+                }
+                if (node.has("rule") && !node.get("rule").isNull()) {
+                    CreateRuleRequest rule = objectMapper.treeToValue(node.get("rule"), CreateRuleRequest.class);
+                    if (rule.getFactType() == null) {
+                        rule.setFactType(FactType.fromValue(factType));
+                    }
+                    result.setRule(rule);
+                }
+                results.add(result);
+            }
+            
+            return results;
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to parse batch AI response: " + e.getMessage(), e);
         }
     }
     
@@ -563,6 +891,48 @@ public class AIRuleGeneratorService {
                 
         } catch (Exception e) {
             return "Rule generated from natural language input";
+        }
+    }
+    
+    /**
+     * Minimal DTO for parsing batch AI responses.
+     */
+    private static class BatchRuleResult {
+        private Integer index;
+        private String explanation;
+        private String error;
+        private CreateRuleRequest rule;
+        
+        public Integer getIndex() {
+            return index;
+        }
+        
+        public void setIndex(Integer index) {
+            this.index = index;
+        }
+        
+        public String getExplanation() {
+            return explanation;
+        }
+        
+        public void setExplanation(String explanation) {
+            this.explanation = explanation;
+        }
+        
+        public String getError() {
+            return error;
+        }
+        
+        public void setError(String error) {
+            this.error = error;
+        }
+        
+        public CreateRuleRequest getRule() {
+            return rule;
+        }
+        
+        public void setRule(CreateRuleRequest rule) {
+            this.rule = rule;
         }
     }
     

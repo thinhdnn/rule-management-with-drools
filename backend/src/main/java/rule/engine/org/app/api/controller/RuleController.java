@@ -203,43 +203,59 @@ public class RuleController {
         int successful = 0;
         int failed = 0;
 
-        // Use common fact type and context if provided, otherwise use from individual requests
-        String commonFactType = request.getFactType();
+        // Use common fact type and context if provided, otherwise derive from first request
+        String commonFactType = request.getFactType() != null
+            ? request.getFactType()
+            : request.getRequests().get(0).getFactType();
         String commonAdditionalContext = request.getAdditionalContext();
-
+        
+        List<AIGenerateRuleRequest> normalizedRequests = new java.util.ArrayList<>();
         for (AIGenerateRuleRequest singleRequest : request.getRequests()) {
-            try {
-                // Override fact type and context if provided at batch level
-                if (commonFactType != null) {
-                    singleRequest.setFactType(commonFactType);
+            AIGenerateRuleRequest normalized = AIGenerateRuleRequest.builder()
+                .naturalLanguageInput(singleRequest.getNaturalLanguageInput())
+                .factType(commonFactType != null ? commonFactType : singleRequest.getFactType())
+                .additionalContext(commonAdditionalContext != null
+                    ? commonAdditionalContext
+                    : singleRequest.getAdditionalContext())
+                .previewOnly(true)
+                .build();
+            normalizedRequests.add(normalized);
+        }
+        
+        try {
+            results = aiRuleGeneratorService.generateRulesSingleCall(
+                normalizedRequests,
+                commonFactType != null ? commonFactType : "Declaration",
+                commonAdditionalContext);
+        } catch (Exception e) {
+            log.error("Single-call batch generation failed, falling back to sequential: {}", e.getMessage(), e);
+            for (AIGenerateRuleRequest singleRequest : normalizedRequests) {
+                try {
+                    AIGenerateRuleResponse response = aiRuleGeneratorService.generateRule(singleRequest);
+                    results.add(response);
+                } catch (Exception ex) {
+                    log.error("Error generating rule in batch fallback: {}", ex.getMessage(), ex);
+                    AIGenerateRuleResponse errorResponse = AIGenerateRuleResponse.builder()
+                        .success(false)
+                        .errorMessage("Failed to generate rule: " + ex.getMessage())
+                        .suggestions(List.of(
+                            "Please try rephrasing your request",
+                            "Ensure AI API (OpenRouter/OpenAI) is properly configured"
+                        ))
+                        .build();
+                    results.add(errorResponse);
                 }
-                if (commonAdditionalContext != null) {
-                    singleRequest.setAdditionalContext(commonAdditionalContext);
-                }
-                
-                // Generate rule using existing service
-                AIGenerateRuleResponse response = aiRuleGeneratorService.generateRule(singleRequest);
-                
-                if (response.getSuccess() && response.getValidation() != null && response.getValidation().getValid()) {
-                    successful++;
-                } else {
-                    failed++;
-                }
-                
-                results.add(response);
-                
-            } catch (Exception e) {
-                log.error("Error generating rule in batch: {}", e.getMessage(), e);
+            }
+        }
+        
+        for (AIGenerateRuleResponse response : results) {
+            if (response.getSuccess() != null
+                && response.getSuccess()
+                && response.getValidation() != null
+                && response.getValidation().getValid()) {
+                successful++;
+            } else {
                 failed++;
-                AIGenerateRuleResponse errorResponse = AIGenerateRuleResponse.builder()
-                    .success(false)
-                    .errorMessage("Failed to generate rule: " + e.getMessage())
-                    .suggestions(List.of(
-                        "Please try rephrasing your request",
-                        "Ensure AI API (OpenRouter/OpenAI) is properly configured"
-                    ))
-                    .build();
-                results.add(errorResponse);
             }
         }
 
