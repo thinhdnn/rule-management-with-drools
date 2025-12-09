@@ -82,6 +82,8 @@ public class AIRuleGeneratorService {
             
             // Step 2: Build prompt with metadata constraints
             String prompt = buildPrompt(request, metadata, factType);
+            // Log prompt for debugging (may be large)
+            log.info("AI prompt (factType={}): {}", factType, prompt);
             
             // Step 3: Call AI API (OpenRouter or OpenAI)
             String aiResponse = callOpenAI(prompt);
