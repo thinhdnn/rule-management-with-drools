@@ -36,6 +36,20 @@ export function useWebSocket({
   const maxReconnectAttempts = 5
   const reconnectDelay = 3000 // 3 seconds
 
+  // Store callbacks in refs to avoid dependency issues
+  const onConnectRef = useRef(onConnect)
+  const onDisconnectRef = useRef(onDisconnect)
+  const onErrorRef = useRef(onError)
+  const onMessageRef = useRef(onMessage)
+
+  // Update refs when callbacks change
+  useEffect(() => {
+    onConnectRef.current = onConnect
+    onDisconnectRef.current = onDisconnect
+    onErrorRef.current = onError
+    onMessageRef.current = onMessage
+  }, [onConnect, onDisconnect, onError, onMessage])
+
   const connect = useCallback(() => {
     if (!enabled || !token) {
       if (!token) {

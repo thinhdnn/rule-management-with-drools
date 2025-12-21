@@ -227,7 +227,7 @@ export default function NewRulePage() {
 
   // Update ref when handleSave changes
   useEffect(() => {
-    handleSubmitRef.current = () => {
+    handleSubmitRef.current = async () => {
       if (formRef.current) {
         formRef.current.requestSubmit();
       }

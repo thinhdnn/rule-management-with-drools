@@ -29,6 +29,7 @@ const StatusColor: Record<Rule['status'], string> = {
   Active: 'bg-success-bg text-success ring-1 ring-success/20',
   Draft: 'bg-warning-bg text-warning ring-1 ring-warning/20',
   Inactive: 'bg-surfaceContainerHigh text-text-tertiary ring-1 ring-border',
+  Review: 'bg-primary-bg text-primary ring-1 ring-primary/20',
 }
 
 const FactTypeColor: Record<string, string> = {
