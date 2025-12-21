@@ -55,6 +55,8 @@ public class SecurityConfig {
                                         .permitAll()
                                         .requestMatchers("/actuator/health", "/actuator/info")
                                         .permitAll()
+                                        .requestMatchers("/ws/**")
+                                        .permitAll() // WebSocket authentication handled by interceptor
                                         .requestMatchers(HttpMethod.OPTIONS, "/**")
                                         .permitAll()
                                         .anyRequest()

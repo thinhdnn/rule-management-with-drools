@@ -10,6 +10,11 @@ public enum RuleStatus {
      * Created rules start in this state
      */
     DRAFT("Draft"),
+
+    /**
+     * Rule is under review as part of a submitted change request
+     */
+    REVIEW("Review"),
     
     /**
      * Rule is active - approved and can be deployed or is currently deployed
@@ -41,7 +46,7 @@ public enum RuleStatus {
             return DRAFT;
         }
         for (RuleStatus status : values()) {
-            if (status.name().equalsIgnoreCase(value)) {
+            if (status.name().equalsIgnoreCase(value) || status.displayName.equalsIgnoreCase(value)) {
                 return status;
             }
         }

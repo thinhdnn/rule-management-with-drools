@@ -2,6 +2,7 @@
 import { Menu, Sun, Moon } from 'lucide-react';
 import { useAuth } from '@/components/AuthProvider';
 import { useTheme } from '@/components/ThemeProvider';
+import { NotificationCenter } from '@/components/Notification';
 
 export function TopBar() {
   const { user, logout } = useAuth();
@@ -21,6 +22,7 @@ export function TopBar() {
         <div className="text-body-xs text-text-tertiary">Worklist</div>
       </div>
       <div className="ml-auto flex items-center gap-4">
+        <NotificationCenter />
         <button
           onClick={toggleTheme}
           className="p-2 rounded-lg hover:bg-surfaceContainerHigh focus-ring transition-smooth cursor-pointer text-text-secondary hover:text-text-primary"

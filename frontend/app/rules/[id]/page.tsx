@@ -309,11 +309,13 @@ export default function RuleDetailPage({ params }: Props) {
             <span className={`inline-flex items-center h-9 px-3 rounded-full text-sm font-medium ${
               rule.status === 'ACTIVE' 
                 ? 'bg-success-bg text-success ring-1 ring-success/20' 
+                : rule.status === 'REVIEW'
+                ? 'bg-primary/10 text-primary ring-1 ring-primary/20'
                 : rule.status === 'DRAFT'
                 ? 'bg-warning-bg text-warning ring-1 ring-warning/20'
                 : 'bg-surfaceContainerHigh text-text-tertiary ring-1 ring-border'
             }`}>
-              {rule.status === 'ACTIVE' ? 'Active' : rule.status === 'DRAFT' ? 'Draft' : 'Inactive'}
+              {rule.status === 'ACTIVE' ? 'Active' : rule.status === 'REVIEW' ? 'Review' : rule.status === 'DRAFT' ? 'Draft' : 'Inactive'}
             </span>
           </div>
         </div>

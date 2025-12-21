@@ -48,9 +48,11 @@ import rule.engine.org.app.domain.entity.ui.KieContainerVersion;
 import rule.engine.org.app.api.request.AIGenerateRuleRequest;
 import rule.engine.org.app.api.request.BatchAIGenerateRuleRequest;
 import rule.engine.org.app.api.request.BatchCreateRulesRequest;
+import rule.engine.org.app.api.request.BatchDeleteRulesRequest;
 import rule.engine.org.app.api.response.AIGenerateRuleResponse;
 import rule.engine.org.app.api.response.BatchAIGenerateRuleResponse;
 import rule.engine.org.app.api.response.BatchCreateRulesResponse;
+import rule.engine.org.app.api.response.BatchDeleteRulesResponse;
 import rule.engine.org.app.security.UserPrincipal;
 import rule.engine.org.app.util.RuleFieldExtractor;
 import rule.engine.org.app.util.DrlConstants;
@@ -774,6 +776,90 @@ public class RuleController {
         decisionRuleRepository.deleteById(id);
         ruleEngineManager.rebuildRules(factType.getValue()); // Rebuild rules for this fact type
         return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * Batch delete multiple rules in a single API call.
+     * Returns results for each rule (success or error) in a single response.
+     * IMPORTANT: This endpoint must be placed BEFORE the single delete endpoint to avoid path conflicts.
+     */
+    @PostMapping("/batch/delete")
+    @org.springframework.transaction.annotation.Transactional
+    public ResponseEntity<BatchDeleteRulesResponse> batchDeleteRules(@RequestBody BatchDeleteRulesRequest request) {
+        if (request == null || request.getRuleIds() == null || request.getRuleIds().isEmpty()) {
+            BatchDeleteRulesResponse errorResponse = BatchDeleteRulesResponse.builder()
+                .success(false)
+                .total(0)
+                .successful(0)
+                .failed(0)
+                .results(List.of())
+                .build();
+            return ResponseEntity.badRequest().body(errorResponse);
+        }
+
+        List<BatchDeleteRulesResponse.RuleDeleteResult> results = new java.util.ArrayList<>();
+        int successful = 0;
+        int failed = 0;
+        java.util.Set<FactType> factTypesToRebuild = new java.util.HashSet<>();
+
+        for (Long ruleId : request.getRuleIds()) {
+            BatchDeleteRulesResponse.RuleDeleteResult result = BatchDeleteRulesResponse.RuleDeleteResult.builder()
+                .ruleId(ruleId)
+                .success(false)
+                .build();
+
+            try {
+                Optional<DecisionRule> ruleOpt = decisionRuleRepository.findById(ruleId);
+                if (ruleOpt.isEmpty()) {
+                    result.setSuccess(false);
+                    result.setError("Rule not found");
+                    result.setErrorType("NotFoundException");
+                    failed++;
+                    results.add(result);
+                    continue;
+                }
+
+                DecisionRule rule = ruleOpt.get();
+                result.setRuleName(rule.getRuleName());
+                
+                // Track fact type for rebuild
+                FactType factType = rule.getFactType() != null ? rule.getFactType() : FactType.DECLARATION;
+                factTypesToRebuild.add(factType);
+
+                // Delete the rule
+                decisionRuleRepository.deleteById(ruleId);
+                
+                result.setSuccess(true);
+                successful++;
+                results.add(result);
+            } catch (Exception e) {
+                log.error("Error deleting rule {}: {}", ruleId, e.getMessage(), e);
+                result.setSuccess(false);
+                result.setError(e.getMessage());
+                result.setErrorType(e.getClass().getSimpleName());
+                failed++;
+                results.add(result);
+            }
+        }
+
+        // Rebuild rules for each affected fact type
+        for (FactType factType : factTypesToRebuild) {
+            try {
+                ruleEngineManager.rebuildRules(factType.getValue());
+            } catch (Exception e) {
+                log.error("Error rebuilding rules for fact type {}: {}", factType.getValue(), e.getMessage(), e);
+            }
+        }
+
+        BatchDeleteRulesResponse response = BatchDeleteRulesResponse.builder()
+            .success(successful > 0)
+            .total(request.getRuleIds().size())
+            .successful(successful)
+            .failed(failed)
+            .results(results)
+            .build();
+
+        return ResponseEntity.ok(response);
     }
 
     @PostMapping("/refresh")

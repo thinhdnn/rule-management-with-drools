@@ -56,7 +56,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(profile)
       })
       .catch(() => {
+        // Clear token from localStorage and state when profile fetch fails
+        // This happens when:
+        // - Token is expired
+        // - Token signature is invalid (e.g., JWT secret changed after DB reset)
+        // - Session is no longer valid (user deleted or DB reset)
         window.localStorage.removeItem('accessToken')
+        setToken(null)
+        setUser(null)
       })
       .finally(() => setLoading(false))
   }, [])
@@ -93,8 +100,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refreshProfile = useCallback(async () => {
     if (!token) return
-    const profile = await fetchProfile(token)
-    setUser(profile)
+    try {
+      const profile = await fetchProfile(token)
+      setUser(profile)
+    } catch (error) {
+      // If profile refresh fails, clear authentication state
+      // This handles cases where:
+      // - Token is expired
+      // - Token signature is invalid (e.g., JWT secret changed after DB reset)
+      // - Session is no longer valid (user deleted or DB reset)
+      window.localStorage.removeItem('accessToken')
+      setToken(null)
+      setUser(null)
+      throw error
+    }
   }, [token])
 
   const value = useMemo<AuthContextValue>(

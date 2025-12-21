@@ -18,6 +18,11 @@ export const api = {
     batchCreate: () => `${API_BASE}/rules/batch`,
     update: (id: string | number) => `${API_BASE}/rules/${id}`,
     delete: (id: string | number) => `${API_BASE}/rules/${id}`,
+    batchDelete: () => {
+      // Always use frontend route handler (Next.js API route) to ensure auth token is forwarded
+      // The route handler will proxy to backend with proper authentication
+      return '/api/rules/batch/delete'
+    },
     metadata: (factType?: string) => {
       const url = `${API_BASE}/rules/metadata`
       return factType ? `${url}?factType=${encodeURIComponent(factType)}` : url
@@ -94,6 +99,32 @@ export const api = {
       cancel: (id: string | number) => `${API_BASE}/change-requests/scheduled-deployments/${id}/cancel`,
     },
   },
+  guideDrafts: {
+    get: () => {
+      const GUIDE_DRAFT_BASE = API_URL ? `${API_URL}/api/guide-drafts` : '/api/guide-drafts'
+      return `${GUIDE_DRAFT_BASE}`
+    },
+    save: () => {
+      const GUIDE_DRAFT_BASE = API_URL ? `${API_URL}/api/guide-drafts` : '/api/guide-drafts'
+      return `${GUIDE_DRAFT_BASE}`
+    },
+    delete: () => {
+      const GUIDE_DRAFT_BASE = API_URL ? `${API_URL}/api/guide-drafts` : '/api/guide-drafts'
+      return `${GUIDE_DRAFT_BASE}`
+    },
+  },
+  notifications: {
+    list: (read?: boolean) => {
+      const url = `${API_BASE}/notifications`
+      return read !== undefined ? `${url}?read=${read}` : url
+    },
+    get: (id: string | number) => `${API_BASE}/notifications/${id}`,
+    markAsRead: (id: string | number) => `${API_BASE}/notifications/${id}/read`,
+    markAllAsRead: () => `${API_BASE}/notifications/read-all`,
+    delete: (id: string | number) => `${API_BASE}/notifications/${id}`,
+    clearAll: () => `${API_BASE}/notifications/clear`,
+    unreadCount: () => `${API_BASE}/notifications/unread-count`,
+  },
 }
 
 export async function fetchApi<T>(url: string, options?: RequestInit): Promise<T> {
@@ -107,11 +138,12 @@ export async function fetchApi<T>(url: string, options?: RequestInit): Promise<T
   }
 
   // Debug logging for authentication issues
-  if (typeof window !== 'undefined' && url.includes('/executions')) {
-    console.log('Executions API call:', {
+  if (typeof window !== 'undefined' && (url.includes('/executions') || url.includes('/batch/delete'))) {
+    console.log('API call:', {
       url,
       hasToken: !!token,
       tokenLength: token?.length,
+      hasAuthHeader: headers.has('Authorization'),
       headers: Object.fromEntries(headers.entries())
     })
   }
@@ -144,6 +176,25 @@ export async function fetchApi<T>(url: string, options?: RequestInit): Promise<T
     throw new Error(errorMessage || `HTTP ${response.status}`)
   }
 
-  return response.json()
+  // Handle responses with no content (204 No Content, 205 Reset Content)
+  if (response.status === 204 || response.status === 205) {
+    return null as T
+  }
+
+  // Read response text first (can only read body once)
+  const text = await response.text()
+  
+  // If response is empty, return null
+  if (!text || text.trim() === '') {
+    return null as T
+  }
+
+  // Try to parse as JSON
+  try {
+    return JSON.parse(text) as T
+  } catch {
+    // If not valid JSON, return null
+    return null as T
+  }
 }
 

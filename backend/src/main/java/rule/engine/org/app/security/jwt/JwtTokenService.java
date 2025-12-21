@@ -5,6 +5,8 @@ import io.jsonwebtoken.Jws;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import jakarta.annotation.PostConstruct;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import javax.crypto.SecretKey;
 import java.time.Instant;
 import java.util.Collection;
@@ -68,6 +70,20 @@ public class JwtTokenService {
         return parseClaims(token).getPayload().getSubject();
     }
 
+    /**
+     * Extracts the issued at time (iat) from the token.
+     * Returns null if the claim is not present.
+     */
+    public Instant extractIssuedAt(String token) {
+        try {
+            Claims claims = parseClaims(token).getPayload();
+            Date iat = claims.getIssuedAt();
+            return iat != null ? iat.toInstant() : null;
+        } catch (Exception ex) {
+            return null;
+        }
+    }
+
     public Collection<UserRole> extractRoles(String token) {
         Claims claims = parseClaims(token).getPayload();
         List<String> roles = claims.get("roles", List.class);
@@ -79,6 +95,37 @@ public class JwtTokenService {
 
     public long getAccessTokenTtlSeconds() {
         return jwtProperties.getAccessTokenTtl().getSeconds();
+    }
+
+    /**
+     * Calculates SHA-256 hash of the token for storage in database.
+     * This allows checking if token exists in sessions table without storing full token.
+     */
+    public String hashToken(String token) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hashBytes = digest.digest(token.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            StringBuilder hash = new StringBuilder();
+            for (byte b : hashBytes) {
+                hash.append(String.format("%02x", b));
+            }
+            return hash.toString();
+        } catch (NoSuchAlgorithmException ex) {
+            throw new IllegalStateException("SHA-256 algorithm not available", ex);
+        }
+    }
+
+    /**
+     * Extracts expiration time from token.
+     */
+    public Instant extractExpiration(String token) {
+        try {
+            Claims claims = parseClaims(token).getPayload();
+            Date exp = claims.getExpiration();
+            return exp != null ? exp.toInstant() : null;
+        } catch (Exception ex) {
+            return null;
+        }
     }
 
     private Jws<Claims> parseClaims(String token) {

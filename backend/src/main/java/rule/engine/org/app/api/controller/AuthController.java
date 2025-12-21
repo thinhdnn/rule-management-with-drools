@@ -35,10 +35,21 @@ public class AuthController {
 
     @GetMapping("/me")
     public ResponseEntity<UserProfileResponse> me(@AuthenticationPrincipal UserPrincipal principal) {
+        // principal will be null if:
+        // - Token is expired
+        // - Token signature is invalid (e.g., JWT secret changed after DB reset)
+        // - Token format is invalid
+        // - User doesn't exist in database (loadUserByUsername failed in filter)
         if (principal == null) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
-        return ResponseEntity.ok(authService.getCurrentProfile(principal));
+        try {
+            return ResponseEntity.ok(authService.getCurrentProfile(principal));
+        } catch (IllegalStateException ex) {
+            // User no longer exists in database (e.g., after DB reset but user was recreated)
+            // Return 401 to indicate session is no longer valid
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
     }
 }
 

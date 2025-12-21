@@ -26,6 +26,8 @@ public class DeploymentSchedulerService {
     private final ScheduledDeploymentRepository scheduledDeploymentRepository;
     private final DecisionRuleRepository decisionRuleRepository;
     private final RuleEngineManager ruleEngineManager;
+    private final rule.engine.org.app.domain.repository.ChangeRequestRepository changeRequestRepository;
+    private final NotificationService notificationService;
     
     /**
      * Check for and execute scheduled deployments
@@ -99,6 +101,9 @@ public class DeploymentSchedulerService {
             
             log.info("Successfully executed scheduled deployment {}", deployment.getId());
             
+            // Create notification for change request creator
+            createDeploymentNotification(deployment, true, null);
+            
         } catch (Exception e) {
             log.error("Failed to execute scheduled deployment {}: {}", 
                 deployment.getId(), e.getMessage(), e);
@@ -112,6 +117,9 @@ public class DeploymentSchedulerService {
                 deployment.setStatus(ScheduledDeployment.DeploymentStatus.FAILED);
                 log.error("Scheduled deployment {} failed after {} retries", 
                     deployment.getId(), deployment.getRetryCount());
+                
+                // Create notification for failed deployment
+                createDeploymentNotification(deployment, false, e.getMessage());
             } else {
                 // Return to PENDING for retry
                 deployment.setStatus(ScheduledDeployment.DeploymentStatus.PENDING);
@@ -122,6 +130,68 @@ public class DeploymentSchedulerService {
             }
             
             scheduledDeploymentRepository.save(deployment);
+        }
+    }
+    
+    /**
+     * Create notification for deployment completion or failure
+     */
+    private void createDeploymentNotification(ScheduledDeployment deployment, boolean success, String errorMessage) {
+        try {
+            // Get change request to find creator
+            rule.engine.org.app.domain.entity.ui.ChangeRequest changeRequest = changeRequestRepository
+                .findById(deployment.getChangeRequestId())
+                .orElse(null);
+            
+            if (changeRequest == null) {
+                log.warn("Change request {} not found for deployment notification", deployment.getChangeRequestId());
+                return;
+            }
+            
+            String creatorId = changeRequest.getCreatedBy();
+            if (creatorId == null || creatorId.isEmpty()) {
+                log.warn("Change request {} has no creator", deployment.getChangeRequestId());
+                return;
+            }
+            
+            try {
+                java.util.UUID creatorUUID = java.util.UUID.fromString(creatorId);
+                String actionUrl = String.format("/change-requests/%d", changeRequest.getId());
+                
+                if (success) {
+                    String message = String.format(
+                        "Scheduled deployment for change request '%s' has been completed successfully.",
+                        changeRequest.getTitle());
+                    
+                    notificationService.createNotification(
+                        creatorUUID,
+                        "Deployment Completed",
+                        message,
+                        rule.engine.org.app.domain.entity.ui.Notification.NotificationType.SUCCESS,
+                        actionUrl,
+                        "View Change Request"
+                    );
+                } else {
+                    String message = String.format(
+                        "Scheduled deployment for change request '%s' has failed. Error: %s",
+                        changeRequest.getTitle(),
+                        errorMessage != null ? errorMessage : "Unknown error");
+                    
+                    notificationService.createNotification(
+                        creatorUUID,
+                        "Deployment Failed",
+                        message,
+                        rule.engine.org.app.domain.entity.ui.Notification.NotificationType.ERROR,
+                        actionUrl,
+                        "View Change Request"
+                    );
+                }
+            } catch (IllegalArgumentException e) {
+                log.warn("Invalid UUID format for createdBy: {}", creatorId);
+            }
+        } catch (Exception e) {
+            log.error("Failed to create deployment notification", e);
+            // Don't fail deployment if notification creation fails
         }
     }
     

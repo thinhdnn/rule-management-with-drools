@@ -5,6 +5,7 @@ import { AuthProvider } from '@/components/AuthProvider'
 import { AuthGate } from '@/components/AuthGate'
 import { AppShell } from '@/components/AppShell'
 import { ToastProvider } from '@/components/Toast'
+import { NotificationProvider } from '@/components/Notification'
 
 export const metadata = {
   title: 'Rule Management',
@@ -37,11 +38,13 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <Providers>
           <AuthProvider>
             <ToastProvider>
-              <AuthGate>
-                <AppShell>
-                  {children}
-                </AppShell>
-              </AuthGate>
+              <NotificationProvider>
+                <AuthGate>
+                  <AppShell>
+                    {children}
+                  </AppShell>
+                </AuthGate>
+              </NotificationProvider>
             </ToastProvider>
           </AuthProvider>
         </Providers>

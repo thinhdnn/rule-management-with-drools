@@ -5,7 +5,7 @@ import { DataTable } from '@/components/DataTable'
 import { PaginationBar } from '@/components/Pagination'
 import { Select } from '@/components/Select'
 import { api, fetchApi } from '@/lib/api'
-import { FileText, Package, Search } from 'lucide-react'
+import { FileText, Package, Search, Trash2 } from 'lucide-react'
 
 export type Rule = {
   id: string
@@ -14,7 +14,7 @@ export type Rule = {
   documentType: 'Import Declaration' | 'Valuation' | 'Container' | 'Cargo Report'
   ruleType: 'Risk' | 'Classification' | 'Compliance' | 'Valuation'
   outputType: 'Score' | 'Channel' | 'Flag' | 'Notification'
-  status: 'Active' | 'Draft' | 'Inactive'
+  status: 'Active' | 'Draft' | 'Inactive' | 'Review'
   updatedAt: string
   generatedByAi?: boolean
 }
@@ -35,6 +35,7 @@ export default function RulesPage() {
   const [pageSize, setPageSize] = useState(10)
   const [sort, setSort] = useState<'name' | 'updatedAt'>('updatedAt')
   const [dir, setDir] = useState<'asc' | 'desc'>('desc')
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
 
   // Load fact types on mount
   useEffect(() => {
@@ -89,7 +90,8 @@ export default function RulesPage() {
           ruleType: inferRuleTypeFromExpression(rule.whenExpr || ''),
           outputType: inferOutputTypeFromExpression(rule.ruleResult || rule.description),
           status: rule.status === 'ACTIVE' ? 'Active' as const : 
-                  rule.status === 'INACTIVE' ? 'Inactive' as const : 
+                  rule.status === 'INACTIVE' ? 'Inactive' as const :
+                  rule.status === 'REVIEW' ? 'Review' as const :
                   'Draft' as const,
           generatedByAi: rule.generatedByAi || false,
           updatedAt: rule.lastModifiedDate || rule.createdDate || rule.updatedAt || rule.createdAt || new Date().toISOString(),
@@ -177,6 +179,11 @@ export default function RulesPage() {
     }
   }, [totalFiltered, pageSize, page])
 
+  // Clear selection when filters change (except fact type which is handled separately)
+  useEffect(() => {
+    setSelectedIds(new Set())
+  }, [filters.query, filters.docType, filters.ruleType, filters.status])
+
   // Infer rule type from rule condition content
   function inferRuleTypeFromExpression(ruleCondition: string): Rule['ruleType'] {
     if (!ruleCondition) return 'Compliance'
@@ -200,6 +207,42 @@ export default function RulesPage() {
   const handleFactTypeChange = (factType: string) => {
     setSelectedFactType(factType)
     setPage(1)
+    setSelectedIds(new Set()) // Clear selection when changing fact type
+  }
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return
+    
+    const count = selectedIds.size
+    const confirmMessage = `Are you sure you want to delete ${count} rule${count > 1 ? 's' : ''}? This action cannot be undone.`
+    
+    if (!confirm(confirmMessage)) return
+
+    try {
+      const ruleIds = Array.from(selectedIds).map(id => parseInt(id, 10)).filter(id => !isNaN(id))
+      const response = await fetchApi<{ success: boolean; total: number; successful: number; failed: number; results: Array<{ ruleId: number; ruleName: string; success: boolean; error?: string }> }>(api.rules.batchDelete(), {
+        method: 'POST',
+        body: JSON.stringify({ ruleIds }),
+      })
+
+      // fetchApi throws error if response is not ok, so if we get here, it's successful
+      if (response && response.failed > 0) {
+        const failedRules = response.results.filter(r => !r.success)
+        const errorMessages = failedRules.map(r => `${r.ruleName}: ${r.error || 'Unknown error'}`).join('\n')
+        alert(`Some rules failed to delete:\n${errorMessages}`)
+      } else if (response && response.successful > 0) {
+        // Show success message
+        console.log(`Successfully deleted ${response.successful} rule(s)`)
+      }
+
+      // Clear selection and refresh
+      setSelectedIds(new Set())
+      refetch()
+    } catch (error) {
+      console.error('Error deleting rules:', error)
+      const errorMessage = error instanceof Error ? error.message : 'An error occurred while deleting rules. Please try again.'
+      alert(errorMessage)
+    }
   }
 
   return (
@@ -209,6 +252,21 @@ export default function RulesPage() {
           <FileText className="w-6 h-6" />
           Rules
         </h1>
+        {selectedIds.size > 0 && (
+          <div className="flex items-center gap-3">
+            <span className="text-body-sm text-text-secondary">
+              {selectedIds.size} rule{selectedIds.size > 1 ? 's' : ''} selected
+            </span>
+            <button
+              onClick={handleBulkDelete}
+              className="h-9 inline-flex items-center justify-center gap-2 px-3 rounded-lg bg-error text-white text-body-sm font-medium focus-ring transition-smooth hover:bg-error-light shadow-sm cursor-pointer"
+              data-testid="btn-bulk-delete"
+            >
+              <Trash2 size={16} />
+              Delete Selected
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Fact Types and Filters - Combined Row */}
@@ -219,7 +277,7 @@ export default function RulesPage() {
             <div className="flex items-center gap-3 flex-wrap flex-shrink-0">
               <div className="flex items-center gap-1.5 text-body-sm text-text-tertiary">
                 <Package size={14} />
-                <span>Fact Type:</span>
+                <span>Target Object:</span>
               </div>
               <div className="flex flex-wrap gap-1.5">
                 <button
@@ -308,6 +366,7 @@ export default function RulesPage() {
               <option value="">Status: All</option>
               <option>Active</option>
               <option>Draft</option>
+              <option>Review</option>
               <option>Inactive</option>
             </Select>
 
@@ -334,6 +393,8 @@ export default function RulesPage() {
           if (sort === field) setDir(dir === 'asc' ? 'desc' : 'asc')
           else { setSort(field); setDir(field === 'updatedAt' ? 'desc' : 'asc') }
         }}
+        selectedIds={selectedIds}
+        onSelectionChange={setSelectedIds}
       />
 
       <PaginationBar

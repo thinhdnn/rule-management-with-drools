@@ -32,6 +32,7 @@ export async function GET(request: NextRequest) {
       outputType: inferOutputTypeFromExpression(rule.ruleResult || rule.description), // Use ruleResult or description
       status: rule.status === 'ACTIVE' ? 'Active' as const : 
               rule.status === 'INACTIVE' ? 'Inactive' as const : 
+              rule.status === 'REVIEW' ? 'Review' as const :
               'Draft' as const,
       updatedAt: rule.lastModifiedDate || rule.createdDate || rule.updatedAt || rule.createdAt || new Date().toISOString(),
     }

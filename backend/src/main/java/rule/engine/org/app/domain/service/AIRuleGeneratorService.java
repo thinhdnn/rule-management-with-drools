@@ -342,12 +342,24 @@ public class AIRuleGeneratorService {
         sb.append("    }\n");
         sb.append("  ]\n");
         sb.append("}\n\n");
-        sb.append("CRITICAL RULES:\n");
-        sb.append("- Use ONLY fields/operators from metadata; field names are CASE-SENSITIVE with entity prefix.\n");
-        sb.append("- Conditions MUST be grouped by object path; never place conditions directly at top-level AND/OR.\n");
-        sb.append("- Preserve user language in descriptions and outputs.\n");
-        sb.append("- Always return one rule object per input request, with matching \"index\" (1-based).\n");
-        sb.append("- Never include markdown or extra text, only JSON.\n");
+        sb.append("CRITICAL RULES - YOU MUST FOLLOW THESE STRICTLY:\n");
+        sb.append("1. FIELD VALIDATION - MANDATORY:\n");
+        sb.append("   - Use ONLY fields from the inputFields list in metadata - NO EXCEPTIONS\n");
+        sb.append("   - Field names are CASE-SENSITIVE and must match EXACTLY (including entity prefix like 'traveler.', 'declaration.', 'cargoReport.')\n");
+        sb.append("   - If a field mentioned by user does NOT exist in inputFields, REJECT the request - DO NOT try to find alternatives\n");
+        sb.append("   - For Traveler fact type: There are NO HS code fields (no hscode, hsId, etc.) - if user requests HS code fields, REJECT it\n");
+        sb.append("   - When rejecting: Set \"explanation\" to clearly state which field doesn't exist, set \"error\" field, and set \"rule\" to null\n");
+        sb.append("2. OPERATOR VALIDATION:\n");
+        sb.append("   - Use ONLY operators from metadata that are valid for each field's type\n");
+        sb.append("3. CONDITION STRUCTURE:\n");
+        sb.append("   - Conditions MUST be grouped by object path; never place conditions directly at top-level AND/OR\n");
+        sb.append("4. LANGUAGE:\n");
+        sb.append("   - Preserve user language (Vietnamese/English) in descriptions and outputs\n");
+        sb.append("5. OUTPUT:\n");
+        sb.append("   - Always return one rule object per input request, with matching \"index\" (1-based)\n");
+        sb.append("   - If request cannot be fulfilled, return object with \"error\" field explaining why, and \"rule\" set to null\n");
+        sb.append("6. FORMAT:\n");
+        sb.append("   - Never include markdown or extra text, only JSON\n");
         
         return sb.toString();
     }
@@ -384,11 +396,13 @@ public class AIRuleGeneratorService {
             Your task is to convert natural language rule descriptions into structured JSON rules.
             
             IMPORTANT CONSTRAINTS - YOU MUST FOLLOW THESE STRICTLY:
-            1. Use ONLY fields from the inputFields list below for conditions
-            2. Use ONLY operators that are valid for each field's type
-            3. Use ONLY output fields from the outputFields list
-            4. Field names are CASE-SENSITIVE and must match EXACTLY
-            5. All field paths must include the entity prefix (e.g., 'declaration.fieldName' or 'cargoReport.fieldName')
+            1. Use ONLY fields from the inputFields list below for conditions - NO EXCEPTIONS
+            2. If a field mentioned by user does NOT exist in inputFields, REJECT the request - DO NOT try to find alternatives
+            3. Field names are CASE-SENSITIVE and must match EXACTLY (including entity prefix like 'traveler.', 'declaration.', 'cargoReport.')
+            4. All field paths must include the entity prefix (e.g., 'traveler.travelerId', 'declaration.invoiceAmount', 'cargoReport.reportId')
+            5. Use ONLY operators that are valid for each field's type
+            6. Use ONLY output fields from the outputFields list
+            7. For Traveler fact type: There are NO HS code fields (no hscode, hsId, etc.) - if user requests HS code fields, REJECT it
             
             AVAILABLE METADATA FOR FACT TYPE '%s':
             %s
@@ -659,18 +673,47 @@ public class AIRuleGeneratorService {
               }
             }
             
-            VALIDATION RULES:
-            - If the user mentions a field that doesn't exist, find the closest matching field from inputFields
-            - If the user's intent is unclear, make reasonable assumptions but explain them in "explanation"
-            - Ensure operators match field types (e.g., don't use "contains" on numeric fields)
-            - Score should typically be between 0-100
-            - At least one condition and one output are required
-            - Preserve the user's language (Vietnamese/English) in description and result fields
-            - REMEMBER: ALWAYS group conditions by object path - conditions with same object path go in same nested group
-            - NEVER put conditions directly in top-level AND/OR arrays - always wrap them in nested groups by object path
-            - To determine object path: take all parts of field path except the last part (the actual field name)
-            - Example: "declaration.invoiceAmount" -> object path "declaration"
-            - Example: "declaration.governmentAgencyGoodsItems.hsId" -> object path "declaration.governmentAgencyGoodsItems"
+            CRITICAL VALIDATION RULES - YOU MUST FOLLOW THESE STRICTLY:
+            
+            1. FIELD VALIDATION - MANDATORY:
+               - Use ONLY fields from the inputFields list provided above
+               - Field names are CASE-SENSITIVE and must match EXACTLY (including entity prefix like "traveler.", "declaration.", "cargoReport.")
+               - If the user mentions a field that does NOT exist in inputFields, you MUST REJECT the request
+               - DO NOT try to find "closest matching" fields - this leads to incorrect rules
+               - DO NOT create rules with invalid fields - return an error explanation instead
+               - Example: If user says "hscode" for Traveler fact type, but Traveler has NO hscode field, you MUST reject it
+               - When rejecting: Set "explanation" to clearly state which field doesn't exist and why the rule cannot be created
+               - Return the JSON structure with "explanation" explaining the error, but set conditions to null or empty
+            
+            2. FACT TYPE SPECIFIC CONSTRAINTS:
+               - For Traveler fact type: There is NO hscode, hsId, or any HS code related fields
+               - For Traveler fact type: Available fields include travelerId, sequenceNumeric, crewOrPassengerCode, nationalityCountryId, etc.
+               - For Declaration fact type: HS code fields are in nested path: declaration.governmentAgencyGoodsItems.hsId
+               - For CargoReport fact type: Different field structure - check inputFields list
+            
+            3. OPERATOR VALIDATION:
+               - Ensure operators match field types (e.g., don't use "contains" on numeric fields)
+               - Use only operators from the operatorsByType map for each field's type
+            
+            4. OUTPUT VALIDATION:
+               - Score should typically be between 0-100
+               - At least one output field (action, result, score, etc.) must be specified
+            
+            5. CONDITION STRUCTURE:
+               - ALWAYS group conditions by object path - conditions with same object path go in same nested group
+               - NEVER put conditions directly in top-level AND/OR arrays - always wrap them in nested groups by object path
+               - To determine object path: take all parts of field path except the last part (the actual field name)
+               - Example: "declaration.invoiceAmount" -> object path "declaration"
+               - Example: "declaration.governmentAgencyGoodsItems.hsId" -> object path "declaration.governmentAgencyGoodsItems"
+            
+            6. LANGUAGE PRESERVATION:
+               - Preserve the user's language (Vietnamese/English) in description and result fields
+            
+            7. ERROR HANDLING:
+               - If user's request cannot be fulfilled due to invalid fields, return JSON with:
+                 - "explanation": Clear error message explaining which field is invalid and what fields are available
+                 - "rule": Structure with null or empty conditions, but valid factType
+               - Example error explanation: "Cannot create rule: Field 'hscode' does not exist for Traveler fact type. Available fields include: travelerId, sequenceNumeric, crewOrPassengerCode, nationalityCountryId, etc. Traveler entity does not have HS code fields."
             
             IMPORTANT: Return ONLY the JSON structure above. Do not include any markdown, code blocks, or additional text.
             """,

@@ -9,6 +9,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 import rule.engine.org.app.api.request.ApproveChangeRequestRequest;
@@ -37,6 +38,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.time.Instant;
 import java.util.*;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 @RestController
@@ -72,6 +74,7 @@ public class ChangeRequestController {
         private FactType factType = FactType.DECLARATION;
         private String title;
         private String description;
+        private List<Long> ruleIds; // Optional: if provided, only include these specific rules (rule guide mode)
         // Note: changes field removed - auto-detected by backend
     }
     
@@ -82,6 +85,8 @@ public class ChangeRequestController {
     @NoArgsConstructor
     private static class ValidateChangeRequestRequest {
         private FactType factType = FactType.DECLARATION;
+        private List<Long> ruleIds; // Optional: if provided, validate only these rules (rule guide mode)
+        private Long changeRequestId; // Optional: if provided, validate rules from this change request
     }
     
     /**
@@ -114,6 +119,8 @@ public class ChangeRequestController {
     private final rule.engine.org.app.domain.repository.ScheduledDeploymentRepository scheduledDeploymentRepository;
     private final DeploymentSchedulerService deploymentSchedulerService;
     private final UserDisplayNameService userDisplayNameService;
+    private final rule.engine.org.app.domain.service.NotificationService notificationService;
+    private final rule.engine.org.app.domain.repository.UserAccountRepository userAccountRepository;
 
     public ChangeRequestController(
             ChangeRequestRepository changeRequestRepository,
@@ -123,16 +130,20 @@ public class ChangeRequestController {
             ObjectMapper objectMapper,
             rule.engine.org.app.domain.repository.ScheduledDeploymentRepository scheduledDeploymentRepository,
             DeploymentSchedulerService deploymentSchedulerService,
-            UserDisplayNameService userDisplayNameService) {
+            UserDisplayNameService userDisplayNameService,
+            rule.engine.org.app.domain.service.NotificationService notificationService,
+            rule.engine.org.app.domain.repository.UserAccountRepository userAccountRepository) {
         this.changeRequestRepository = changeRequestRepository;
         this.decisionRuleRepository = decisionRuleRepository;
         this.containerVersionRepository = containerVersionRepository;
         this.ruleEngineManager = ruleEngineManager;
         this.objectMapper = objectMapper;
         this.scheduledDeploymentRepository = scheduledDeploymentRepository;
-        this.deploymentSchedulerService = deploymentSchedulerService;
-        this.userDisplayNameService = userDisplayNameService;
-    }
+            this.deploymentSchedulerService = deploymentSchedulerService;
+            this.userDisplayNameService = userDisplayNameService;
+            this.notificationService = notificationService;
+            this.userAccountRepository = userAccountRepository;
+        }
     
     /**
      * Helper method to convert list of numbers to List<Long>
@@ -218,10 +229,12 @@ public class ChangeRequestController {
      * Preview changes before creating a change request
      * Returns detected changes without saving
      * Only detects changes for rules created by the current user
+     * If ruleIds are provided, only includes those specific rules (rule guide mode)
      */
     @GetMapping("/preview-changes")
     public ResponseEntity<?> previewChanges(
             @RequestParam(required = false) String factType,
+            @RequestParam(required = false) List<Long> ruleIds,
             @AuthenticationPrincipal UserPrincipal currentUser) {
         try {
             String userId = requireUserId(currentUser);
@@ -229,7 +242,15 @@ public class ChangeRequestController {
                 ? FactType.fromValue(factType) 
                 : FactType.DECLARATION;
             
-            ChangeRequestChanges changes = detectChanges(ft, userId);
+            ChangeRequestChanges changes;
+            if (ruleIds != null && !ruleIds.isEmpty()) {
+                // Rule guide mode: only include the specified rules
+                changes = new ChangeRequestChanges();
+                changes.setRulesToInclude(new ArrayList<>(ruleIds));
+            } else {
+                // Change request mode: detect all changes for factType
+                changes = detectChanges(ft, userId);
+            }
             
             Map<String, Object> response = new HashMap<>();
             response.put("success", true);
@@ -253,6 +274,7 @@ public class ChangeRequestController {
      * Only detects changes for rules created by the current user
      */
     @PostMapping
+    @Transactional
     public ResponseEntity<?> createChangeRequest(
             @RequestBody CreateChangeRequestRequest request,
             @AuthenticationPrincipal UserPrincipal currentUser) {
@@ -260,7 +282,21 @@ public class ChangeRequestController {
             String userId = requireUserId(currentUser);
             FactType factType = request.getFactType() != null ? request.getFactType() : FactType.DECLARATION;
 
-            ValidationContext validationContext = performValidation(factType, userId);
+            // Determine changes based on ruleIds (rule guide mode) or factType (change request mode)
+            ChangeRequestChanges changes;
+            ValidationContext validationContext;
+            
+            if (request.getRuleIds() != null && !request.getRuleIds().isEmpty()) {
+                // Rule guide mode: only include the specified rules
+                changes = new ChangeRequestChanges();
+                changes.setRulesToInclude(new ArrayList<>(request.getRuleIds()));
+                validationContext = performValidationForRules(request.getRuleIds());
+            } else {
+                // Change request mode: detect all changes for factType
+                validationContext = performValidation(factType, userId);
+                changes = validationContext.changes();
+            }
+            
             if (!validationContext.response().isSuccess()) {
                 ErrorResponse errorResponse = ErrorResponse.builder()
                         .success(false)
@@ -271,7 +307,7 @@ public class ChangeRequestController {
             }
 
             // Check for conflicts with pending change requests
-            String conflictMessage = checkPendingChangeRequestConflicts(validationContext.changes(), factType);
+            String conflictMessage = checkPendingChangeRequestConflicts(changes, factType);
             if (conflictMessage != null) {
                 ErrorResponse errorResponse = ErrorResponse.builder()
                         .success(false)
@@ -287,12 +323,15 @@ public class ChangeRequestController {
             changeRequest.setDescription(request.getDescription());
             changeRequest.setStatus(ChangeRequestStatus.PENDING);
 
-            String changesJson = objectMapper.writeValueAsString(validationContext.changes());
+            String changesJson = objectMapper.writeValueAsString(changes);
             changeRequest.setChangesJson(changesJson);
 
             applyValidationMetadata(changeRequest, validationContext);
 
             ChangeRequest saved = changeRequestRepository.save(changeRequest);
+
+            // Move involved rules into REVIEW state so they are clearly pending approval
+            moveRulesToReview(changes);
 
             CreateChangeRequestResponse response = CreateChangeRequestResponse.builder()
                 .success(true)
@@ -317,6 +356,11 @@ public class ChangeRequestController {
     /**
      * Validate detected changes by compiling the would-be deployed rules without
      * persisting a new package version.
+     * 
+     * Priority:
+     * 1. If ruleIds are provided, validate only those specific rules (rule guide mode)
+     * 2. If changeRequestId is provided, validate rules from that change request
+     * 3. Otherwise, validate all changes for the given factType (change request mode)
      */
     @PostMapping("/validate")
     public ResponseEntity<?> validateChangeRequest(
@@ -324,6 +368,52 @@ public class ChangeRequestController {
             @AuthenticationPrincipal UserPrincipal currentUser) {
         try {
             String userId = requireUserId(currentUser);
+            
+            // Priority 1: If ruleIds are provided, validate only those rules (rule guide mode)
+            if (request != null && request.getRuleIds() != null && !request.getRuleIds().isEmpty()) {
+                log.info("🔍 Validating specific rules (rule guide mode): {}", request.getRuleIds());
+                ValidationContext validationContext = performValidationForRules(request.getRuleIds());
+                return ResponseEntity.ok(validationContext.response());
+            }
+            
+            // Priority 2: If changeRequestId is provided, validate rules from that change request
+            if (request != null && request.getChangeRequestId() != null) {
+                log.info("🔍 Validating rules from change request ID: {}", request.getChangeRequestId());
+                Optional<ChangeRequest> changeRequestOpt = changeRequestRepository.findById(request.getChangeRequestId());
+                if (changeRequestOpt.isEmpty()) {
+                    ErrorResponse errorResponse = ErrorResponse.builder()
+                        .success(false)
+                        .error("Change request not found: " + request.getChangeRequestId())
+                        .errorType("NotFoundException")
+                        .build();
+                    return ResponseEntity.badRequest().body(errorResponse);
+                }
+                
+                ChangeRequest changeRequest = changeRequestOpt.get();
+                ChangeRequestChanges changes = parseChangesJson(changeRequest.getChangesJson());
+                
+                // Get all rule IDs to validate (include + exclude for full context)
+                List<Long> allRuleIds = new ArrayList<>();
+                if (changes.getRulesToInclude() != null) {
+                    allRuleIds.addAll(changes.getRulesToInclude());
+                }
+                // Note: We validate rules to include, not exclude (excluded rules are removed)
+                
+                if (allRuleIds.isEmpty()) {
+                    ErrorResponse errorResponse = ErrorResponse.builder()
+                        .success(false)
+                        .error("Change request has no rules to validate")
+                        .errorType("ValidationException")
+                        .build();
+                    return ResponseEntity.badRequest().body(errorResponse);
+                }
+                
+                log.info("🔍 Validating {} rules from change request", allRuleIds.size());
+                ValidationContext validationContext = performValidationForRules(allRuleIds);
+                return ResponseEntity.ok(validationContext.response());
+            }
+            
+            // Priority 3: Otherwise, validate all changes for factType (change request mode)
             FactType factType = request != null && request.getFactType() != null
                     ? request.getFactType()
                     : FactType.DECLARATION;
@@ -339,6 +429,16 @@ public class ChangeRequestController {
                 .build();
             return ResponseEntity.badRequest().body(errorResponse);
         }
+    }
+    
+    /**
+     * Parse changes JSON from change request
+     */
+    private ChangeRequestChanges parseChangesJson(String changesJson) throws JsonProcessingException {
+        if (changesJson == null || changesJson.isEmpty()) {
+            return new ChangeRequestChanges();
+        }
+        return objectMapper.readValue(changesJson, ChangeRequestChanges.class);
     }
     
     /**
@@ -492,6 +592,145 @@ public class ChangeRequestController {
         }
         
         return result;
+    }
+
+    /**
+     * Validate specific rules by their IDs (for rule guide validation)
+     */
+    private ValidationContext performValidationForRules(List<Long> ruleIds) throws JsonProcessingException {
+        log.info("🔍 Validating {} specific rules", ruleIds.size());
+        
+        // Fetch the rules
+        Iterable<DecisionRule> rules = decisionRuleRepository.findAllById(ruleIds);
+        List<DecisionRule> rulesList = new ArrayList<>();
+        FactType factType = null;
+        
+        for (DecisionRule rule : rules) {
+            if (rule == null) {
+                log.warn("Rule ID in list is null, skipping");
+                continue;
+            }
+            if (factType == null) {
+                factType = rule.getFactType();
+            } else if (factType != rule.getFactType()) {
+                log.warn("Rules have different fact types: {} vs {}, using first one", 
+                        factType, rule.getFactType());
+            }
+            // Ensure rules are treated as ACTIVE for validation
+            DecisionRule simulatedRule = new DecisionRule();
+            simulatedRule.setId(rule.getId());
+            simulatedRule.setRuleName(rule.getRuleName());
+            simulatedRule.setLabel(rule.getLabel());
+            simulatedRule.setFactType(rule.getFactType());
+            simulatedRule.setRuleContent(rule.getRuleContent());
+            simulatedRule.setPriority(rule.getPriority());
+            simulatedRule.setStatus(RuleStatus.ACTIVE);
+            simulatedRule.setIsLatest(rule.getIsLatest());
+            simulatedRule.setVersion(rule.getVersion());
+            simulatedRule.setParentRuleId(rule.getParentRuleId());
+            rulesList.add(simulatedRule);
+        }
+        
+        if (rulesList.isEmpty()) {
+            throw new IllegalArgumentException("No valid rules found for the provided IDs");
+        }
+        
+        if (factType == null) {
+            factType = FactType.DECLARATION;
+        }
+        
+        // Sort by priority
+        rulesList.sort((r1, r2) -> {
+            int p1 = r1.getPriority() != null ? r1.getPriority() : 0;
+            int p2 = r2.getPriority() != null ? r2.getPriority() : 0;
+            return Integer.compare(p1, p2);
+        });
+        
+        log.info("✅ Validating {} rules for factType: {}", rulesList.size(), factType.getValue());
+        
+        // Validate the rules
+        Map<String, Object> validationResult = ruleEngineManager
+                .validateRulesBuild(factType.getValue(), rulesList);
+
+        boolean success = Boolean.TRUE.equals(validationResult.get("success"));
+        String message = (String) validationResult.getOrDefault("message",
+                success ? "Validation completed successfully" : "Validation failed");
+        String releaseId = validationResult.containsKey("releaseId")
+                ? validationResult.get("releaseId").toString()
+                : null;
+        String error = validationResult.containsKey("error")
+                ? validationResult.get("error").toString()
+                : null;
+        String errorDetails = validationResult.containsKey("errorDetails")
+                ? validationResult.get("errorDetails").toString()
+                : null;
+        String errorType = validationResult.containsKey("errorType")
+                ? validationResult.get("errorType").toString()
+                : null;
+        String drlPreview = validationResult.containsKey("drlPreview")
+                ? validationResult.get("drlPreview").toString()
+                : null;
+
+        // If build succeeded, try execution test with sample data
+        Map<String, Object> executionTestResult = null;
+        org.kie.api.runtime.KieContainer tempContainer = null;
+        try {
+            if (success && factType == FactType.DECLARATION) {
+                Object containerObj = validationResult.get("container");
+                if (containerObj instanceof org.kie.api.runtime.KieContainer) {
+                    tempContainer = (org.kie.api.runtime.KieContainer) containerObj;
+                    log.info("🧪 Using temporary container for execution test (ReleaseId: {})", 
+                            validationResult.get("releaseId"));
+                    executionTestResult = performExecutionTest(tempContainer, factType.getValue());
+                } else {
+                    log.warn("⚠️ Container not found in validation result or wrong type: {}", 
+                            containerObj != null ? containerObj.getClass().getName() : "null");
+                    executionTestResult = Map.of(
+                            "status", "SKIPPED",
+                            "message", "Container not available for execution test"
+                    );
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Execution test failed during validation: {}", e.getMessage(), e);
+            executionTestResult = Map.of(
+                    "status", "FAILED",
+                    "message", "Execution test failed: " + e.getMessage()
+            );
+        } finally {
+            if (tempContainer != null) {
+                try {
+                    log.debug("Disposing temporary validation container");
+                    tempContainer.dispose();
+                } catch (Exception e) {
+                    log.warn("Error disposing temporary container: {}", e.getMessage());
+                }
+            }
+        }
+
+        ChangeRequestValidationResponse response = ChangeRequestValidationResponse.builder()
+                .success(success)
+                .message(message)
+                .factType(factType.getValue())
+                .compiledRuleCount(rulesList.size())
+                .totalChanges(rulesList.size())
+                .rulesToInclude(rulesList.size())
+                .rulesToExclude(0)
+                .releaseId(releaseId)
+                .error(error)
+                .errorDetails(errorDetails)
+                .errorType(errorType)
+                .drlPreview(drlPreview)
+                .build();
+
+        String serializedResponse = objectMapper.writeValueAsString(response);
+        
+        // Create empty changes for context (not used in rule guide mode)
+        ChangeRequestChanges emptyChanges = new ChangeRequestChanges();
+        emptyChanges.setRulesToInclude(new ArrayList<>());
+        emptyChanges.setRulesToExclude(new ArrayList<>());
+
+        return new ValidationContext(emptyChanges, response, serializedResponse, Instant.now(), executionTestResult);
     }
 
     private ValidationContext performValidation(FactType factType, String userId) throws JsonProcessingException {
@@ -771,6 +1010,41 @@ public class ChangeRequestController {
         }
     }
 
+    /**
+     * Set all rules referenced in the change request to REVIEW status so they are marked as waiting for approval.
+     */
+    private void moveRulesToReview(ChangeRequestChanges changes) {
+        if (changes == null) {
+            return;
+        }
+
+        Set<Long> ruleIds = new HashSet<>();
+        if (changes.getRulesToInclude() != null) {
+            ruleIds.addAll(changes.getRulesToInclude());
+        }
+        if (changes.getRulesToExclude() != null) {
+            ruleIds.addAll(changes.getRulesToExclude());
+        }
+
+        if (ruleIds.isEmpty()) {
+            return;
+        }
+
+        List<DecisionRule> rulesToUpdate = new ArrayList<>();
+        decisionRuleRepository.findAllById(ruleIds).forEach(rule -> {
+            if (rule != null && rule.getStatus() != RuleStatus.REVIEW) {
+                log.info("Marking rule #{} (version {}) as REVIEW (was {})",
+                        rule.getId(), rule.getVersion(), rule.getStatus());
+                rule.setStatus(RuleStatus.REVIEW);
+                rulesToUpdate.add(rule);
+            }
+        });
+
+        if (!rulesToUpdate.isEmpty()) {
+            decisionRuleRepository.saveAll(rulesToUpdate);
+        }
+    }
+
     private record ValidationContext(
             ChangeRequestChanges changes,
             ChangeRequestValidationResponse response,
@@ -949,6 +1223,37 @@ public class ChangeRequestController {
                 .message(message)
                 .build();
             
+            // Create notification for change request creator
+            try {
+                String creatorId = request.getCreatedBy();
+                if (creatorId != null && !creatorId.isEmpty()) {
+                    try {
+                        java.util.UUID creatorUUID = java.util.UUID.fromString(creatorId);
+                        String actionUrl = String.format("/change-requests/%d", request.getId());
+                        String notificationMessage = deploymentOption == ApproveChangeRequestRequest.DeploymentOption.SCHEDULED
+                            ? String.format("Your change request '%s' has been approved. Deployment scheduled for %s.", 
+                                request.getTitle(), requestBody != null && requestBody.getScheduledTime() != null 
+                                    ? requestBody.getScheduledTime().toString() : "later")
+                            : String.format("Your change request '%s' has been approved and deployed successfully.", 
+                                request.getTitle());
+                        
+                        notificationService.createNotification(
+                            creatorUUID,
+                            "Change Request Approved",
+                            notificationMessage,
+                            rule.engine.org.app.domain.entity.ui.Notification.NotificationType.SUCCESS,
+                            actionUrl,
+                            "View Change Request"
+                        );
+                    } catch (IllegalArgumentException e) {
+                        log.warn("Invalid UUID format for createdBy: {}", creatorId);
+                    }
+                }
+            } catch (Exception e) {
+                log.error("Failed to create notification for approved change request", e);
+                // Don't fail the request if notification creation fails
+            }
+            
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             log.error("Failed to approve change request {}", id, e);
@@ -1001,6 +1306,37 @@ public class ChangeRequestController {
                 .success(true)
                 .message("Change request rejected successfully")
                 .build();
+            
+            // Create notification for change request creator
+            try {
+                String creatorId = request.getCreatedBy();
+                if (creatorId != null && !creatorId.isEmpty()) {
+                    try {
+                        java.util.UUID creatorUUID = java.util.UUID.fromString(creatorId);
+                        String actionUrl = String.format("/change-requests/%d", request.getId());
+                        String rejectionReason = requestBody != null && requestBody.getRejectionReason() != null 
+                            ? requestBody.getRejectionReason() 
+                            : "No reason provided";
+                        String notificationMessage = String.format(
+                            "Your change request '%s' has been rejected. Reason: %s", 
+                            request.getTitle(), rejectionReason);
+                        
+                        notificationService.createNotification(
+                            creatorUUID,
+                            "Change Request Rejected",
+                            notificationMessage,
+                            rule.engine.org.app.domain.entity.ui.Notification.NotificationType.ERROR,
+                            actionUrl,
+                            "View Change Request"
+                        );
+                    } catch (IllegalArgumentException e) {
+                        log.warn("Invalid UUID format for createdBy: {}", creatorId);
+                    }
+                }
+            } catch (Exception e) {
+                log.error("Failed to create notification for rejected change request", e);
+                // Don't fail the request if notification creation fails
+            }
             
             return ResponseEntity.ok(response);
         } catch (Exception e) {
@@ -1064,6 +1400,91 @@ public class ChangeRequestController {
             throw e;
         } catch (Exception e) {
             log.error("Failed to cancel change request {}", id, e);
+            ErrorResponse errorResponse = ErrorResponse.builder()
+                .success(false)
+                .error(e.getMessage())
+                .errorType(e.getClass().getName())
+                .build();
+            return ResponseEntity.internalServerError().body(errorResponse);
+        }
+    }
+
+    /**
+     * Notify administrators about a change request
+     * Sends a notification to all users with RULE_ADMINISTRATOR role
+     */
+    @PostMapping("/{id}/notify-admin")
+    public ResponseEntity<?> notifyAdmin(
+            @PathVariable Long id,
+            @AuthenticationPrincipal UserPrincipal currentUser) {
+        try {
+            String userId = requireUserId(currentUser);
+            
+            Optional<ChangeRequest> requestOpt = changeRequestRepository.findById(id);
+            if (requestOpt.isEmpty()) {
+                return ResponseEntity.notFound().build();
+            }
+            
+            ChangeRequest request = requestOpt.get();
+            
+            // Only the creator can notify admins about their change request
+            if (!userId.equals(request.getCreatedBy())) {
+                throw new ResponseStatusException(
+                        HttpStatus.FORBIDDEN,
+                        "You can only notify admins about your own change requests");
+            }
+            
+            // Get all administrators
+            List<rule.engine.org.app.domain.entity.security.UserAccount> administrators = 
+                userAccountRepository.findAll().stream()
+                    .filter(user -> user.getRoles().contains(UserRole.RULE_ADMINISTRATOR))
+                    .collect(Collectors.toList());
+            
+            if (administrators.isEmpty()) {
+                ErrorResponse errorResponse = ErrorResponse.builder()
+                    .success(false)
+                    .error("No administrators found")
+                    .errorType("NotFoundException")
+                    .build();
+                return ResponseEntity.badRequest().body(errorResponse);
+            }
+            
+            // Create notification for each administrator
+            String actionUrl = String.format("/change-requests/%d", request.getId());
+            String notificationMessage = String.format(
+                "A new change request '%s' (Fact Type: %s) has been submitted and requires your review.",
+                request.getTitle(),
+                request.getFactType().getValue()
+            );
+            
+            int notificationCount = 0;
+            for (rule.engine.org.app.domain.entity.security.UserAccount admin : administrators) {
+                try {
+                    notificationService.createNotification(
+                        admin.getId(),
+                        "New Change Request Requires Review",
+                        notificationMessage,
+                        rule.engine.org.app.domain.entity.ui.Notification.NotificationType.INFO,
+                        actionUrl,
+                        "Review Change Request"
+                    );
+                    notificationCount++;
+                } catch (Exception e) {
+                    log.warn("Failed to create notification for admin {}", admin.getId(), e);
+                }
+            }
+            
+            Map<String, Object> response = Map.of(
+                "success", true,
+                "message", String.format("Notifications sent to %d administrator(s)", notificationCount),
+                "notificationCount", notificationCount
+            );
+            
+            return ResponseEntity.ok(response);
+        } catch (ResponseStatusException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("Failed to notify admins about change request {}", id, e);
             ErrorResponse errorResponse = ErrorResponse.builder()
                 .success(false)
                 .error(e.getMessage())

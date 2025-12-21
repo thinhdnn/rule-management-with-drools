@@ -1,11 +1,10 @@
 "use client"
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
-import { Brain, Sparkles, Loader2, CheckCircle2, AlertCircle, ChevronRight, Save, Eye, Zap, X } from 'lucide-react'
-import { SearchableSelect } from '@/components/SearchableSelect'
+import { Brain, Loader2, CheckCircle2, AlertCircle, ChevronRight, Zap, X } from 'lucide-react'
 import { api, fetchApi } from '@/lib/api'
-import { useKeyboardShortcuts } from '@/lib/useKeyboardShortcuts'
 import { useToast } from '@/components/Toast'
+import { AIRuleForm } from '@/components/rules/AIRuleForm'
 
 type AIGenerateRequest = {
   naturalLanguageInput: string
@@ -66,15 +65,9 @@ export default function AIBuilderPage() {
   const toast = useToast()
   const [factTypes, setFactTypes] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
-  const [generating, setGenerating] = useState(false)
-  
-  // Form state
   const [selectedFactType, setSelectedFactType] = useState('Declaration')
+  const [currentResponse, setCurrentResponse] = useState<AIGenerateResponse | null>(null)
   const [naturalInput, setNaturalInput] = useState('')
-  const [additionalContext, setAdditionalContext] = useState('')
-  
-  // Result state
-  const [response, setResponse] = useState<AIGenerateResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   
   // Batch generation state
@@ -103,38 +96,34 @@ export default function AIBuilderPage() {
     loadFactTypes()
   }, [])
 
-  // Generate rule from natural language
-  const handleGenerate = async () => {
-    if (!naturalInput.trim()) {
-      setError('Please enter a rule description')
-      return
-    }
-
-    setError(null)
-    setResponse(null)
-    setGenerating(true)
-
+  // Handle save from AIRuleForm
+  const handleSave = async (generatedRule: GeneratedRule) => {
+    setLoading(true)
     try {
-      const request: AIGenerateRequest = {
-        naturalLanguageInput: naturalInput,
-        factType: selectedFactType,
-        additionalContext: additionalContext || undefined,
-        previewOnly: true, // Always preview first
+      const savedRule = await fetchApi(api.rules.create(), {
+        method: 'POST',
+        body: JSON.stringify({
+          ruleName: generatedRule.ruleName,
+          label: generatedRule.description || generatedRule.ruleName,
+          description: generatedRule.description || generatedRule.ruleName,
+          factType: generatedRule.factType,
+          priority: generatedRule.priority || 0,
+          active: generatedRule.enabled !== false,
+          conditions: generatedRule.conditions || [],
+          output: generatedRule.output || {},
+          generatedByAi: true,
+        }),
+      })
+
+      if ((savedRule as any)?.id) {
+        router.push(`/rules/${(savedRule as any).id}`)
+      } else {
+        throw new Error('Failed to save rule: Invalid response from server')
       }
-
-      const result = await fetchApi<AIGenerateResponse>(
-        api.rules.aiGenerate(),
-        {
-          method: 'POST',
-          body: JSON.stringify(request),
-        }
-      )
-
-      setResponse(result)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to generate rule')
+    } catch (err: any) {
+      throw err // Let AIRuleForm handle error display
     } finally {
-      setGenerating(false)
+      setLoading(false)
     }
   }
 
@@ -342,11 +331,11 @@ export default function AIBuilderPage() {
         requests: prompts.map(({ prompt }) => ({
           naturalLanguageInput: prompt,
           factType: selectedFactType,
-          additionalContext: additionalContext || undefined,
+          additionalContext: undefined,
           previewOnly: true,
         })),
         factType: selectedFactType,
-        additionalContext: additionalContext || undefined,
+        additionalContext: undefined,
       }
 
       // Add timeout to prevent hanging requests (longer for batch)
@@ -697,78 +686,6 @@ export default function AIBuilderPage() {
     setBatchSaving(false)
   }
 
-  // Save generated rule
-  const handleSave = async () => {
-    if (!response?.generatedRule) return
-
-    setLoading(true)
-    setError(null)
-
-    try {
-      // Save the already-generated rule directly using the create rule API
-      // This avoids calling OpenAI API again unnecessarily
-      const ruleToSave = response.generatedRule
-      
-      const savedRule = await fetchApi<any>(
-        api.rules.create(),
-        {
-          method: 'POST',
-          body: JSON.stringify({
-            ruleName: ruleToSave.ruleName,
-            label: ruleToSave.description || ruleToSave.ruleName,
-            description: ruleToSave.description || ruleToSave.ruleName,
-            factType: ruleToSave.factType,
-            priority: ruleToSave.priority || 0,
-            active: ruleToSave.enabled !== false,
-            conditions: ruleToSave.conditions || [],
-            output: ruleToSave.output || {},
-            generatedByAi: true, // Mark as AI-generated rule
-          }),
-        }
-      )
-
-      if (savedRule?.id) {
-        // Navigate to rule detail page
-        router.push(`/rules/${savedRule.id}`)
-      } else {
-        // Backend should always return an ID, but if not, use error from response
-        const errorMsg = savedRule?.error || 'Failed to save rule: Invalid response from server'
-        setError(errorMsg)
-      }
-    } catch (err) {
-      // Extract detailed error message from backend ErrorResponse
-      let errorMessage = 'Failed to save rule'
-      
-      if (err instanceof Error) {
-        // fetchApi throws Error with message extracted from ErrorResponse.error
-        errorMessage = err.message
-      } else if (typeof err === 'string') {
-        errorMessage = err
-      } else if (err && typeof err === 'object') {
-        // Try to extract error from ErrorResponse structure (error field)
-        if ('error' in err) {
-          errorMessage = String(err.error)
-        } else if ('message' in err) {
-          errorMessage = String(err.message)
-        } else if ('errorMessage' in err) {
-          errorMessage = String(err.errorMessage)
-        }
-      }
-      
-      // Add validation errors if available (from generation, not save)
-      if (response?.validation?.errors && response.validation.errors.length > 0) {
-        errorMessage += `\n\nValidation errors:\n${response.validation.errors.map((e, i) => `${i + 1}. ${e}`).join('\n')}`
-      }
-      
-      // Log full error for debugging
-      console.error('Error saving rule:', errorMessage, err)
-      
-      setError(errorMessage)
-    } finally {
-      setLoading(false)
-    }
-  }
-
   return (
     <div className="flex flex-col gap-6">
       {/* Header */}
@@ -782,395 +699,19 @@ export default function AIBuilderPage() {
         </div>
       </div>
 
-      {/* Input Form */}
-      <div className="bg-surface rounded-lg border border-border shadow-card">
-        <div className="p-6 space-y-6">
-          {/* Fact Type Selector */}
-          <div>
-            <label className="block text-body-sm font-medium text-text-secondary mb-2">
-              Fact Type
-            </label>
-            <SearchableSelect
-              options={factTypes.map(ft => ({ name: ft, label: ft }))}
-              value={selectedFactType}
-              onChange={(value) => setSelectedFactType(value)}
-              placeholder="Select fact type"
-            />
-            <p className="text-body-xs text-text-tertiary mt-1">
-              Data type that the rule will apply to
-            </p>
-          </div>
-
-          {/* Natural Language Input */}
-          <div>
-            <label className="block text-body-sm font-medium text-text-secondary mb-2">
-              Rule Description (English or Vietnamese)
-            </label>
-            <textarea
-              value={naturalInput}
-              onChange={(e) => setNaturalInput(e.target.value)}
-              placeholder="Example: If total gross mass is greater than 1000kg then require inspection&#10;&#10;Or: Nếu tổng trọng lượng hàng hóa lớn hơn 1000kg thì cần kiểm tra"
-              className="w-full px-4 py-3 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/10 focus:border-primary transition-smooth resize-none text-body text-text-primary placeholder:text-text-muted"
-              rows={6}
-            />
-            <p className="text-body-xs text-text-tertiary mt-1">
-              Describe the rule in natural language. AI will convert it to a structured rule.
-            </p>
-          </div>
-
-          {/* Additional Context (Optional) */}
-          <div>
-            <label className="block text-body-sm font-medium text-text-secondary mb-2">
-              Additional Context (Optional)
-            </label>
-            <textarea
-              value={additionalContext}
-              onChange={(e) => setAdditionalContext(e.target.value)}
-              placeholder="Add context or special requirements for AI..."
-              className="w-full px-4 py-3 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/10 focus:border-primary transition-smooth resize-none text-body text-text-primary placeholder:text-text-muted"
-              rows={3}
-            />
-          </div>
-
-          {/* Error Display */}
-          {error && (
-            <div className="flex items-start gap-3 p-4 bg-error-bg border border-error/20 rounded-lg">
-              <AlertCircle className="text-error shrink-0 mt-0.5" size={20} />
-              <div className="flex-1">
-                <p className="text-body-sm font-medium text-error">Error</p>
-                <p className="text-body-sm text-error mt-1 whitespace-pre-wrap">{error}</p>
-              </div>
-            </div>
-          )}
-
-          {/* Generate Button */}
-          <div className="flex gap-3">
-            <button
-              onClick={handleGenerate}
-              disabled={generating || !naturalInput.trim()}
-              className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-secondary to-primary text-white rounded-lg hover:from-secondary-light hover:to-primary-light disabled:opacity-50 disabled:cursor-not-allowed transition-smooth shadow-sm cursor-pointer"
-            >
-              {generating ? (
-                <>
-                  <Loader2 className="animate-spin" size={20} />
-                  <span>Generating...</span>
-                </>
-              ) : (
-                <>
-                  <Sparkles size={20} />
-                  <span>Generate Rule</span>
-                </>
-              )}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Generated Rule Preview */}
-      {response && (
-        <div className="bg-surface rounded-lg border border-outlineVariant shadow-card">
-          <div className="p-6 space-y-6">
-            {/* Success/Error Header */}
-            <div className="flex items-start gap-3">
-              {response.success && response.validation?.valid ? (
-                <CheckCircle2 className="text-success shrink-0 mt-0.5" size={24} />
-              ) : (
-                <AlertCircle className="text-warning shrink-0 mt-0.5" size={24} />
-              )}
-              <div className="flex-1">
-                <h2 className="text-lg font-semibold text-text-primary">
-                  {response.success && response.validation?.valid
-                    ? 'Rule Generated Successfully'
-                    : response.errorMessage
-                    ? 'AI Generation Failed'
-                    : 'Rule Has Validation Errors'}
-                </h2>
-                {response.aiExplanation && (
-                  <p className="text-sm text-text-secondary mt-1">{response.aiExplanation}</p>
-                )}
-                {response.errorMessage && (
-                  <p className="text-sm text-error mt-1">{response.errorMessage}</p>
-                )}
-              </div>
-            </div>
-
-            {/* Error Message and Suggestions */}
-            {response.errorMessage && (
-              <div className="space-y-3">
-                <div className="bg-error-bg dark:bg-error/10 border border-error/30 rounded-lg p-4">
-                  <p className="text-sm font-medium text-error dark:text-error-light mb-2">Error:</p>
-                  <p className="text-sm text-error dark:text-error-light">{response.errorMessage}</p>
-                </div>
-                
-                {response.suggestions && response.suggestions.length > 0 && (
-                  <div className="bg-accent-bg dark:bg-accent/10 border border-accent/30 rounded-lg p-4">
-                    <p className="text-sm font-medium text-accent dark:text-accent-light mb-2">Suggestions:</p>
-                    <ul className="space-y-1">
-                      {response.suggestions.map((sug, idx) => (
-                        <li key={idx} className="text-sm text-accent dark:text-accent-light flex items-start gap-2">
-                          <ChevronRight size={16} className="shrink-0 mt-0.5" />
-                          <span>{sug}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Validation Status */}
-            {response.validation && (!response.validation.valid || response.validation.warnings.length > 0) && (
-              <div className="space-y-3">
-                {/* Errors */}
-                {response.validation.errors.length > 0 && (
-                  <div className="bg-error-bg dark:bg-error/10 border border-error/30 rounded-lg p-4">
-                    <p className="text-sm font-medium text-error dark:text-error-light mb-2">Validation Errors:</p>
-                    <ul className="space-y-1">
-                      {response.validation.errors.map((err, idx) => (
-                        <li key={idx} className="text-sm text-error dark:text-error-light flex items-start gap-2">
-                          <ChevronRight size={16} className="shrink-0 mt-0.5" />
-                          <span>{err}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-                {/* Warnings */}
-                {response.validation.warnings.length > 0 && (
-                  <div className="bg-warning-bg dark:bg-warning/10 border border-warning/30 rounded-lg p-4">
-                    <p className="text-sm font-medium text-warning dark:text-warning-light mb-2">Warnings:</p>
-                    <ul className="space-y-1">
-                      {response.validation.warnings.map((warn, idx) => (
-                        <li key={idx} className="text-sm text-warning dark:text-warning-light flex items-start gap-2">
-                          <ChevronRight size={16} className="shrink-0 mt-0.5" />
-                          <span>{warn}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-              </div>
-            )}
-
-            {/* Generated Rule Details */}
-            {response.generatedRule && (
-              <div className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* Rule Name */}
-                  <div>
-                    <label className="text-xs font-medium text-text-tertiary uppercase tracking-wide">
-                      Rule Name
-                    </label>
-                    <p className="text-sm text-text-primary mt-1">{response.generatedRule.ruleName}</p>
-                  </div>
-
-                  {/* Fact Type */}
-                  <div>
-                    <label className="text-xs font-medium text-text-tertiary uppercase tracking-wide">
-                      Fact Type
-                    </label>
-                    <p className="text-sm text-text-primary mt-1">{response.generatedRule.factType}</p>
-                  </div>
-
-                  {/* Description */}
-                  {response.generatedRule.description && (
-                    <div className="md:col-span-2">
-                      <label className="text-xs font-medium text-text-tertiary uppercase tracking-wide">
-                        Description
-                      </label>
-                      <p className="text-sm text-text-primary mt-1">{response.generatedRule.description}</p>
-                    </div>
-                  )}
-                </div>
-
-                {/* Conditions */}
-                <div>
-                  <label className="text-xs font-medium text-text-tertiary uppercase tracking-wide mb-2 block">
-                    Conditions (WHEN)
-                  </label>
-                  <div className="space-y-2">
-                    {(() => {
-                      // Convert ConditionsGroup to array for display, handling nested structure
-                      type ConditionWithOp = Condition & { logicalOp: 'AND' | 'OR' }
-                      let conditionsArray: ConditionWithOp[] = []
-                      const conditions = response.generatedRule.conditions
-                      
-                      if (Array.isArray(conditions)) {
-                        // Old format: array with logicalOp
-                        conditionsArray = conditions.map(c => ({
-                          ...c,
-                          logicalOp: (c as any).logicalOp || 'AND' as 'AND' | 'OR'
-                        }))
-                      } else if (conditions && typeof conditions === 'object') {
-                        const conditionsGroup = conditions as ConditionsGroup
-                        
-                        // Helper to extract conditions from nested groups with logical operator
-                        const extractConditions = (
-                          items: Array<Condition | { AND?: Condition[] } | { OR?: Condition[] }>,
-                          logicalOp: 'AND' | 'OR'
-                        ): ConditionWithOp[] => {
-                          const result: ConditionWithOp[] = []
-                          for (const item of items) {
-                            if (item && typeof item === 'object') {
-                              // Check if it's a nested group
-                              if ('AND' in item && Array.isArray(item.AND)) {
-                                // Nested AND group - all conditions inside are AND
-                                result.push(...item.AND.map(c => ({ ...c, logicalOp: 'AND' as const })))
-                              } else if ('OR' in item && Array.isArray(item.OR)) {
-                                // Nested OR group - all conditions inside are OR
-                                result.push(...item.OR.map(c => ({ ...c, logicalOp: 'OR' as const })))
-                              } else if ('field' in item && 'operator' in item && 'value' in item) {
-                                // Direct condition (backward compatibility)
-                                result.push({ ...(item as Condition), logicalOp })
-                              }
-                            }
-                          }
-                          return result
-                        }
-                        
-                        if (conditionsGroup.AND) {
-                          conditionsArray.push(...extractConditions(conditionsGroup.AND, 'AND'))
-                        }
-                        if (conditionsGroup.OR) {
-                          conditionsArray.push(...extractConditions(conditionsGroup.OR, 'OR'))
-                        }
-                      }
-                      
-                      if (conditionsArray.length === 0) {
-                        return (
-                          <div className="p-3 bg-surfaceContainerHigh dark:bg-surfaceContainerHighest rounded-lg border border-outlineVariant text-sm text-text-tertiary">
-                            No conditions specified
-                          </div>
-                        )
-                      }
-                      
-                      // Group conditions by logical operator for better display
-                      const groupedConditions: { op: 'AND' | 'OR', conditions: ConditionWithOp[] }[] = []
-                      let currentGroup: { op: 'AND' | 'OR', conditions: ConditionWithOp[] } | null = null
-                      
-                      for (const cond of conditionsArray) {
-                        if (!currentGroup || currentGroup.op !== cond.logicalOp) {
-                          // Start new group
-                          currentGroup = { op: cond.logicalOp, conditions: [] }
-                          groupedConditions.push(currentGroup)
-                        }
-                        currentGroup.conditions.push(cond)
-                      }
-                      
-                      return (
-                        <div className="space-y-3">
-                          {groupedConditions.map((group, groupIdx) => (
-                            <div key={groupIdx} className="space-y-2">
-                              {groupIdx > 0 && (
-                                <div className="flex items-center justify-center py-1">
-                                  <span className={`text-xs font-semibold px-3 py-1 rounded-full ${
-                                    group.op === 'AND' 
-                                      ? 'bg-accent-bg text-accent dark:bg-accent/20 dark:text-accent-light border border-accent/30' 
-                                      : 'bg-secondary-bg text-secondary dark:bg-secondary/20 dark:text-secondary-light border border-secondary/30'
-                                  }`}>
-                                    {group.op}
-                                  </span>
-                                </div>
-                              )}
-                              <div className="space-y-2">
-                                {group.conditions.map((cond, idx) => (
-                                  <div key={idx} className="flex items-center gap-3 p-3 bg-surfaceContainerHigh dark:bg-surfaceContainerHighest rounded-lg border border-outlineVariant">
-                                    <span className="text-xs font-medium text-text-tertiary">#{conditionsArray.indexOf(cond) + 1}</span>
-                                    <span className={`text-xs font-semibold px-2 py-0.5 rounded ${
-                                      cond.logicalOp === 'AND' 
-                                        ? 'bg-accent-bg text-accent dark:bg-accent/20 dark:text-accent-light' 
-                                        : 'bg-secondary-bg text-secondary dark:bg-secondary/20 dark:text-secondary-light'
-                                    }`}>
-                                      {cond.logicalOp}
-                                    </span>
-                                    <code className="text-sm text-primary font-mono">
-                                      {cond.field}
-                                    </code>
-                                    <span className="text-sm font-medium text-text-primary">{cond.operator}</span>
-                                    <code className="text-sm text-success font-mono">
-                                      {String(cond.value)}
-                                    </code>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )
-                    })()}
-                  </div>
-                </div>
-
-                {/* Output Section */}
-                <div>
-                  <label className="text-xs font-medium text-text-tertiary uppercase tracking-wide mb-2 block">
-                    Output (THEN)
-                  </label>
-                  {response.generatedRule.output && Object.keys(response.generatedRule.output).length > 0 ? (
-                    <div className="p-4 bg-surfaceContainerHigh dark:bg-surfaceContainerHighest rounded-lg border border-outlineVariant">
-                      <dl className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        {Object.entries(response.generatedRule.output).map(([key, value]) => (
-                          value !== null && value !== undefined && value !== '' && (
-                            <div key={key}>
-                              <dt className="text-xs font-medium text-text-tertiary">{key}</dt>
-                              <dd className="text-sm text-text-primary mt-0.5">{String(value)}</dd>
-                            </div>
-                          )
-                        ))}
-                      </dl>
-                    </div>
-                  ) : (
-                    <div className="p-4 bg-warning-bg dark:bg-warning/10 rounded-lg border border-warning/30">
-                      <p className="text-sm text-warning dark:text-warning-light">
-                        ⚠️ No output actions specified. Please specify what should happen when conditions are met 
-                        (e.g., "then set risk score to 90" or "then require inspection").
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Action Buttons */}
-            {response.success && response.validation?.valid && response.generatedRule && (
-              <div className="flex gap-3 pt-4 border-t border-outlineVariant">
-                <button
-                  onClick={handleSave}
-                  disabled={loading}
-                  className="flex items-center gap-2 px-6 py-3 bg-primary text-white rounded-lg hover:bg-primary-light disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
-                >
-                  {loading ? (
-                    <>
-                      <Loader2 className="animate-spin" size={20} />
-                      <span>Saving...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Save size={20} />
-                      <span>Save Rule</span>
-                    </>
-                  )}
-                </button>
-                <button
-                  onClick={() => {
-                    setResponse(null)
-                    setNaturalInput('')
-                    setAdditionalContext('')
-                  }}
-                  className="px-6 py-3 border border-outlineVariant text-text-primary rounded-lg hover:bg-surfaceContainerHigh dark:hover:bg-surfaceContainerHighest transition-colors cursor-pointer"
-                >
-                  Create New Rule
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+      {/* AI Form Component */}
+      <AIRuleForm
+        onSave={handleSave}
+        loading={loading}
+        onResponseChange={setCurrentResponse}
+        onFactTypeChange={setSelectedFactType}
+        initialFactType={selectedFactType}
+        initialNaturalInput={naturalInput}
+        onNaturalInputChange={setNaturalInput}
+      />
 
       {/* Example Prompts - Dynamic based on Fact Type */}
-      {!response && (
+      {!currentResponse && (
         <div className="bg-surface rounded-lg border border-outlineVariant shadow-card p-6">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm font-semibold text-text-primary">
@@ -1360,7 +901,7 @@ export default function AIBuilderPage() {
                       <button
                         onClick={() => {
                           setNaturalInput(item.prompt)
-                          setResponse(item.result)
+                          setCurrentResponse(item.result)
                         }}
                         className="text-xs px-3 py-1 bg-primary text-white rounded hover:bg-primary-light transition-colors shrink-0 cursor-pointer"
                       >

@@ -50,12 +50,28 @@ export async function fetchApi(
     const baseUrl = getApiBaseUrl()
     const url = `${baseUrl}${path.startsWith('/') ? path : `/${path}`}`
     
+    // Forward Authorization header from original request
+    const authHeader = request.headers.get('Authorization')
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      ...options?.headers,
+    }
+    if (authHeader) {
+      headers['Authorization'] = authHeader
+    }
+    
+    // Debug logging for authentication
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[api-client] Forwarding request:', {
+        url,
+        hasAuthHeader: !!authHeader,
+        method: options?.method || request.method,
+      })
+    }
+
     const fetchOptions: RequestInit = {
       method: options?.method || request.method,
-      headers: {
-        'Content-Type': 'application/json',
-        ...options?.headers,
-      },
+      headers,
       cache: options?.cache || 'no-store',
     }
 

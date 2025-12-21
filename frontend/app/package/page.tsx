@@ -433,7 +433,7 @@ export default function PackagePage() {
           <div className="flex items-center gap-3 flex-wrap">
             <div className="flex items-center gap-1.5 text-body-sm text-text-tertiary">
               <Package size={14} />
-              <span>Fact Type:</span>
+              <span>Target Object:</span>
             </div>
             <div className="flex flex-wrap gap-1.5">
               {factTypes.map((factType) => (
@@ -463,7 +463,7 @@ export default function PackagePage() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-3">
             <div>
-              <div className="text-body-sm text-text-tertiary mb-1">Fact Type</div>
+              <div className="text-body-sm text-text-tertiary mb-1">Target Object</div>
               <div className="h4">{packageInfo.factType || selectedFactType}</div>
             </div>
             <div>

@@ -1,5 +1,6 @@
 package rule.engine.org.app.security;
 
+import java.time.Instant;
 import java.util.Collection;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -18,16 +19,24 @@ public class UserPrincipal implements UserDetails {
     private final String email;
     private final String password;
     private final Collection<UserRole> roles;
+    private final Instant createdAt;
 
-    private UserPrincipal(UUID id, String email, String password, Collection<UserRole> roles) {
+    private UserPrincipal(UUID id, String email, String password, Collection<UserRole> roles, Instant createdAt) {
         this.id = id;
         this.email = email;
         this.password = password;
         this.roles = roles;
+        this.createdAt = createdAt;
     }
 
     public static UserPrincipal from(UserAccount account) {
-        return new UserPrincipal(account.getId(), account.getEmail(), account.getPassword(), account.getRoles());
+        return new UserPrincipal(
+            account.getId(), 
+            account.getEmail(), 
+            account.getPassword(), 
+            account.getRoles(),
+            account.getCreatedAt()
+        );
     }
 
     public UUID getId() {
@@ -36,6 +45,10 @@ public class UserPrincipal implements UserDetails {
 
     public Collection<UserRole> getRoles() {
         return roles;
+    }
+
+    public Instant getCreatedAt() {
+        return createdAt;
     }
 
     @Override

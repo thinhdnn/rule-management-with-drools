@@ -5,6 +5,7 @@ import type { ReactNode } from 'react'
 import { Sidebar } from '@/components/Sidebar'
 import { TopBar } from '@/components/TopBar'
 import { useAuth } from '@/components/AuthProvider'
+import { GuideNudge } from '@/components/GuideNudge'
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname()
@@ -24,7 +25,10 @@ export function AppShell({ children }: { children: ReactNode }) {
       <Sidebar />
       <div className="flex-1 flex flex-col min-w-0">
         <TopBar />
-        <main className="flex-1 p-6 md:p-8 lg:p-10">{children}</main>
+        <main className="flex-1 p-6 md:p-8 lg:p-10 relative">
+          {children}
+          <GuideNudge />
+        </main>
       </div>
     </div>
   )

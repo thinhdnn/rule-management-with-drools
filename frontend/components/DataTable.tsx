@@ -14,6 +14,8 @@ type Props = {
   sortField: 'name' | 'updatedAt'
   sortDir: 'asc' | 'desc'
   onSortChange: (f: 'name' | 'updatedAt') => void
+  selectedIds?: Set<string>
+  onSelectionChange?: (selectedIds: Set<string>) => void
 }
 
 const RuleTypeColor: Record<Rule['ruleType'], string> = {
@@ -35,10 +37,33 @@ const FactTypeColor: Record<string, string> = {
   Traveler: 'bg-tertiary-bg text-tertiary ring-1 ring-tertiary/20',
 }
 
-export function DataTable({ items, loading, error, onRetry, sortField, sortDir, onSortChange }: Props) {
+export function DataTable({ items, loading, error, onRetry, sortField, sortDir, onSortChange, selectedIds = new Set(), onSelectionChange }: Props) {
   const router = useRouter()
   const [menuIndex, setMenuIndex] = useState<number | null>(null)
   const menuRefs = useRef<(HTMLDivElement | null)[]>([])
+
+  const handleSelectAll = (checked: boolean) => {
+    if (!onSelectionChange) return
+    if (checked) {
+      onSelectionChange(new Set(items.map(item => item.id)))
+    } else {
+      onSelectionChange(new Set())
+    }
+  }
+
+  const handleSelectItem = (id: string, checked: boolean) => {
+    if (!onSelectionChange) return
+    const newSelected = new Set(selectedIds)
+    if (checked) {
+      newSelected.add(id)
+    } else {
+      newSelected.delete(id)
+    }
+    onSelectionChange(newSelected)
+  }
+
+  const allSelected = items.length > 0 && items.every(item => selectedIds.has(item.id))
+  const someSelected = items.some(item => selectedIds.has(item.id))
 
   const caret = (field: 'name' | 'updatedAt') => (
     <span aria-hidden className={`ml-1 ${sortField === field ? '' : 'opacity-0'}`}>{sortDir === 'asc' ? '▲' : '▼'}</span>
@@ -81,10 +106,24 @@ export function DataTable({ items, loading, error, onRetry, sortField, sortDir, 
         <table className="w-full text-sm" role="table" aria-label="Rules" data-testid="table-rules">
           <thead className="bg-surfaceContainerHigh text-text-secondary" role="rowgroup">
             <tr role="row" className="h-12 border-b border-border">
+              {onSelectionChange && (
+                <th role="columnheader" scope="col" className="text-left px-4 py-3 w-[3%]" data-testid="col-select">
+                  <input
+                    type="checkbox"
+                    checked={allSelected}
+                    ref={(input) => {
+                      if (input) input.indeterminate = someSelected && !allSelected
+                    }}
+                    onChange={(e) => handleSelectAll(e.target.checked)}
+                    className="w-4 h-4 rounded border-border text-primary focus:ring-primary focus:ring-2 cursor-pointer"
+                    aria-label="Select all rules"
+                  />
+                </th>
+              )}
               <th role="columnheader" scope="col" className="text-left px-4 py-3 w-[20%]" data-testid="col-name">
                 <button className="font-semibold focus-ring transition-smooth hover:text-text-primary cursor-pointer" aria-sort={sortField==='name'? (sortDir==='asc'?'ascending':'descending'):'none'} onClick={() => onSortChange('name')}>Rule Name {caret('name')}</button>
               </th>
-              <th role="columnheader" scope="col" className="text-left px-4 py-3 w-[10%] font-semibold" data-testid="col-fact-type">Fact Type</th>
+              <th role="columnheader" scope="col" className="text-left px-4 py-3 w-[10%] font-semibold" data-testid="col-fact-type">Target Object</th>
               <th role="columnheader" scope="col" className="text-left px-4 py-3 w-[10%] font-semibold" data-testid="col-doc">Document Type</th>
               <th role="columnheader" scope="col" className="text-left px-4 py-3 w-[10%] font-semibold" data-testid="col-type">Rule Type</th>
               <th role="columnheader" scope="col" className="text-left px-4 py-3 w-[10%] font-semibold" data-testid="col-output">Output</th>
@@ -98,7 +137,7 @@ export function DataTable({ items, loading, error, onRetry, sortField, sortDir, 
           <tbody role="rowgroup">
             {loading && skeletonRows.map((k) => (
               <tr key={k} className="h-13 animate-pulse border-b border-border" data-testid="state-loading">
-                {Array.from({ length: 8 }).map((_, i) => (
+                {Array.from({ length: onSelectionChange ? 9 : 8 }).map((_, i) => (
                   <td key={i} className="px-4 py-3">
                     <div className="h-4 bg-surfaceContainerHigh rounded-lg" />
                   </td>
@@ -108,7 +147,7 @@ export function DataTable({ items, loading, error, onRetry, sortField, sortDir, 
 
             {!loading && items.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-4 py-10 text-center" data-testid="state-empty">
+                <td colSpan={onSelectionChange ? 9 : 8} className="px-4 py-10 text-center" data-testid="state-empty">
                   <div className="mx-auto w-12 h-12 rounded-lg bg-surfaceContainerHigh mb-3" />
                   <div className="text-text-primary font-medium mb-2">No rules found</div>
                   <button className="px-4 py-2 rounded-lg border border-border hover:bg-surfaceContainerHigh focus-ring transition-smooth text-text-secondary hover:text-text-primary cursor-pointer" onClick={() => window.location.reload()}>Clear filters</button>
@@ -122,6 +161,20 @@ export function DataTable({ items, loading, error, onRetry, sortField, sortDir, 
                 className="h-13 hover:bg-surfaceContainerHigh transition-smooth border-b border-border cursor-pointer"
                 onDoubleClick={() => router.push(`/rules/${r.id}`)}
               >
+                {onSelectionChange && (
+                  <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(r.id)}
+                      onChange={(e) => {
+                        e.stopPropagation()
+                        handleSelectItem(r.id, e.target.checked)
+                      }}
+                      className="w-4 h-4 rounded border-border text-primary focus:ring-primary focus:ring-2 cursor-pointer"
+                      aria-label={`Select rule ${r.name}`}
+                    />
+                  </td>
+                )}
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2">
                     <div className="font-semibold truncate-tooltip text-text-primary" title={r.name}>{r.name}</div>
@@ -202,8 +255,7 @@ export function DataTable({ items, loading, error, onRetry, sortField, sortDir, 
                             className="w-full flex items-center px-4 py-2.5 text-sm text-error hover:bg-error-bg transition-smooth cursor-pointer" 
                             data-testid="action-delete" 
                             onClick={async () => {
-                              const txt = prompt('Type DELETE to confirm')
-                              if (txt === 'DELETE') {
+                              if (confirm('Are you sure you want to delete this rule?')) {
                                 await fetchApi(api.rules.delete(r.id), { method: 'DELETE' })
                                 window.location.reload()
                               }
