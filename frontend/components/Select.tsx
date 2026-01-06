@@ -10,11 +10,11 @@ type Props = React.SelectHTMLAttributes<HTMLSelectElement> & {
 export const Select = forwardRef<HTMLSelectElement, Props>(
   ({ className = '', children, ...props }, ref) => {
     return (
-      <div className="relative">
+      <div className={`relative ${className}`}>
         <select
           ref={ref}
           {...props}
-          className={`appearance-none w-full h-9 px-3 pr-9 text-sm rounded-lg border border-border bg-surface text-text-primary transition-all duration-200 cursor-pointer hover:border-primary/40 hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:border-border ${className}`}
+          className="appearance-none w-full h-9 px-3 pr-9 text-sm rounded-lg border border-border bg-surface text-text-primary transition-all duration-200 cursor-pointer hover:border-primary/40 hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:border-border"
         >
           {children}
         </select>

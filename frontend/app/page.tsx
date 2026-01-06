@@ -174,7 +174,7 @@ export default function HomePage() {
           </div>
         </section>
 
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 items-stretch">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 items-stretch">
           {/* Change Request Activity */}
           <section className="flex flex-col">
             <div className="mb-6">

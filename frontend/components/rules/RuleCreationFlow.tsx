@@ -957,10 +957,10 @@ export function RuleCreationFlow() {
           </div>
 
           {/* Fact Type Selector and Generate All Button */}
-          <div className="flex items-center justify-between gap-4">
+          <div className="flex flex-col gap-3">
             {factTypes.length > 0 && (
               <div className="flex items-center gap-2 bg-surface border border-outlineVariant rounded-md p-2">
-                <div className="flex gap-1">
+                <div className="flex gap-1 flex-wrap">
                   {factTypes.map((factType) => (
                     <button
                       key={factType}
@@ -978,7 +978,7 @@ export function RuleCreationFlow() {
                 </div>
               </div>
             )}
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3 self-start flex-wrap sm:flex-nowrap">
               {examplePrompts.length > 0 && (
                 <>
                   <button
@@ -990,12 +990,12 @@ export function RuleCreationFlow() {
                         setSelectedExamplePrompts(new Set(examplePrompts.map((_, idx) => idx)));
                       }
                     }}
-                    className="text-sm text-text-secondary hover:text-text-primary transition-colors cursor-pointer px-2 py-1"
+                    className="text-sm text-text-secondary hover:text-text-primary transition-colors cursor-pointer px-2 py-1 whitespace-nowrap"
                   >
                     {selectedExamplePrompts.size === examplePrompts.length ? 'Deselect All' : 'Select All'}
                   </button>
                   {selectedExamplePrompts.size > 0 && (
-                    <span className="text-sm text-text-secondary">
+                    <span className="text-sm text-text-secondary whitespace-nowrap">
                       ({selectedExamplePrompts.size} selected)
                     </span>
                   )}
@@ -1394,48 +1394,61 @@ export function RuleCreationFlow() {
     );
   };
 
-  const renderDone = () => (
-    <div className="space-y-4">
-      <div className="rounded-lg border border-success/40 bg-success-bg p-4">
-        <div className="flex items-center gap-2">
-          <CheckCircle2 className="h-5 w-5 text-success" />
-          <p className="text-sm font-semibold text-success">
-            Rule created and change request submitted.
+  const renderDone = () => {
+    const firstSavedRuleId = savedRuleId ?? batchResults.find((r) => r?.savedRuleId)?.savedRuleId ?? null;
+
+    const handleViewRule = () => {
+      if (firstSavedRuleId) {
+        router.push(`/rules/${firstSavedRuleId}`);
+      } else {
+        router.push('/rules');
+      }
+    };
+
+    return (
+      <div className="space-y-4">
+        <div className="rounded-lg border border-success/40 bg-success-bg p-4">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="h-5 w-5 text-success" />
+            <p className="text-sm font-semibold text-success">
+              Rule created and change request submitted.
+            </p>
+          </div>
+          <p className="mt-1 text-sm text-text-secondary">
+            {notifying ? (
+              'Sending notifications to administrators...'
+            ) : hasNotifiedAdmin ? (
+              'Administrators have been notified automatically.'
+            ) : (
+              'Administrators will be notified automatically.'
+            )}
           </p>
         </div>
-        <p className="mt-1 text-sm text-text-secondary">
-          {notifying ? (
-            'Sending notifications to administrators...'
-          ) : hasNotifiedAdmin ? (
-            'Administrators have been notified automatically.'
-          ) : (
-            'Administrators will be notified automatically.'
-          )}
-        </p>
-      </div>
-      {validationMessage && (
-        <div className="rounded-lg border border-outlineVariant bg-surface p-4">
-          <p className="text-sm text-text-secondary">{validationMessage}</p>
+        {validationMessage && (
+          <div className="rounded-lg border border-outlineVariant bg-surface p-4">
+            <p className="text-sm text-text-secondary">{validationMessage}</p>
+          </div>
+        )}
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleViewRule}
+            className="inline-flex items-center gap-2 rounded-md border border-outlineVariant px-4 py-2 text-sm font-medium text-text-primary transition-colors hover:bg-surfaceContainerHigh focus-ring"
+          >
+            <ShieldCheck className="h-4 w-4" />
+            View rule details
+          </button>
+          <button
+            type="button"
+            onClick={resetFlow}
+            className="text-sm text-text-secondary underline transition-colors hover:text-text-primary"
+          >
+            Create another
+          </button>
         </div>
-      )}
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          className="inline-flex items-center gap-2 rounded-md border border-outlineVariant px-4 py-2 text-sm font-medium text-text-primary transition-colors hover:bg-surfaceContainerHigh focus-ring"
-        >
-          <ShieldCheck className="h-4 w-4" />
-          View rule details
-        </button>
-        <button
-          type="button"
-          onClick={resetFlow}
-          className="text-sm text-text-secondary underline transition-colors hover:text-text-primary"
-        >
-          Create another
-        </button>
       </div>
-    </div>
-  );
+    );
+  };
 
   const renderDraftRulesTable = () => {
     const savedRules = batchResults.filter((r) => r && r.savedRuleId);

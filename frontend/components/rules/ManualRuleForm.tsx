@@ -354,7 +354,7 @@ export function ManualRuleForm({
 
             return (
               <div key={condition.id} className="flex items-start gap-2 bg-surfaceContainerHigh p-3 rounded-md">
-                <div className="flex-1 grid grid-cols-12 gap-2">
+                <div className="flex-1 grid grid-cols-1 md:grid-cols-12 gap-2">
                   {idx > 0 && showLogicalOp && (
                     <Select
                       value={prevCondition?.logicalOp || 'AND'}
@@ -363,7 +363,7 @@ export function ManualRuleForm({
                           logicalOp: e.target.value as LogicalOperator,
                         })
                       }
-                      className="col-span-2 text-sm"
+                      className="col-span-12 md:col-span-2 text-sm"
                     >
                       <option value="AND">AND</option>
                       <option value="OR">OR</option>
@@ -397,7 +397,7 @@ export function ManualRuleForm({
                     }}
                     options={metadata.inputFields}
                     placeholder="Select field..."
-                    className={idx > 0 && showLogicalOp ? 'col-span-4' : 'col-span-6'}
+                    className={idx > 0 && showLogicalOp ? 'col-span-12 md:col-span-4' : 'col-span-12 md:col-span-6'}
                   />
 
                   <Select
@@ -409,7 +409,7 @@ export function ManualRuleForm({
                           : ''
                     }
                     onChange={(e) => updateCondition(condition.id, { operator: e.target.value })}
-                    className="col-span-3 text-sm"
+                    className="col-span-12 md:col-span-3 text-sm"
                     disabled={!condition.field || operators.length === 0}
                     title={operators.find((op) => op.operator === condition.operator)?.description}
                   >
@@ -430,7 +430,7 @@ export function ManualRuleForm({
                     value={condition.value}
                     onChange={(e) => updateCondition(condition.id, { value: e.target.value })}
                     placeholder="Value"
-                    className="col-span-3 h-9 px-2 text-sm rounded-md border border-outlineVariant focus-ring"
+                    className="col-span-12 md:col-span-3 h-9 px-2 text-sm rounded-md border border-outlineVariant focus-ring"
                     disabled={!condition.field}
                     required
                   />
